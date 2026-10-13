@@ -27,7 +27,10 @@ def setup_logging(log_dir: Path, name: str, console_level: int = logging.WARNING
     root.addHandler(console)
 
     for noisy in ("httpx", "httpcore", "urllib3", "faster_whisper", "transformers", "huggingface_hub", "filelock",
-                  "torio", "torchaudio"):
+                  "torio", "torchaudio",
+                  # OmniVoice logs every reference transcript at DEBUG level; that is
+                  # personal content and must not end up in log files.
+                  "omnivoice"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     logging.captureWarnings(True)
     warnings.filterwarnings("ignore", category=FutureWarning)

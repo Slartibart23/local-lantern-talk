@@ -1,0 +1,11 @@
+#!/bin/sh
+# Blocks commits that would add personal data or large binaries, even when a file
+# was force-added past .gitignore (git add -f). Install: scripts\install-git-hooks.bat
+blocked=$(git diff --cached --name-only --diff-filter=ACR | grep -i -E '^(user_data|tmp|logs|models|runtime)/|\.(mp3|wav|flac|ogg|m4a|opus|pt|gguf|safetensors|bin)$')
+if [ -n "$blocked" ]; then
+    echo "Commit blocked: these files must never be committed (personal data or binaries):" >&2
+    echo "$blocked" | sed 's/^/  /' >&2
+    echo "Remove them with: git restore --staged <file>" >&2
+    exit 1
+fi
+exit 0
