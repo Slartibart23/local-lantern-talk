@@ -52,6 +52,7 @@
         <ul class="session-list" id="session-list"></ul>
         <p class="muted small" id="no-sessions">No recorded sessions yet.</p>
       </section>
+      <div class="side-art" id="side-art-left" aria-hidden="true"></div>
       <div class="quit-area">
         <button type="button" id="open-settings" class="secondary quit-btn settings-btn">
           <svg aria-hidden="true"><use href="#i-sliders"/></svg><span>Settings</span>
@@ -64,6 +65,7 @@
     </aside>
 
     <main class="center" aria-label="Conversation">
+      <div class="scene-fx" aria-hidden="true"></div>
       <header class="chat-header">
         <button type="button" class="icon-btn narrow-only" id="toggle-left" aria-label="Show characters" aria-controls="left-panel" aria-expanded="false">
           <svg aria-hidden="true"><use href="#i-menu"/></svg>
@@ -228,6 +230,7 @@
         <label class="switch"><input type="checkbox" id="show-actions"><span>Show actions as text (never spoken)</span></label>
         <button type="button" id="open-sessions" class="secondary">Open session folder</button>
       </section>
+      <div class="side-art" id="side-art-right" aria-hidden="true"></div>
     </aside>
   </div>
 
@@ -325,6 +328,14 @@
       <p class="hint">Describe who the character is, how they talk, what they know and where the conversation takes place. The model follows this in every conversation with this character. English works best with most models, but German is fine too. Rules for speech (no markdown, no stage directions read aloud) are added automatically.</p>
       <label class="field-label" for="ce-greeting">Greeting <span class="muted">(first message of a new conversation)</span></label>
       <textarea id="ce-greeting" rows="2" maxlength="2000"></textarea>
+      <label class="field-label" for="ce-scene">Scene <span class="muted">(the look of the chat: background, colours and decorations)</span></label>
+      <select id="ce-scene">
+        <option value="plain">Plain</option>
+        <option value="tavern">Tavern — candlelight, wood, barrel and mug</option>
+        <option value="space">Space — stars, planet and rocket</option>
+        <option value="red-lantern">Red lantern — red light, rose and cocktail</option>
+        <option value="study">Study — parchment, books and globe</option>
+      </select>
       <div class="editor-grid two">
         <div>
           <label class="field-label" for="ce-voice">Voice</label>
@@ -419,7 +430,7 @@
 
         <section aria-labelledby="set-look-title">
           <h2 id="set-look-title">Appearance</h2>
-          <label class="switch"><input type="checkbox" id="set-decorations"><span>Decorations: fairy lights and lanterns</span></label>
+          <label class="switch"><input type="checkbox" id="set-decorations"><span>Decorations: scenes, fairy lights and lanterns</span></label>
           <p class="hint">Stored in this browser. Animations stop when Windows is set to reduce motion.</p>
         </section>
 

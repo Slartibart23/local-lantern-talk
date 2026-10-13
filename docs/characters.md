@@ -38,6 +38,7 @@ their own, and updates never overwrite your edited versions.
 | **Short description** | One line shown as a tooltip in the list. |
 | **Personality and instructions** | The most important field: who the character is. See below. |
 | **Greeting** | The first message of every new conversation. It is shown as text, not spoken. |
+| **Scene** | The look of the chat: *Tavern*, *Space*, *Red lantern*, *Study* or *Plain* — background, accent colour, fairy-light colours and cliparts in the side panels. Elara and Captain Vargas come with a scene. Switch decorations off in **Settings → Appearance**. |
 | **Voice** | A built-in voice or one of your own voices (see [voices.md](voices.md)). |
 | **Language model** | *Use the selected model*, or a specific downloaded model that is loaded whenever you switch to this character. |
 | **Voice output** | Off: this character always answers as text only. |

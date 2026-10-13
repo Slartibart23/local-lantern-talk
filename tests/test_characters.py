@@ -80,3 +80,24 @@ def test_broken_file_is_skipped(store: CharacterStore) -> None:
 def test_helpers() -> None:
     assert initials_for("Captain Vargas") == "CV" and initials_for("max") == "MA"
     assert slugify("Élan Über!") == "elan-ueber" and slugify("") == "character"
+
+
+def test_scene_is_validated_and_taken_from_the_examples(tmp_path: Path) -> None:
+    import json
+
+    from lantern_talk.characters import CharacterError, CharacterStore, validate
+
+    assert validate({"name": "A"}, "a").scene == "plain"
+    assert validate({"name": "A", "scene": "space"}, "a").scene == "space"
+    with pytest.raises(CharacterError):
+        validate({"name": "A", "scene": "disco"}, "a")
+    defaults = tmp_path / "defaults"
+    defaults.mkdir()
+    (defaults / "elara.json").write_text(json.dumps({"name": "Elara", "scene": "tavern"}), encoding="utf-8")
+    folder = tmp_path / "chars"
+    folder.mkdir()
+    (folder / ".defaults-copied").write_text("x", encoding="utf-8")
+    (folder / "elara.json").write_text(json.dumps({"name": "Elara"}), encoding="utf-8")  # copied before scenes
+    store = CharacterStore(folder, defaults)
+    store.load()
+    assert store.get("elara").scene == "tavern"

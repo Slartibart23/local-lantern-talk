@@ -11,5 +11,6 @@
   "voice_output": true,
   "show_actions_as_text": true,
   "memory_enabled": true,
-  "recording_enabled": true
+  "recording_enabled": true,
+  "scene": "plain"
 }

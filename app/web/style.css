@@ -403,3 +403,57 @@ input[type="range"] { width: 100%; accent-color: var(--amber); }
 body.decorated .messages { padding-top: 40px;
   background: radial-gradient(ellipse 70% 220px at 50% 0, rgba(242, 169, 59, .07), transparent 70%); }
 body.decorated .brand-icon { color: #e5533d; filter: drop-shadow(0 0 6px rgba(229, 83, 61, .7)); }
+
+/* ---- scenes (per character; Settings → Appearance) ---------------------------------------- */
+.center { position: relative; }
+.center > :not(.scene-fx) { position: relative; z-index: 1; }
+.center > .garland { z-index: 3; }
+.scene-fx { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.side-art { margin-top: auto; padding: 12px 0 4px; display: flex; justify-content: center; pointer-events: none; }
+.side-art:empty { padding: 0; }
+.side-art svg { width: 150px; height: auto; opacity: .85; }
+.panel.right .side-art { margin-top: 6px; }
+.quit-area { margin-top: 0; }
+.char .avatar { box-shadow: 0 0 0 1px color-mix(in srgb, var(--ring, transparent) 45%, transparent); }
+body.decorated .chat-header .avatar, body.decorated .char.active .avatar { box-shadow: 0 0 0 2px var(--ring), 0 0 14px -2px var(--ring); color: var(--ring); }
+.msg.ai.speaking .bubble { border-color: var(--ring, var(--amber)); animation: speak-glow 1.6s ease-in-out infinite; }
+@keyframes speak-glow { 0%, 100% { box-shadow: 0 0 10px -2px var(--ring, var(--amber)); } 50% { box-shadow: 0 0 22px 2px var(--ring, var(--amber)); } }
+
+body.scene-tavern .center { background:
+    radial-gradient(ellipse 60% 55% at 12% 100%, rgba(255,150,50,.24), transparent 70%),
+    radial-gradient(ellipse 40% 40% at 92% 90%, rgba(255,120,40,.14), transparent 70%),
+    repeating-linear-gradient(90deg, rgba(0,0,0,.16) 0 2px, transparent 2px 120px), linear-gradient(#22160d, #19110a); }
+body.scene-tavern .scene-fx { background: radial-gradient(ellipse 45% 40% at 12% 100%, rgba(255,170,60,.18), transparent 70%); animation: scene-flicker 3s infinite; }
+body.scene-tavern .panel { background: linear-gradient(#211710, #1a130d); }
+body.scene-tavern { --ai-bubble: rgba(52, 36, 22, .88); }
+
+body.scene-space .center { background: radial-gradient(ellipse 70% 60% at 85% 10%, rgba(80,110,220,.2), transparent 70%), linear-gradient(#070b18, #0b1226); }
+body.scene-space .scene-fx { background-image:
+    radial-gradient(1.5px 1.5px at 8% 20%, #fff, transparent), radial-gradient(1px 1px at 22% 70%, #cfe3ff, transparent),
+    radial-gradient(1.5px 1.5px at 35% 35%, #fff, transparent), radial-gradient(1px 1px at 48% 85%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 60% 15%, #dfe9ff, transparent), radial-gradient(1px 1px at 72% 55%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 84% 78%, #fff, transparent), radial-gradient(1px 1px at 93% 32%, #cfe3ff, transparent),
+    radial-gradient(1px 1px at 15% 50%, #fff, transparent), radial-gradient(1px 1px at 55% 60%, #fff, transparent),
+    radial-gradient(1px 1px at 28% 12%, #fff, transparent), radial-gradient(1.5px 1.5px at 66% 92%, #dfe9ff, transparent);
+  animation: scene-twinkle 4s ease-in-out infinite; }
+body.scene-space .panel { background: linear-gradient(#0d1324, #0a0f1d); }
+body.scene-space { --ai-bubble: rgba(18, 28, 48, .85); }
+
+body.scene-red-lantern .center { background: radial-gradient(ellipse 55% 50% at 50% 0, rgba(220,40,40,.24), transparent 70%), linear-gradient(#1e0c0e, #140809); }
+body.scene-red-lantern .scene-fx { background:
+    radial-gradient(circle 26px at 15% 30%, rgba(255,80,60,.18), transparent), radial-gradient(circle 18px at 80% 22%, rgba(255,140,60,.16), transparent),
+    radial-gradient(circle 34px at 70% 80%, rgba(255,60,80,.12), transparent), radial-gradient(circle 20px at 30% 85%, rgba(255,110,60,.14), transparent);
+  animation: scene-drift 8s ease-in-out infinite alternate; }
+body.scene-red-lantern .panel { background: linear-gradient(#1f1012, #170b0c); }
+body.scene-red-lantern { --ai-bubble: rgba(48, 16, 18, .86); }
+
+body.scene-study .center { background: radial-gradient(ellipse 50% 60% at 90% 10%, rgba(255,220,150,.14), transparent 70%), linear-gradient(#1b1a14, #15140f); }
+body.scene-study .panel { background: linear-gradient(#1d1b15, #171610); }
+body.scene-study { --ai-bubble: rgba(232, 220, 190, .95); }
+body.scene-study .msg.ai .bubble { color: #2a2216; }
+body.scene-study .msg.ai .action { color: #6b5d45; }
+body.scene-study .msg.ai .action .ns { border-color: #b9ad90; }
+
+@keyframes scene-flicker { 0%, 100% { opacity: 1; } 30% { opacity: .75; } 55% { opacity: .95; } 70% { opacity: .7; } }
+@keyframes scene-twinkle { 50% { opacity: .55; } }
+@keyframes scene-drift { to { transform: translateY(-10px); } }

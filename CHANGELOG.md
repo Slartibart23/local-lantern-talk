@@ -100,6 +100,9 @@ project uses [Semantic Versioning](https://semver.org/).
 - Decorations: a string of twinkling fairy lights and two swaying red paper lanterns
   under the chat header, a glowing lantern logo; can be switched off in
   Settings → Appearance.
+- Scenes per character (character editor → Scene): Tavern, Space, Red lantern, Study or
+  Plain change the chat background, accent colour and fairy-light colours, and add
+  hand-drawn cliparts to the side panels; the reply being spoken (or replayed) glows.
 - Model catalog: Magidonia 24B v4.3 Heretic and Qwen 3.8 27B Abliterated; Cydonia 24B v4.3
   now uses bartowski's imatrix quantizations.
 - "Quit app" button: closes the app from the browser, unloads all models and frees the

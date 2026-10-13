@@ -14,6 +14,7 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 KINDS = ("assistant", "roleplay")
+SCENES = ("plain", "tavern", "space", "red-lantern", "study")  # look of the chat (web UI decorations)
 MAX_TEXT = 8000
 
 
@@ -36,6 +37,7 @@ class Character:
     show_actions_as_text: bool = True
     memory_enabled: bool = True
     recording_enabled: bool = True
+    scene: str = "plain"              # one of SCENES
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -88,6 +90,10 @@ def validate(data: dict[str, Any], char_id: str) -> Character:
     for key in ("voice", "model"):
         if key in values:
             values[key] = str(values[key] or "").strip()
+    scene = str(values.get("scene") or "plain")
+    if scene not in SCENES:
+        raise CharacterError(f"Unknown scene {scene}.")
+    values["scene"] = scene
     return Character(**values)
 
 
@@ -113,6 +119,10 @@ class CharacterStore:
         for f in sorted(self.folder.glob("*.json")):
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
+                if "scene" not in data:  # copied before scenes existed: take the example's scene
+                    shipped = self.defaults / f.name
+                    if shipped.exists():
+                        data["scene"] = json.loads(shipped.read_text(encoding="utf-8")).get("scene", "plain")
                 char = validate(data, f.stem)
                 self.characters[char.id] = char
             except (OSError, ValueError) as exc:

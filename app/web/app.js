@@ -2,6 +2,8 @@
 // Talks to the backend over one WebSocket: JSON events plus binary PCM audio
 // (microphone → server, synthesized speech → browser).
 
+import { SCENES } from "./scenes.js";
+
 const $ = (id) => document.getElementById(id);
 
 const STATE_LABELS = {
@@ -227,6 +229,8 @@ function setState(state, detail) {
   $("pause-btn").querySelector("use").setAttribute("href", paused ? "#i-play" : "#i-pause");
   $("pause-btn").disabled = !app.settings.mic_enabled;
   if (state !== "listening") $("meter-fill").style.width = "0";
+  document.querySelectorAll("#messages .msg.speaking").forEach((m) => m.classList.remove("speaking"));
+  if (state === "speaking" && app.lastAiEl) app.lastAiEl.classList.add("speaking");
   // While models load, settings are locked so a click cannot switch something off by accident.
   const loading = state === "loading";
   for (const node of [$("right-panel"), document.querySelector("#settings .settings-grid")]) {
@@ -318,6 +322,7 @@ function startAssistantMessage(voice, id) {
   const el = document.createElement("div");
   el.className = "msg ai streaming";
   if (id != null) el.dataset.id = id;
+  app.lastAiEl = el;  // glows while it is spoken
   const bubble = document.createElement("div");
   bubble.className = "bubble";
   const meta = document.createElement("div");
@@ -837,6 +842,7 @@ function renderCharacters() {
         el("span", { class: "char-name" }, c.name),
         el("span", { class: "char-role" }, KIND_LABEL[c.kind] || c.kind)));
     if (active) btn.setAttribute("aria-current", "true");
+    btn.style.setProperty("--ring", SCENES[sceneOf(c)].ring);
     const edit = el("button", { type: "button", class: "char-edit", "aria-label": `Edit ${c.name}`,
                                 title: `Edit ${c.name}`, onclick: () => openEditor(c.id) });
     edit.innerHTML = '<svg aria-hidden="true"><use href="#i-edit"/></svg>';
@@ -909,6 +915,7 @@ function openEditor(id) {
   $("ce-actions").checked = d.show_actions_as_text;
   $("ce-memory").checked = d.memory_enabled;
   $("ce-recording").checked = d.recording_enabled;
+  $("ce-scene").value = SCENES[d.scene] ? d.scene : "plain";
   $("ce-delete").hidden = !c;
   $("ce-duplicate").hidden = !c;
   $("app").classList.remove("show-left");
@@ -937,6 +944,7 @@ function saveEditor(ev) {
     show_actions_as_text: $("ce-actions").checked,
     memory_enabled: $("ce-memory").checked,
     recording_enabled: $("ce-recording").checked,
+    scene: $("ce-scene").value,
   };
   send({ type: "save_character", id: app.editingId, character });
   closeEditor();
@@ -993,6 +1001,7 @@ function applyCharacterState(msg) {
   renderMemory();
   renderResume();
   renderRecording();
+  applyDecorations();
 }
 
 // ---------------------------------------------------------------- end chat / continue last chat
@@ -1073,6 +1082,8 @@ function replay(btn, session, offset, duration, label) {
   app.replay = { btn, label, end: duration != null ? offset + duration + 0.2 : null };
   btn.classList.add("playing");
   btn.textContent = `■ ${label}`;
+  const msg = btn.closest(".msg");
+  if (msg) msg.classList.add("speaking");
   send({ type: "replay", playing: true });  // keeps the microphone muted while it plays
   // A fresh URL each time: the current session's file keeps growing.
   audio.addEventListener("loadedmetadata", () => {
@@ -1091,6 +1102,8 @@ function stopReplay() {
   const audio = $("replay-audio");
   audio.pause();
   r.btn.classList.remove("playing");
+  const msg = r.btn.closest(".msg");
+  if (msg) msg.classList.remove("speaking");
   r.btn.textContent = `▶ ${r.label}`;
   send({ type: "replay", playing: false });
 }
@@ -1297,9 +1310,7 @@ function speakerNode() {
   return app.speakerOut || app.audioCtx.destination;
 }
 
-// ---------------------------------------------------------------- decorations (fairy lights, lanterns)
-
-const BULB_COLORS = ["#f2a93b", "#e5533d", "#ffe3a3", "#f07b2c"];
+// ---------------------------------------------------------------- decorations (scenes, fairy lights, lanterns)
 
 function decorationsOn() {
   return storageGet("llt.decorations") !== "off";
@@ -1310,10 +1321,24 @@ function setDecorations(on) {
   applyDecorations();
 }
 
+function sceneOf(character) {
+  const name = character && character.scene;
+  return SCENES[name] ? name : "plain";
+}
+
+// The active character's scene sets the background, accent colour, light colours and the
+// side-panel cliparts (scenes.js).
 function applyDecorations() {
   const on = decorationsOn();
-  document.body.classList.toggle("decorated", on);
+  const name = on ? sceneOf(app.character) : "";
+  const body = document.body;
+  body.classList.toggle("decorated", on);
+  for (const key of Object.keys(SCENES)) body.classList.toggle(`scene-${key}`, key === name);
+  body.style.setProperty("--ring", on ? SCENES[name].ring : "var(--amber)");
   $("set-decorations").checked = on;
+  const [left, right] = on ? SCENES[name].art : ["", ""];
+  $("side-art-left").innerHTML = left;
+  $("side-art-right").innerHTML = right;
   drawGarland();
 }
 
@@ -1322,6 +1347,8 @@ function drawGarland() {
   const box = $("garland");
   box.innerHTML = "";
   if (!decorationsOn()) return;
+  const scene = SCENES[sceneOf(app.character)];
+  const colors = scene.bulbs;
   const w = Math.max(200, box.clientWidth);
   const sag = Math.min(16, w / 60);
   const y = (x) => 2 + sag * (1 - ((x - w / 2) / (w / 2)) ** 2);
@@ -1343,10 +1370,10 @@ function drawGarland() {
     const by = y(x) + 6;
     const g = add("g", { class: "bulb", style: `--delay:${((i * 0.37) % 2.4).toFixed(2)}s` });
     add("line", { x1: x, y1: y(x), x2: x, y2: by - 2, class: "garland-wire" }, g);
-    add("circle", { cx: x, cy: by + 1, r: 7, fill: BULB_COLORS[i % 4], class: "bulb-glow" }, g);
-    add("ellipse", { cx: x, cy: by + 1, rx: 2.6, ry: 3.4, fill: BULB_COLORS[i % 4], class: "bulb-core" }, g);
+    add("circle", { cx: x, cy: by + 1, r: 7, fill: colors[i % 4], class: "bulb-glow" }, g);
+    add("ellipse", { cx: x, cy: by + 1, rx: 2.6, ry: 3.4, fill: colors[i % 4], class: "bulb-core" }, g);
   }
-  for (const x of [16, w - 16]) {
+  for (const x of scene.lanterns ? [16, w - 16] : []) {
     const lantern = add("g", { class: "lantern", style: `transform-origin:${x}px 2px` });
     add("line", { x1: x, y1: 0, x2: x, y2: 12, class: "garland-wire" }, lantern);
     add("ellipse", { cx: x, cy: 27, rx: 15, ry: 17, class: "lantern-glow" }, lantern);
