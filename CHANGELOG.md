@@ -87,6 +87,16 @@ project uses [Semantic Versioning](https://semver.org/).
   crashed llama-server is restarted automatically before the next turn.
 - Documentation: `configuration.md`, `troubleshooting.md`, `architecture.md`,
   `THIRD_PARTY_NOTICES.md`, screenshots and a rewritten README.
+- Loading screen: after start the page shows that the models are loading (up to about
+  2 minutes) and offers *Start* only when everything is ready; side-panel and settings
+  controls are locked while models load, so nothing is switched off by accident.
+- Language of a custom voice clip can be chosen (or detected automatically); Whisper
+  transcribes the clip with it.
+- The 8 built-in voices are shipped as short FLAC clips in `config\builtin_voices\`, so
+  every installation sounds the same and the installer no longer designs them.
+- "Need help? Ask Claude" hints in installer, update, start-up and error messages and
+  in the docs; installation guide covers ZIP download vs. `git clone` and running the
+  installer in a command window.
 - Model catalog: Magidonia 24B v4.3 Heretic and Qwen 3.8 27B Abliterated; Cydonia 24B v4.3
   now uses bartowski's imatrix quantizations.
 - "Quit app" button: closes the app from the browser, unloads all models and frees the
@@ -98,6 +108,8 @@ project uses [Semantic Versioning](https://semver.org/).
   starter model instead (spec §4).
 
 ### Fixed
+- Switches were drawn on the checkbox itself, which Firefox does not render; they are now
+  drawn next to it and show their state in every browser.
 - The greeting no longer starts the chat history sent to the model: strict chat templates
   (Mistral, Gemma) require the conversation to start with the user.
 - Model reasoning is never spoken: thinking is disabled in the chat template and

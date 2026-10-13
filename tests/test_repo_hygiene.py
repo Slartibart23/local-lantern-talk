@@ -13,6 +13,8 @@ FORBIDDEN = re.compile(
     r"^(user_data|tmp|logs|models|runtime)/|\.(mp3|wav|flac|ogg|m4a|opus|pt|gguf|safetensors|bin)$",
     re.IGNORECASE,
 )
+# The only audio in the repository: the shipped built-in voice clips (spec §7.2, owner's choice).
+ALLOWED = re.compile(r"^config/builtin_voices/[a-z]{2}_(female|male)\.flac$")
 
 
 def tracked_files() -> list[str]:
@@ -24,7 +26,7 @@ def tracked_files() -> list[str]:
 
 
 def test_no_personal_data_or_binaries_tracked() -> None:
-    offending = [f for f in tracked_files() if FORBIDDEN.search(f)]
+    offending = [f for f in tracked_files() if FORBIDDEN.search(f) and not ALLOWED.match(f)]
     assert offending == [], f"must never be committed: {offending}"
 
 

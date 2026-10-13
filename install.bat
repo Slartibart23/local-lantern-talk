@@ -12,6 +12,7 @@ if "%RESULT%"=="1" (
     echo.
     echo Installation failed. See the messages above.
     echo Re-running install.bat resumes where it stopped.
+    echo Need help? Copy the messages above into Claude at https://claude.ai and ask what to do.
 )
 pause
 exit /b %RESULT%

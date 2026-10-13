@@ -10,6 +10,7 @@ set "RESULT=%ERRORLEVEL%"
 if "%RESULT%"=="1" (
     echo.
     echo The update did not finish. See the messages above.
+    echo Need help? Copy the messages above into Claude at https://claude.ai and ask what to do.
 )
 pause
 exit /b %RESULT%

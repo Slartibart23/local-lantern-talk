@@ -44,7 +44,7 @@ from .memory import (
 from .models import ModelError, ModelManager, NoGGUFError
 from .paths import Paths
 from .pipeline import Conversation, ConversationConfig, SegmentEvent, SpeechAudio, TurnDone, TurnError
-from .prompts import DEFAULT_ASSISTANT_PERSONA
+from .prompts import DEFAULT_ASSISTANT_PERSONA, LANGUAGE_NAMES
 from .recorder import CaptureBuffer, SessionItem, SessionRecorder, list_sessions, session_title, spoken_text
 from .resample import StreamingResampler
 from .sanitizer import split_segments
@@ -228,6 +228,10 @@ class Engine:
 
     def new_conversation(self) -> None:
         self._commands.put(("new", None))
+
+    def set_voice_language(self, voice: str, language: str) -> None:
+        """Language spoken in a custom voice clip; "" means "detect it from the transcript"."""
+        self._commands.put(("voice_language", (voice, language)))
 
     def set_reference_text(self, voice: str, text: str) -> None:
         """Transcript of a custom voice clip; an empty text means "use Whisper"."""
@@ -495,6 +499,7 @@ class Engine:
             "delete_fact": self._handle_delete_fact,
             "reset_memory": self._handle_reset_memory,
             "replay": self._handle_replay,
+            "voice_language": lambda arg: self._handle_voice_language(*arg),
         }
         while True:
             name, arg = self._commands.get()
@@ -1177,6 +1182,7 @@ class Engine:
             info["text_file"] = str(path.with_suffix(".txt").relative_to(self.paths.root))
             info["report"] = self.c.voices.clip_report(path) if path.exists() else None
             info["language"] = self.c.voices.custom_language(path) if path.exists() else None
+            info["language_set"] = bool(path.exists() and self.c.voices.user_language(path))
         return info
 
     # -- managing voices (spec §7.1 / §7.2) -------------------------------------------------
@@ -1191,9 +1197,9 @@ class Engine:
         if target == path:
             return
         path.rename(target)  # keeps the time stamp, so the voice cache stays valid
-        text = path.with_suffix(".txt")
-        if text.exists():
-            text.rename(target.with_suffix(".txt"))
+        for sidecar in (".txt", ".lang"):  # transcript and chosen language move along
+            if path.with_suffix(sidecar).exists():
+                path.with_suffix(sidecar).rename(target.with_suffix(sidecar))
         self.c.voices.forget(path)
         new_id = f"custom:{target.name}"
         if self.store.settings.voice == voice:
@@ -1208,6 +1214,7 @@ class Engine:
         path = self._custom_path(voice)
         path.unlink(missing_ok=True)
         path.with_suffix(".txt").unlink(missing_ok=True)
+        path.with_suffix(".lang").unlink(missing_ok=True)
         self.c.voices.forget(path)
         self.c.voices.cleanup_cache(self.paths.voices)
         if self.store.settings.voice == voice:
@@ -1246,6 +1253,19 @@ class Engine:
             self.c.voices.regenerate_builtin(spec.id)
         self._prepare_voice()
         self._emit({"type": "notice", "message": "All 8 built-in voices were generated again."})
+        self._enter_idle()
+
+    def _handle_voice_language(self, voice: str, language: str) -> None:
+        if not voice.startswith("custom:"):
+            raise UserError("Built-in voices have a fixed language.")
+        language = language.strip().lower()
+        if language and language not in LANGUAGE_NAMES:
+            raise UserError(f"Unknown language {language}.")
+        path = Path(self._voice_ref(voice))
+        self.c.voices.set_language(path, language)
+        if voice == self.store.settings.voice:
+            self._prepare_voice()  # transcribed again with the right language if needed
+        self._emit({"type": "voice_info", **self.voice_info()})
         self._enter_idle()
 
     def _handle_reference_text(self, voice: str, text: str) -> None:

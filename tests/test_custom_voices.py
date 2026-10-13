@@ -136,3 +136,33 @@ def test_prepared_clip_is_used_and_reported(tmp_path: Path, monkeypatch: pytest.
     report = lib.clip_report(clip)
     assert report is not None and 3.4 < report["duration_s"] < 4.6
     assert list(lib.custom_cache_dir.glob("*.meta.json"))
+
+
+def test_builtin_voices_come_from_the_shipped_clips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    lib, fake, calls, voices = make_library(tmp_path, monkeypatch)
+    fake.design = lambda *a: pytest.fail("shipped clips must not be designed again")  # type: ignore[attr-defined]
+    for voice_id in lib.builtins:
+        assert (lib.shipped_dir / f"{voice_id}.flac").exists()
+    lib.prompt_for("builtin:de_female")
+    assert (lib.builtin_dir / "de_female.pt").exists() and (lib.builtin_dir / "de_female.wav").exists()
+    assert fake.prompts[-1].ref_text == lib.builtins["de_female"].reference_text
+    assert calls == []  # no Whisper check needed for shipped clips
+
+
+def test_chosen_clip_language_wins_and_guides_whisper(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    lib, fake, calls, voices = make_library(tmp_path, monkeypatch)
+    seen: list[str | None] = []
+    lib.transcribe = lambda audio, sr, lang: (seen.append(lang), "Hallo, das ist meine Stimme.")[1]
+    clip = voices / "anna.wav"
+    tone_clip(clip, 4)
+    lib.prompt_for(str(clip))
+    assert seen == [None] and lib.custom_language(clip) == "de"  # detected from the transcript
+    lib.set_language(clip, "fr")
+    assert lib.custom_language(clip) == "fr" and lib.user_language(clip) == "fr"
+    assert (voices / "anna.lang").read_text(encoding="utf-8").strip() == "fr"
+    lib.prompt_for(str(clip))
+    assert seen == [None, "fr"]  # transcribed again, now with the chosen language
+    lib.set_language(clip, "")
+    assert not (voices / "anna.lang").exists()
+    lib.prompt_for(str(clip))
+    assert seen == [None, "fr", None] and lib.custom_language(clip) == "de"  # detected again

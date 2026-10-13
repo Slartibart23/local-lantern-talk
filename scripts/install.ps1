@@ -359,7 +359,7 @@ if ($WantStarter) { $modelArgs += @('--starter-llm', $StarterQuant) }
 Invoke-Python $modelArgs 'Model download'
 
 # ============================================================================ 7. built-in voices
-Write-Step 'Built-in voices (generated locally with OmniVoice voice design)'
+Write-Step 'Built-in voices (prepared from the clips shipped in config\builtin_voices)'
 Invoke-Python @('-m', 'lantern_talk.setup_voices') 'Built-in voice generation'
 }
 
@@ -386,5 +386,6 @@ if ($selfTestOk -and $UpdateOnly) {
 } else {
     Write-Host 'Installation finished, but the self-test found problems (see above).' -ForegroundColor Yellow
     Write-Host 'Fix them and run install.bat again; finished steps are skipped.'
+    Write-Host 'Need help? Copy the messages above into Claude (https://claude.ai) and ask what to do.'
     exit 2
 }

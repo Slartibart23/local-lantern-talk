@@ -78,6 +78,7 @@ function send(obj) {
 function handleEvent(msg) {
   switch (msg.type) {
     case "hello":
+      app.helloReceived = true;
       app.settings = msg.settings;
       app.voices = msg.voices;
       app.models = msg.models;
@@ -226,6 +227,32 @@ function setState(state, detail) {
   $("pause-btn").querySelector("use").setAttribute("href", paused ? "#i-play" : "#i-pause");
   $("pause-btn").disabled = !app.settings.mic_enabled;
   if (state !== "listening") $("meter-fill").style.width = "0";
+  // While models load, settings are locked so a click cannot switch something off by accident.
+  const loading = state === "loading";
+  for (const node of [$("right-panel"), document.querySelector("#settings .settings-grid")]) {
+    node.inert = loading;
+    node.classList.toggle("locked", loading);
+  }
+  $("locked-note").hidden = !loading || !app.started;
+  renderStartOverlay();
+}
+
+// The start screen doubles as the loading screen: Start is only offered once everything is loaded.
+function renderStartOverlay() {
+  if (app.started || app.replaced || app.closed) return;
+  const loading = !app.helloReceived || app.state === "loading";
+  $("start-loading").hidden = !loading;
+  $("start-loading-detail").textContent = app.detail || "Starting…";
+  const text = $("start-text");
+  text.hidden = loading;
+  text.textContent = app.state === "error"
+    ? `Loading finished with a problem: ${app.detail} You can still start and type.`
+    : "Ready! Everything runs on this computer. Click Start to allow the microphone and audio playback.";
+  const btn = $("start-btn");
+  const wasDisabled = btn.disabled;
+  btn.disabled = loading;
+  btn.textContent = loading ? "Please wait…" : "Start";
+  if (wasDisabled && !loading) btn.focus();
 }
 
 function togglePause() {
@@ -701,6 +728,7 @@ function renderVoiceInfo(info) {
     : info.origin === "whisper" ? "from Whisper — please check" : "not transcribed yet";
   $("reftext-file").textContent = info.text_file || "";
   $("reftext-whisper").disabled = info.origin !== "user";
+  $("reftext-lang").value = info.language_set ? info.language : "";
 }
 
 function saveReferenceText(text) {
@@ -1301,8 +1329,11 @@ function appClosed() {
 }
 
 function showOverlay(text, button, onClick) {
+  $("start-loading").hidden = true;
+  $("start-text").hidden = false;
   $("start-text").textContent = text;
   const btn = $("start-btn");
+  btn.disabled = false;
   btn.textContent = button;
   btn.onclick = onClick;
   $("start-overlay").hidden = false;
@@ -1326,6 +1357,7 @@ function togglePanel(side) {
 
 function init() {
   $("start-btn").onclick = async () => {
+    if ($("start-btn").disabled) return;
     $("start-overlay").hidden = true;
     app.started = true;
     await startAudio();
@@ -1403,6 +1435,9 @@ function init() {
     }
   };
   $("reftext-save").onclick = () => saveReferenceText($("reftext").value);
+  $("reftext-lang").onchange = (e) => {
+    if (app.voiceInfo) send({ type: "voice_language", voice: app.voiceInfo.voice, language: e.target.value });
+  };
   $("reftext-whisper").onclick = () => { $("reftext").value = ""; saveReferenceText(""); };
   $("tts-steps").onchange = (e) => changeSetting("num_step", Number(e.target.value));
   $("tts-precision").onchange = (e) => changeSetting("tts_precision", e.target.value);

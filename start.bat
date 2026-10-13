@@ -8,4 +8,8 @@ if not exist "%LLT_RUNTIME%\venv\Scripts\python.exe" (
     exit /b 1
 )
 "%LLT_RUNTIME%\venv\Scripts\python.exe" -m lantern_talk.server %*
-if errorlevel 1 pause
+if errorlevel 1 (
+    echo.
+    echo Need help? Copy the messages above into Claude at https://claude.ai and ask what to do.
+    pause
+)

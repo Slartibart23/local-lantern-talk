@@ -30,11 +30,17 @@ replace the file.
 Select a voice in the side panel, then:
 
 - **▶ Preview** speaks a short sample sentence in the voice's language (German,
-  English, Spanish or French; for your own voices the language of its transcript).
+  English, Spanish or French; for your own voices the language you chose or the language
+  of its transcript).
 - **Rename…** changes the name (and the file name). The prepared voice is kept, so
   renaming is instant.
 - **Delete** removes the audio file and its transcript. If it was the selected voice,
   a built-in voice takes over.
+- **Language of the clip** (below the reference text): the language spoken in the clip.
+  *Detect automatically* guesses it from the transcript (German, English, Spanish or
+  French). Choosing it yourself helps Whisper transcribe the clip correctly — the clip
+  is transcribed again with that language — and is used for the preview and for replies
+  whose language is not known. It is saved as `clip.lang` next to `clip.mp3`.
 
 ### Quality hints
 
@@ -105,15 +111,16 @@ If this file exists, Whisper is not used for that clip at all. Tips for the text
 
 ## Built-in voices
 
-Eight voices — German, English, Spanish and French, each male and female — are
-generated on your GPU during installation with OmniVoice *voice design*. No recordings
-of real people are shipped. Their definitions are in `config\builtin_voices.yaml`; the
-generated files are in `models\builtin_voices\`.
+Eight voices — German, English, Spanish and French, each male and female — come with
+the app as short reference clips in `config\builtin_voices\`. They were created with
+OmniVoice *voice design* (synthetic voices, not recordings of real people), so every
+installation sounds the same. Their descriptions are in `config\builtin_voices.yaml`;
+the prepared voice files are in `models\builtin_voices\`.
 
-**Regenerate built-in voices** (link at the bottom of the Voice section) creates all
-eight again. Voice design produces a slightly different voice each time, so only do
-this if you do not like the current ones; it takes about a minute and needs voice
-output to be on.
+**Settings → Voice output → Regenerate built-in voices** designs all eight anew on your
+GPU. Voice design produces a slightly different voice each time, so only do this if you
+do not like the current ones; it takes about a minute and needs voice output to be on.
+To go back to the shipped voices, close the app and delete `models\builtin_voices\`.
 
 With **Match built-in voice to spoken language** (on by default), a built-in voice
 switches to the built-in voice of the same gender in the language you speak or type,

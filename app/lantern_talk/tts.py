@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from .audio_io import load_audio
+from .audio_io import load_audio, resample
 from .gpu import free_cuda_cache
 from .textmatch import word_similarity
 
@@ -165,7 +165,8 @@ def file_fingerprint(path: Path) -> str:
 class VoiceLibrary:
     """Resolves voice ids to cached OmniVoice prompts.
 
-    * ``builtin:<id>`` — generated with voice design into ``models\\builtin_voices``.
+    * ``builtin:<id>`` — shipped clip in ``config\\builtin_voices`` (or generated with voice
+      design when it is missing / regenerated); prompts in ``models\\builtin_voices``.
     * a file path     — custom reference clip; cached in ``user_data\\voices\\.cache``.
     """
 
@@ -180,6 +181,7 @@ class VoiceLibrary:
     ) -> None:
         self.tts = tts
         self.builtins = load_builtin_voices(builtin_config)
+        self.shipped_dir = builtin_config.with_suffix("")  # config\builtin_voices\<id>.flac
         self.builtin_dir = builtin_dir
         self.custom_cache_dir = custom_cache_dir
         self.transcribe = transcribe
@@ -216,7 +218,15 @@ class VoiceLibrary:
         wav_file = self.builtin_dir / f"{voice_id}.wav"
         if prompt_file.exists() and not regenerate:
             return _load_prompt(prompt_file)
-        audio = self._generate_verified(spec)
+        shipped = self.shipped_dir / f"{voice_id}.flac"
+        if shipped.exists() and not regenerate:
+            # The app ships the 8 reference clips, so a new install sounds the same
+            # everywhere and does not spend minutes on voice design.
+            audio, sr = sf.read(str(shipped), dtype="float32")
+            if sr != OUTPUT_SAMPLE_RATE:
+                audio = resample(audio, sr, OUTPUT_SAMPLE_RATE)
+        else:
+            audio = self._generate_verified(spec)
         sf.write(wav_file, audio, OUTPUT_SAMPLE_RATE)
         prompt = self.tts.make_prompt(audio, OUTPUT_SAMPLE_RATE, spec.reference_text)
         prompt.save(str(prompt_file))  # type: ignore[attr-defined]
@@ -281,12 +291,42 @@ class VoiceLibrary:
             target.unlink(missing_ok=True)
         self._prompts.pop(str(source), None)  # prepared again with the new text
 
+    @staticmethod
+    def language_file_for(source: Path) -> Path:
+        """The language the user chose for a clip: ``clip.mp3`` -> ``clip.lang`` (e.g. ``de``)."""
+        return source.with_suffix(".lang")
+
+    def user_language(self, source: Path) -> str | None:
+        f = self.language_file_for(source)
+        if not f.exists():
+            return None
+        code = f.read_text(encoding="utf-8").strip().lower()
+        return code or None
+
     def custom_language(self, source: Path) -> str | None:
-        """Language of a custom clip, guessed from its transcript (DE / EN / ES / FR)."""
+        """Language of a custom clip: the user's choice, else guessed from its transcript."""
         from .textlang import guess_language
 
+        chosen = self.user_language(source)
+        if chosen:
+            return chosen
         ref = self.reference_text(source)
         return guess_language(ref[0]) if ref else None
+
+    def set_language(self, source: Path, code: str) -> None:
+        """Store the language of a clip; an empty code means "detect it"."""
+        target = self.language_file_for(source)
+        code = code.strip().lower()
+        if code == (self.user_language(source) or ""):
+            return
+        if code:
+            target.write_text(code + "\n", encoding="utf-8")
+        else:
+            target.unlink(missing_ok=True)
+        if not self._user_text(source):
+            # Whisper transcribes the clip again, now knowing its language.
+            self._cache_file(source, ".whisper.txt").unlink(missing_ok=True)
+        self._prompts.pop(str(source), None)
 
     def clip_report(self, source: Path) -> dict[str, object] | None:
         """Quality report of a clip (computed once, then cached); None if it cannot be read."""
@@ -318,7 +358,7 @@ class VoiceLibrary:
         if not self.custom_cache_dir.is_dir():
             return
         current = {file_fingerprint(f) for f in voices_dir.iterdir()
-                   if f.is_file() and f.suffix.lower() != ".txt"}
+                   if f.is_file() and f.suffix.lower() not in (".txt", ".lang")}
         for f in self.custom_cache_dir.iterdir():
             if f.is_file() and f.name[:16] not in current:
                 f.unlink(missing_ok=True)
@@ -370,7 +410,7 @@ class VoiceLibrary:
             # Whisper transcribes what is kept; a user transcript covers the whole clip.
             audio = audio[: 15 * REF_SAMPLE_RATE]
         if not ref_text:
-            ref_text = self.transcribe(audio, REF_SAMPLE_RATE, None).strip()
+            ref_text = self.transcribe(audio, REF_SAMPLE_RATE, self.user_language(source)).strip()
             if not ref_text:
                 raise ValueError(f"No speech found in voice clip {source.name}.")
             whisper_file.write_text(ref_text + "\n", encoding="utf-8")

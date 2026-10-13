@@ -13,10 +13,10 @@ your computer.
 - **Voice conversations** — just talk; the app listens, answers and speaks. Or type at
   any time. The microphone is muted while the AI speaks, so it never hears itself.
 - **Natural speech in many languages** — 8 built-in voices (German, English, Spanish,
-  French × female / male) that follow the language you speak, so a German reply never
-  has an English accent.
-- **Voice cloning** — add a 3–10 s clip (MP3, WAV, M4A, …) and the AI speaks with that
-  voice. Only with the speaker's consent.
+  French × female / male), shipped with the app, that follow the language you speak, so
+  a German reply never has an English accent.
+- **Voice cloning** — add a 3–10 s clip (MP3, WAV, M4A, …), tell the app its language,
+  and the AI speaks with that voice. Only with the speaker's consent.
 - **Characters** — assistants like *Lena* and *Max*, roleplay characters like *Elara*
   (fantasy tavern) and *Captain Vargas* (sci-fi), or your own: describe a personality
   once, and the character behaves that way in every conversation, with its own voice
@@ -70,17 +70,26 @@ run `install.bat` again to switch to the CUDA 13 build.
 
 ## Quick start
 
-1. **Download** this repository (or clone it) into a folder with a short path, e.g.
-   `D:\LocalLanternTalk`.
-2. **Run `install.bat`.** It checks your GPU, driver and disk, shows what it will
-   download (about 9 GB, plus 7–8 GB for the optional starter language model) and asks
-   before starting. A self-test at the end checks the GPU, speech output and microphone.
-   Windows may warn about running a downloaded `.bat` file — see
-   [docs/installation.md](docs/installation.md#expected-warnings).
-3. **Run `start.bat`.** It opens `http://127.0.0.1:7865` in your browser. Keep its
-   window open while you use the app.
-4. Click **Start**, allow the microphone, and talk when the status shows
+1. **Create a new, empty folder** with a short path, e.g. `D:\LocalLanternTalk` (not
+   on the OneDrive-synced Desktop).
+2. **Get the app:** on GitHub click **Code → Download ZIP** and copy the contents of the
+   `local-lantern-talk-main` folder from the ZIP into your folder — or run
+   `git clone https://github.com/Slartibart23/local-lantern-talk D:\LocalLanternTalk`
+   (easiest to update later). Details: [docs/installation.md](docs/installation.md#get-the-app).
+3. **Install in a command window:** open the folder in Explorer, type `cmd` in the
+   address bar and press Enter, then type `install.bat` and press Enter. It checks your
+   GPU, driver and disk, shows what it will download (about 9 GB, plus 7–8 GB for the
+   optional starter language model) and asks before starting. A self-test at the end
+   checks the GPU, speech output and microphone. Windows may warn about running a
+   downloaded `.bat` file — see [docs/installation.md](docs/installation.md#expected-warnings).
+4. **Start:** type `start.bat`. It opens `http://127.0.0.1:7865` in your browser; keep
+   its window open while you use the app. Loading the models takes up to 2 minutes —
+   the page shows when it is ready.
+5. Click **Start**, allow the microphone, and talk when the status shows
    **Listening** — or type in the message box.
+
+Something went wrong? Copy the messages into Claude (<https://claude.ai>) and ask what
+to do, or see [docs/troubleshooting.md](docs/troubleshooting.md).
 
 To end a chat, click **End chat**; the character keeps it in memory. To close the app
 and free the GPU memory, click **Quit app** (bottom left). `update.bat` updates the app

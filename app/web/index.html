@@ -25,8 +25,14 @@
     <div class="overlay-card">
       <svg class="brand-icon big" aria-hidden="true"><use href="#i-lantern"/></svg>
       <h1>Local Lantern Talk</h1>
-      <p id="start-text">Everything runs on this computer. Click start to allow the microphone and audio playback.</p>
-      <button id="start-btn" class="primary" type="button">Start</button>
+      <div id="start-loading" class="start-loading" role="status" aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <p class="start-loading-title">Loading the models…</p>
+        <p class="start-loading-detail" id="start-loading-detail">Starting…</p>
+        <p class="start-loading-note">This can take up to 2 minutes, depending on your computer. Local Lantern Talk will tell you here when it is ready.</p>
+      </div>
+      <p id="start-text" hidden>Ready! Everything runs on this computer. Click Start to allow the microphone and audio playback.</p>
+      <button id="start-btn" class="primary" type="button" disabled>Please wait…</button>
     </div>
   </div>
 
@@ -126,6 +132,7 @@
     </main>
 
     <aside class="panel right" id="right-panel" aria-label="Settings">
+      <p id="locked-note" class="locked-note" hidden>Loading… these settings are available again in a moment.</p>
       <section>
         <h2>Voice</h2>
         <label class="switch"><input type="checkbox" id="voice-output"><span>Voice output</span></label>
@@ -149,6 +156,21 @@
             <button type="button" id="reftext-whisper" class="secondary">Use Whisper</button>
           </div>
           <p class="hint">The clone is best when this matches the clip exactly. Saved as <code id="reftext-file"></code>.</p>
+          <label class="field-label" for="reftext-lang">Language of the clip</label>
+          <select id="reftext-lang">
+            <option value="">Detect automatically</option>
+            <option value="de">German</option>
+            <option value="en">English</option>
+            <option value="es">Spanish</option>
+            <option value="fr">French</option>
+            <option value="it">Italian</option>
+            <option value="nl">Dutch</option>
+            <option value="pt">Portuguese</option>
+            <option value="pl">Polish</option>
+            <option value="tr">Turkish</option>
+            <option value="ru">Russian</option>
+          </select>
+          <p class="hint">The language spoken in the clip. It helps Whisper transcribe the clip and tells the app which language the voice speaks best.</p>
         </div>
         <label class="switch"><input type="checkbox" id="match-language"><span>Match built-in voice to spoken language</span></label>
         <p class="hint">Add a clip with 3–10 s of clean speech to clone a voice (MP3, WAV, FLAC, OGG, OPUS, M4A…). It is trimmed and its volume evened out automatically. Files are kept in <code>user_data\voices</code>; you can also copy them there and reload the page. Only clone voices with the speaker's consent.</p>

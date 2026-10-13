@@ -22,22 +22,46 @@ the folder removes the app completely.
 - Only NVIDIA GPUs are supported (no AMD / Intel GPUs, no macOS / Linux).
 - Internet access is needed only for installation and model downloads.
 
+## Get the app
+
+Create a new, empty folder with a short path, e.g. `D:\LocalLanternTalk`. Spaces are
+fine; avoid umlauts, very long paths and folders synced by OneDrive (the Desktop and
+*Documents* often are), because the models are many GB. Then either:
+
+- **Download the ZIP:** on the project page on GitHub
+  (<https://github.com/Slartibart23/local-lantern-talk>) click the green **Code** button
+  → **Download ZIP**. Open the ZIP; it contains one folder, `local-lantern-talk-main`.
+  Copy **its contents** (`install.bat`, `start.bat`, `app`, `config`, …) into your new
+  folder. Optional: to avoid a Windows warning for every script, open PowerShell in the
+  folder and run `Get-ChildItem -Recurse | Unblock-File`.
+- **Or clone it with git** (makes updates easiest — `update.bat` then simply pulls the
+  new version):
+
+  ```
+  git clone https://github.com/Slartibart23/local-lantern-talk D:\LocalLanternTalk
+  ```
+
 ## Install
 
-1. Put the program folder where you want it, e.g. `D:\Local Lantern Talk`.
-   Spaces in the path are fine. Avoid non-ASCII characters (umlauts) and very long
-   paths; the installer warns about both.
-2. Double-click **`install.bat`**. (In a PowerShell terminal type `.\install.bat` —
-   PowerShell does not run programs from the current folder without the `.\` prefix.
-   The same applies to `.\start.bat`.)
+Run the installer in a **command window** so you can read all its messages:
+
+1. Open your folder in Explorer, click into the address bar, type `cmd` and press
+   **Enter**. A command window opens in that folder.
+2. Type `install.bat` and press **Enter**. (Double-clicking `install.bat` works too; its
+   window stays open at the end. In a PowerShell window type `.\install.bat`.)
 3. The installer checks the GPU, driver, free space and file system, then shows
    what it will download and asks before it starts.
 4. When it asks about the **starter language model**, answer *Y* unless you want
-   to add a model yourself. Without a language model the app cannot answer.
-   (A model catalog with one-click downloads follows in a later version.)
+   to add a model yourself. Without a language model the app cannot answer. More
+   models can be downloaded later in the app (**Change model…**).
 5. At the end the **self-test** runs. It plays a short English test sentence on
    your speakers and asks you to say a sentence into the microphone.
-6. Start the app with **`start.bat`**.
+6. Start the app: type `start.bat` in the same window (or double-click it). Loading
+   the models takes up to 2 minutes; the browser page shows a loading screen and tells
+   you when it is ready.
+
+If something fails, copy the messages from the command window into Claude
+(<https://claude.ai>) and ask what to do — see also [troubleshooting.md](troubleshooting.md).
 
 `install.bat` can be run again at any time. Finished steps are skipped, and
 interrupted downloads continue where they stopped. Run it again after an NVIDIA
@@ -65,8 +89,8 @@ Options (for advanced users), e.g. `install.bat -Yes`:
 | Starter model Gemma 4 12B (optional) | 7.1–8.4 GB | `models\llm` |
 
 Every runtime download (uv, llama.cpp, ffmpeg) is verified with a pinned SHA-256
-checksum. The 8 built-in voices are not downloaded: they are generated on your GPU
-during installation (about a minute).
+checksum. The 8 built-in voices come with the app (`config\builtin_voices\`, under 1 MB);
+the installer only prepares them for OmniVoice (a few seconds).
 
 ## Hardware profiles
 

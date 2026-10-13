@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-LOG_HINT = "Details are in logs\\server.log."
+LOG_HINT = "Details are in logs\\server.log; Claude (claude.ai) can help you make sense of them."
 
 GPU_MEMORY = ("The GPU ran out of memory. Pick a smaller model or quantization (Change model…), "
               "lower the context length in Settings, or turn voice output off to free memory.")

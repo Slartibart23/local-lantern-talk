@@ -15,6 +15,10 @@ this project. Each is used under its own license.
 | Silero VAD | [snakers4/silero-vad](https://github.com/snakers4/silero-vad) | MIT |
 | Language models (catalog, starter model, your own) | Hugging Face, see `config\model_catalog.yaml` | Each model's own license (e.g. Gemma terms of use, Apache-2.0, Mistral licenses), shown in the model catalog. You accept it when you download the model. |
 
+The 8 built-in voice clips in `config\builtin_voices\` were generated with OmniVoice
+voice design (synthetic voices, no recordings of real people) and are shipped with the
+app for that reason.
+
 > **Non-commercial use:** the OmniVoice model weights are licensed for non-commercial
 > use only. Because every spoken reply (built-in and cloned voices) is produced with
 > them, using Local Lantern Talk's voice output commercially is not permitted by that

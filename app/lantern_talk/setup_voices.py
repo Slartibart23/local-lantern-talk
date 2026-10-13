@@ -1,9 +1,11 @@
-"""Generates the 8 built-in voices with OmniVoice voice design (spec §7.2).
+"""Prepares the 8 built-in voices (spec §7.2).
 
-Run by the installer; also usable to regenerate them:
-``python -m lantern_talk.setup_voices [--regenerate]``.
-Every generated reference clip is checked with Whisper (voice design occasionally
-produces noise instead of speech) and regenerated if it does not match its text.
+Run by the installer. The reference clips are shipped in ``config\\builtin_voices``;
+this builds their OmniVoice prompts in ``models\\builtin_voices`` (a few seconds).
+``--regenerate`` designs new clips with OmniVoice voice design instead; every
+generated clip is checked with Whisper (voice design occasionally produces noise
+instead of speech) and generated again if it does not match its text.
+``python -m lantern_talk.setup_voices [--regenerate]``
 """
 
 from __future__ import annotations
@@ -44,7 +46,8 @@ def main(argv: list[str] | None = None) -> int:
     if not todo:
         print("    All 8 built-in voices are present.")
         return 0
-    print(f"    Generating {len(todo)} built-in voice(s) on the GPU ...")
+    verb = "Generating new" if args.regenerate else "Preparing"
+    print(f"    {verb} {len(todo)} built-in voice(s) on the GPU ...")
     t0 = time.perf_counter()
     try:
         for v in todo:

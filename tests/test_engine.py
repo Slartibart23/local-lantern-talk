@@ -88,6 +88,7 @@ class FakeVoices:
         self.builtins = load_builtin_voices(ROOT / "config" / "builtin_voices.yaml")
         self.prepared: list[str] = []
         self.texts: dict[str, tuple[str, str]] = {}
+        self.languages: dict[str, str] = {}
 
     def prompt_for(self, voice: str) -> object:
         self.prepared.append(voice)
@@ -117,7 +118,16 @@ class FakeVoices:
         return analyze(audio, audio).to_dict()
 
     def custom_language(self, source: Path) -> str | None:
-        return "de"
+        return self.languages.get(source.name, "de")
+
+    def user_language(self, source: Path) -> str | None:
+        return self.languages.get(source.name)
+
+    def set_language(self, source: Path, code: str) -> None:
+        if code:
+            self.languages[source.name] = code
+        else:
+            self.languages.pop(source.name, None)
 
     def forget(self, source: Path) -> None:
         self.forgotten = [*getattr(self, "forgotten", []), source.name]
@@ -638,3 +648,22 @@ def test_error_messages_are_friendly() -> None:
     assert describe(httpx.ConnectError("refused")) == LLM_CONNECTION
     msg = describe(ValueError("bad value\nTraceback line"), "Speech synthesis")
     assert msg.startswith("Speech synthesis failed (bad value).") and "logs\\server.log" in msg
+
+
+def test_custom_voice_language_can_be_chosen(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    voice = engine.add_voice("anna.wav", wav_bytes(4))["id"]
+    start = len(rec.events)
+    engine.update_settings({"voice": voice})
+    rec.wait_for(lambda ev: any(e["type"] == "voice_info" and e["voice"] == voice for e in ev[start:]))
+    start = len(rec.events)
+    engine.set_voice_language(voice, "fr")
+    rec.wait_for(lambda ev: any(e["type"] == "voice_info" and e.get("language") == "fr" for e in ev[start:]))
+    info = engine.voice_info()
+    assert info["language_set"] is True
+    start = len(rec.events)
+    engine.set_voice_language(voice, "xx")
+    rec.wait_for(lambda ev: any(e["type"] == "error" for e in ev[start:]))
+    start = len(rec.events)
+    engine.set_voice_language("builtin:de_female", "fr")
+    rec.wait_for(lambda ev: any(e["type"] == "error" and "fixed language" in e["message"] for e in ev[start:]))

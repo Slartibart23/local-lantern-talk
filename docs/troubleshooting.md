@@ -1,5 +1,9 @@
 # Troubleshooting
 
+**Getting help:** copy the error message — from the command window or from
+`logs\server.log` — into Claude (<https://claude.ai>) and ask what to do. Describe what
+you did right before the error; Claude can usually explain the message and the fix.
+
 Most problems show a message in the app. Full details are always in `logs\`:
 `server.log` (the app), `llama-server.log` (the language model), `selftest.log` and the
 setup logs. Re-running `install.bat` is safe: it repairs missing parts and skips what is

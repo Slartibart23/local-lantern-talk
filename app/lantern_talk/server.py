@@ -246,6 +246,8 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
                     engine.delete_voice(str(data.get("voice", "")))
                 elif kind == "regenerate_builtin_voices":
                     engine.regenerate_builtin_voices()
+                elif kind == "voice_language":
+                    engine.set_voice_language(str(data.get("voice", "")), str(data.get("language", ""))[:8])
                 elif kind == "reference_text":
                     engine.set_reference_text(str(data.get("voice", "")), str(data.get("text", "")))
                 elif kind == "select_character":
@@ -346,7 +348,8 @@ def main(argv: list[str] | None = None) -> int:
 
     url = f"http://{HOST}:{port}"
     print(f"Local Lantern Talk is starting at {url}")
-    print("Keep this window open while you use the app; close it to quit.")
+    print("Loading the models can take up to 2 minutes; the browser page tells you when it is ready.")
+    print("Keep this window open while you use the app; close it (or click Quit app) to quit.")
     print(f"Log file: {log_file}")
     config = uvicorn.Config(create_app(paths, port), host=HOST, port=port, log_level="warning",
                             access_log=False, ws_max_size=8 * 2**20, timeout_graceful_shutdown=5)
