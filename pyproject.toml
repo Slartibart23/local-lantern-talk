@@ -1,0 +1,40 @@
+[project]
+name = "local-lantern-talk"
+version = "0.1.0"
+description = "Fully local voice conversations with a local LLM and a cloned voice."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "torch==2.8.0",
+    "torchaudio==2.8.0",
+    "omnivoice==0.2.1",
+    "faster-whisper==1.2.1",
+    "ctranslate2==4.8.2",
+    "huggingface-hub>=1.0",
+    "numpy>=2.0",
+    "soundfile>=0.13",
+    "sounddevice==0.5.6",
+    "httpx==0.28.1",
+    "pyyaml==6.0.3",
+]
+
+[dependency-groups]
+dev = ["pytest==9.1.1"]
+
+[tool.uv]
+# This is an application, not a library: dependencies only, no build step.
+package = false
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["app"]

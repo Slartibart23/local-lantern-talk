@@ -1,0 +1,33 @@
+# Downloaded / generated content — never commit
+/runtime/
+/models/
+/user_data/
+/logs/
+/tmp/
+/cache/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.egg-info/
+
+# Audio files anywhere in the tree (keeps personal recordings out of git)
+*.mp3
+*.wav
+*.flac
+*.ogg
+
+# Model weights
+*.gguf
+*.safetensors
+*.bin
+*.pt
+
+# OS / editor
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
