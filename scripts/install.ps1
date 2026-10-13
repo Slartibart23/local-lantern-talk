@@ -17,12 +17,20 @@
     Do not download the starter language model.
 .PARAMETER NoMicTest
     Skip the interactive microphone part of the self-test.
+.PARAMETER UpdateOnly
+    Used by update.bat: bring uv, the Python packages, llama.cpp and ffmpeg up to date,
+    but never touch models\ or user_data\ (no model downloads, no voice generation,
+    no hardware profile written). Implies -NoMicTest.
+.PARAMETER NoSelfTest
+    Skip the self-test at the end.
 #>
 [CmdletBinding()]
 param(
     [switch]$Yes,
     [switch]$NoStarterModel,
-    [switch]$NoMicTest
+    [switch]$NoMicTest,
+    [switch]$UpdateOnly,
+    [switch]$NoSelfTest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -231,16 +239,18 @@ Add-Plan 'uv (Python manager)' $Pins.uv.download_mb (-not (Test-Path -LiteralPat
 Add-Plan "Python $($Pins.python) + packages incl. PyTorch (CUDA 12.8)" ($Pins.python_packages_download_mb + 21) (-not (Test-Path -LiteralPath $Python))
 Add-Plan "llama.cpp $($Pins.llama_cpp.tag) ($($build.name))" $build.download_mb (-not (Test-Path -LiteralPath $LlamaMarker))
 Add-Plan "ffmpeg $($Pins.ffmpeg.version)" $Pins.ffmpeg.download_mb (-not (Test-Path -LiteralPath $FfmpegMarker))
-Add-Plan 'Whisper large-v3-turbo (speech recognition)' $Pins.models.whisper.'large-v3-turbo'.download_mb (-not (Test-Path -LiteralPath (Join-Path $Models 'whisper\large-v3-turbo\model.bin')))
-Add-Plan 'OmniVoice (speech synthesis)' $Pins.models.omnivoice.download_mb (-not (Test-Path -LiteralPath (Join-Path $Models 'omnivoice\model.safetensors')))
-Add-Plan 'Silero VAD + fonts' ($Pins.models.vad.download_mb + $Pins.fonts.download_mb) (-not (Test-Path -LiteralPath (Join-Path $Models 'vad\silero_vad.jit')))
+if (-not $UpdateOnly) {
+    Add-Plan 'Whisper large-v3-turbo (speech recognition)' $Pins.models.whisper.'large-v3-turbo'.download_mb (-not (Test-Path -LiteralPath (Join-Path $Models 'whisper\large-v3-turbo\model.bin')))
+    Add-Plan 'OmniVoice (speech synthesis)' $Pins.models.omnivoice.download_mb (-not (Test-Path -LiteralPath (Join-Path $Models 'omnivoice\model.safetensors')))
+    Add-Plan 'Silero VAD + fonts' ($Pins.models.vad.download_mb + $Pins.fonts.download_mb) (-not (Test-Path -LiteralPath (Join-Path $Models 'vad\silero_vad.jit')))
+}
 
-# Starter language model (temporary until the in-app model catalog of milestone M4).
+# Starter language model: offered when no language model is installed yet.
 $StarterQuant = if ($Gpu.VramMiB -ge $HighProfileMinMiB) { 'Q5_K_M' } else { 'Q4_K_M' }
 $starter = $Pins.starter_llm.files.$StarterQuant
 $haveLlm = @(Get-ChildItem -LiteralPath (Join-Path $Models 'llm') -Filter '*.gguf' -ErrorAction SilentlyContinue).Count -gt 0
 $WantStarter = $false
-if (-not $haveLlm -and -not $NoStarterModel) {
+if (-not $haveLlm -and -not $NoStarterModel -and -not $UpdateOnly) {
     Write-Host ''
     Write-Note (Format-Invariant 'No language model is installed yet. The starter model is {0} ({1}, {2:N1} GB, Apache-2.0).' @($Pins.starter_llm.display_name, $StarterQuant, ($starter.download_mb / 1000)))
     Write-Note 'Without a language model the app cannot answer. More models can be downloaded later in the app.'
@@ -337,6 +347,7 @@ if (-not (Test-Path -LiteralPath $FfmpegMarker)) {
 }
 Write-Ok "ffmpeg $($Pins.ffmpeg.version)"
 
+if (-not $UpdateOnly) {  # update.bat never touches models\ or user_data\
 # ============================================================================ 5. hardware profile
 Write-Step 'Hardware profile'
 Invoke-Python @('-m', 'lantern_talk.hardware', '--write') 'Hardware detection'
@@ -350,19 +361,27 @@ Invoke-Python $modelArgs 'Model download'
 # ============================================================================ 7. built-in voices
 Write-Step 'Built-in voices (generated locally with OmniVoice voice design)'
 Invoke-Python @('-m', 'lantern_talk.setup_voices') 'Built-in voice generation'
+}
 
 # Everything is unpacked; the archives are not needed any more (about 0.7 GB).
 Get-ChildItem -LiteralPath $Downloads -Filter '*.zip' -ErrorAction SilentlyContinue | Remove-Item -Force
 
 # ============================================================================ 8. self-test
+if ($NoSelfTest) {
+    Write-Host ''
+    Write-Host 'Done (self-test skipped).' -ForegroundColor Green
+    exit 0
+}
 Write-Step 'Self-test'
 $testArgs = @('-m', 'lantern_talk.selftest')
-if ($NoMicTest -or $Yes) { $testArgs += '--no-mic' }
+if ($NoMicTest -or $Yes -or $UpdateOnly) { $testArgs += '--no-mic' }
 & $Python @testArgs
 $selfTestOk = $LASTEXITCODE -eq 0
 
 Write-Host ''
-if ($selfTestOk) {
+if ($selfTestOk -and $UpdateOnly) {
+    Write-Host 'Runtime is up to date and the self-test passed.' -ForegroundColor Green
+} elseif ($selfTestOk) {
     Write-Host 'Installation complete. Start Local Lantern Talk with start.bat' -ForegroundColor Green
 } else {
     Write-Host 'Installation finished, but the self-test found problems (see above).' -ForegroundColor Yellow

@@ -1,5 +1,9 @@
 {
   "_comment": "Pinned versions of everything the installer downloads. Update deliberately and test.",
+  "app": {
+    "_comment": "GitHub repository that update.bat downloads releases from (when the folder is not a git checkout).",
+    "repository": "Slartibart23/local-lantern-talk"
+  },
   "uv": {
     "version": "0.13.0",
     "url": "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-x86_64-pc-windows-msvc.zip",
