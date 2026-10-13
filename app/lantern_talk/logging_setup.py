@@ -26,7 +26,8 @@ def setup_logging(log_dir: Path, name: str, console_level: int = logging.WARNING
     console.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
     root.addHandler(console)
 
-    for noisy in ("httpx", "httpcore", "urllib3", "faster_whisper", "transformers", "huggingface_hub", "filelock"):
+    for noisy in ("httpx", "httpcore", "urllib3", "faster_whisper", "transformers", "huggingface_hub", "filelock",
+                  "torio", "torchaudio"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     logging.captureWarnings(True)
     warnings.filterwarnings("ignore", category=FutureWarning)
