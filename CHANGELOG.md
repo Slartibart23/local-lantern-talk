@@ -41,6 +41,8 @@ project uses [Semantic Versioning](https://semver.org/).
   output checked by Whisper, microphone). Options `-Yes`, `-NoStarterModel`, `-NoMicTest`.
 - `docs/installation.md` with requirements, hardware profiles, measured VRAM and the
   expected Windows warnings.
+- `docs/voices.md`: clip length limits, what makes a good reference recording, and how
+  to provide the transcript yourself instead of using Whisper.
 - Git pre-commit hook and test that keep personal data and binaries out of the repository.
 
 ### Changed

@@ -59,7 +59,8 @@ One browser tab is active at a time; opening a second tab takes over.
 - **Your own voices**: *Add voice…* uploads an MP3 / WAV / FLAC / OGG clip
   (3–10 s of clean speech works best) into `user_data\voices\`. Whisper transcribes
   it; check and correct the *Reference text* — an exact transcript clones better.
-  It is saved as `clip.txt` next to `clip.mp3`.
+  It is saved as `clip.txt` next to `clip.mp3`. Clip length, what makes a good
+  recording and how to provide the transcript without Whisper: [docs/voices.md](docs/voices.md).
 - **Speech quality**: synthesis steps (16–64) and precision (fp16 / bf16 / fp32).
   Default: 32 steps, fp16. On an RTX 5090, 64 steps add about 1 s before each reply.
 - **Language model**: any GGUF file in `models\llm\` can be selected.

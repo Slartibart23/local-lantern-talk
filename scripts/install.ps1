@@ -351,6 +351,9 @@ Invoke-Python $modelArgs 'Model download'
 Write-Step 'Built-in voices (generated locally with OmniVoice voice design)'
 Invoke-Python @('-m', 'lantern_talk.setup_voices') 'Built-in voice generation'
 
+# Everything is unpacked; the archives are not needed any more (about 0.7 GB).
+Get-ChildItem -LiteralPath $Downloads -Filter '*.zip' -ErrorAction SilentlyContinue | Remove-Item -Force
+
 # ============================================================================ 8. self-test
 Write-Step 'Self-test'
 $testArgs = @('-m', 'lantern_talk.selftest')
