@@ -295,3 +295,26 @@ def test_a_new_turn_continues_the_resumed_chat(setup) -> None:  # noqa: ANN001
     _turn(engine2, rec2, "Weiter geht's.")
     assert engine2.resume is None
     assert engine2.snapshot()["resume"] is None
+
+
+@pytest.mark.parametrize("values", [{"vad_threshold": 1.5}, {"context": 5000}, {"session_bitrate_kbps": 50},
+                                    {"session_gap_ms": 9000}, {"hardware_profile_override": "huge"}])
+def test_invalid_settings_are_rejected_and_rolled_back(setup, values: dict) -> None:  # noqa: ANN001
+    engine, comps, rec = setup()
+    before = dict(vars(engine.store.settings))
+    start = len(rec.events)
+    engine.update_settings(values)
+    _wait(rec, "error", start)
+    assert vars(engine.store.settings) == before
+
+
+def test_settings_screen_values_apply(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup()
+    start = len(rec.events)
+    engine.update_settings({"vad_threshold": 0.6, "session_bitrate_kbps": 96, "session_gap_ms": 800,
+                            "hardware_profile_override": "mid"})
+    _wait(rec, "settings", start, lambda e: e["settings"]["session_bitrate_kbps"] == 96)
+    assert engine.segmenter.config.threshold == 0.6
+    assert engine.segmenter.config.neg_threshold == pytest.approx(0.45)
+    assert engine.gpu_summary()["profile"] == "mid"
+    assert {p["name"] for p in engine.snapshot()["profiles"]} == {"high", "mid", "low", "unsupported"}

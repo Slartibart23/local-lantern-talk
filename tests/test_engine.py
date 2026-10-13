@@ -616,3 +616,25 @@ def test_label_for_hand_copied_model(setup) -> None:  # noqa: ANN001
     rec.wait_for(lambda ev: any(e["type"] == "models" for e in ev))
     local = [m for m in engine.list_models() if m["source"] == "local"][0]
     assert local["variant"] == "uncensored"
+
+
+def test_crashed_language_model_is_restarted_before_the_next_turn(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    comps.server.running = False  # llama-server died on its own
+    start = len(rec.events)
+    engine.submit_text("Hallo!")
+    rec.wait_for(lambda ev: any(e["type"] == "turn_done" for e in ev[start:]))
+    assert comps.server.started_with == ["test-model-Q4_K_M.gguf"] * 2
+    assert any(e["type"] == "notice" and "started again" in e["message"] for e in rec.events[start:])
+    engine.playback_ended()
+
+
+def test_error_messages_are_friendly() -> None:
+    import httpx
+
+    from lantern_talk.errors import GPU_MEMORY, LLM_CONNECTION, describe
+
+    assert describe(RuntimeError("CUDA out of memory. Tried to allocate 2.00 GiB")) == GPU_MEMORY
+    assert describe(httpx.ConnectError("refused")) == LLM_CONNECTION
+    msg = describe(ValueError("bad value\nTraceback line"), "Speech synthesis")
+    assert msg.startswith("Speech synthesis failed (bad value).") and "logs\\server.log" in msg

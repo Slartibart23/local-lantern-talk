@@ -42,6 +42,9 @@ const app = {
   recording: null,      // files of the session being recorded
   viewing: null,        // a past session opened read-only
   replay: null,         // the message being replayed
+  profiles: [],         // hardware profiles for the settings screen
+  version: "",
+  speakerOut: null,     // Web Audio node that reaches the chosen speaker (Firefox)
   endingChat: false,
   character: null,      // the active character
   memory: null,         // facts and summary of the active character
@@ -88,6 +91,8 @@ function handleEvent(msg) {
       renderTranscript(msg.transcript);
       renderVoiceInfo(msg.voice_info);
       applyCharacterState(msg);
+      app.profiles = msg.profiles || [];
+      app.version = msg.version || "";
       app.sessions = msg.sessions || [];
       app.recording = msg.recording || null;
       renderSessions();
@@ -381,7 +386,7 @@ function handleAudio(buffer) {
   audioBuffer.copyToChannel(samples, 0);
   const src = ctx.createBufferSource();
   src.buffer = audioBuffer;
-  src.connect(ctx.destination);
+  src.connect(speakerNode());
   const pb = app.playback;
   const startAt = Math.max(ctx.currentTime + 0.03, pb.nextTime);
   src.start(startAt);
@@ -403,6 +408,7 @@ function checkPlaybackEnd() {
 async function startAudio() {
   app.audioCtx = new AudioContext({ latencyHint: "interactive" });
   await app.audioCtx.resume();
+  await applyOutputDevice();
   send({ type: "mic_format", sample_rate: app.audioCtx.sampleRate });
   if (app.settings.mic_enabled !== false) await startMic();
 }
@@ -410,9 +416,15 @@ async function startAudio() {
 async function startMic() {
   if (app.micNode || !app.audioCtx) return;
   try {
-    app.micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
+    const audio = { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+    const device = storageGet("llt.inputDevice");
+    try {
+      app.micStream = await navigator.mediaDevices.getUserMedia({ audio: device ? { ...audio, deviceId: { exact: device } } : audio });
+    } catch (err) {
+      if (!device || err.name === "NotAllowedError") throw err;
+      storageSet("llt.inputDevice", "");  // the chosen microphone is gone: use the default one
+      app.micStream = await navigator.mediaDevices.getUserMedia({ audio });
+    }
   } catch (err) {
     const firstTime = !app.micError;  // settings updates retry; tell the user only once
     app.micError = true;
@@ -653,6 +665,7 @@ function applySettings() {
   setSelect($("tts-steps"), String(s.num_step), `${s.num_step} steps`);
   $("tts-precision").value = s.tts_precision;
   $("end-silence-out").textContent = `${s.end_silence_ms} ms`;
+  if (!$("settings").hidden) renderSettings();
   $("messages").classList.toggle("hide-actions", !s.show_actions);
   renderHeader();
   renderCurrentModel();
@@ -1146,6 +1159,116 @@ function closeSession() {
   $("text-input").focus();
 }
 
+// ---------------------------------------------------------------- settings (spec §14.3)
+
+function storageGet(key) {
+  try { return localStorage.getItem(key) || ""; } catch { return ""; }
+}
+
+function storageSet(key, value) {
+  try { if (value) localStorage.setItem(key, value); else localStorage.removeItem(key); } catch { /* private mode */ }
+}
+
+function openSettings() {
+  renderSettings();
+  refreshDevices();
+  $("app").classList.remove("show-left");
+  $("settings").hidden = false;
+  $("close-settings").focus();
+}
+
+function closeSettings() {
+  $("settings").hidden = true;
+  $("open-settings").focus();
+}
+
+function renderSettings() {
+  const s = app.settings;
+  $("settings-version").textContent = app.version ? `Local Lantern Talk ${app.version} · settings are saved in user_data\\settings.json` : "";
+  $("set-voice-output").checked = !!s.voice_output;
+  $("vad-threshold").value = s.vad_threshold;
+  $("vad-threshold-out").textContent = Number(s.vad_threshold).toFixed(2);
+  setSelect($("context-size"), String(s.context), `${s.context} tokens`);
+  $("set-record-sessions").checked = !!s.record_sessions;
+  setSelect($("session-bitrate"), String(s.session_bitrate_kbps), `${s.session_bitrate_kbps} kbit/s`);
+  $("session-gap").value = s.session_gap_ms;
+  $("session-gap-out").textContent = `${(s.session_gap_ms / 1000).toFixed(1)} s`;
+  const sel = $("hardware-profile");
+  sel.innerHTML = "";
+  const detected = s.hardware_profile || "high";
+  sel.append(new Option(`Automatic (detected: ${detected})`, ""));
+  for (const p of app.profiles) sel.append(new Option(`${p.name} — ${p.description}`, p.name));
+  sel.value = s.hardware_profile_override || "";
+}
+
+async function refreshDevices() {
+  const inSel = $("input-device");
+  const outSel = $("output-device");
+  let devices = [];
+  try { devices = await navigator.mediaDevices.enumerateDevices(); } catch { /* no permission yet */ }
+  const fill = (sel, kind, stored, fallback) => {
+    sel.innerHTML = "";
+    sel.append(new Option("System default", ""));
+    devices.filter((d) => d.kind === kind && d.deviceId && d.deviceId !== "default").forEach((d, i) => {
+      sel.append(new Option(d.label || `${fallback} ${i + 1}`, d.deviceId));
+    });
+    sel.value = [...sel.options].some((o) => o.value === stored) ? stored : "";
+  };
+  fill(inSel, "audioinput", storageGet("llt.inputDevice"), "Microphone");
+  fill(outSel, "audiooutput", storageGet("llt.outputDevice"), "Speaker");
+  const canPickOutput = typeof AudioContext.prototype.setSinkId === "function" ||
+                        typeof HTMLMediaElement.prototype.setSinkId === "function";
+  outSel.disabled = !canPickOutput;
+  if (!canPickOutput) $("device-hint").textContent = "This browser always plays on the system's default device.";
+}
+
+async function chooseInputDevice(id) {
+  storageSet("llt.inputDevice", id);
+  if (app.micStream) {
+    stopMic();
+    await startMic();
+  }
+}
+
+async function chooseOutputDevice(id) {
+  storageSet("llt.outputDevice", id);
+  await applyOutputDevice();
+}
+
+// Speech is played through Web Audio. Chrome can point the AudioContext at a device;
+// Firefox cannot, so the speech is routed through an <audio> element that can.
+async function applyOutputDevice() {
+  const id = storageGet("llt.outputDevice");
+  const replayEl = $("replay-audio");
+  try { if (replayEl.setSinkId) await replayEl.setSinkId(id); } catch { /* device gone: default */ }
+  const ctx = app.audioCtx;
+  if (!ctx) return;
+  try {
+    if (typeof ctx.setSinkId === "function") {
+      await ctx.setSinkId(id);
+      app.speakerOut = null;
+    } else if (id && typeof HTMLMediaElement.prototype.setSinkId === "function") {
+      if (!app.speakerEl) {
+        app.speakerDest = ctx.createMediaStreamDestination();
+        app.speakerEl = new Audio();
+        app.speakerEl.srcObject = app.speakerDest.stream;
+      }
+      await app.speakerEl.setSinkId(id);
+      await app.speakerEl.play();
+      app.speakerOut = app.speakerDest;
+    } else {
+      app.speakerOut = null;
+    }
+  } catch {
+    app.speakerOut = null;
+    toast("The chosen speaker is not available; using the default device.");
+  }
+}
+
+function speakerNode() {
+  return app.speakerOut || app.audioCtx.destination;
+}
+
 // ---------------------------------------------------------------- misc UI
 
 let toastTimer = null;
@@ -1286,6 +1409,20 @@ function init() {
   $("voice-file").onchange = (e) => uploadVoice(e.target);
   $("new-char").onclick = () => openEditor(null);
   $("quit-app").onclick = quitApp;
+  $("open-settings").onclick = openSettings;
+  $("close-settings").onclick = closeSettings;
+  $("settings").onclick = (e) => { if (e.target === $("settings")) closeSettings(); };
+  $("input-device").onchange = (e) => chooseInputDevice(e.target.value);
+  $("output-device").onchange = (e) => chooseOutputDevice(e.target.value);
+  $("set-voice-output").onchange = (e) => changeSetting("voice_output", e.target.checked);
+  $("set-record-sessions").onchange = (e) => changeSetting("record_sessions", e.target.checked);
+  $("vad-threshold").oninput = (e) => { $("vad-threshold-out").textContent = Number(e.target.value).toFixed(2); };
+  $("vad-threshold").onchange = (e) => changeSetting("vad_threshold", Number(e.target.value));
+  $("context-size").onchange = (e) => changeSetting("context", Number(e.target.value));
+  $("hardware-profile").onchange = (e) => changeSetting("hardware_profile_override", e.target.value);
+  $("session-bitrate").onchange = (e) => changeSetting("session_bitrate_kbps", Number(e.target.value));
+  $("session-gap").oninput = (e) => { $("session-gap-out").textContent = `${(e.target.value / 1000).toFixed(1)} s`; };
+  $("session-gap").onchange = (e) => changeSetting("session_gap_ms", Number(e.target.value));
   $("close-session").onclick = closeSession;
   $("open-sessions").onclick = () => send({ type: "open_sessions_folder" });
   $("record-sessions").onchange = (e) => changeSetting("record_sessions", e.target.checked);
@@ -1315,6 +1452,7 @@ function init() {
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
       if (!$("char-editor").hidden) closeEditor();
+      else if (!$("settings").hidden) closeSettings();
       else if (app.replay) stopReplay();
       else if (app.viewing) closeSession();
       else if (!$("catalog").hidden) closeCatalog();

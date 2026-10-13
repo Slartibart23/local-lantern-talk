@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from .errors import describe as describe_error
+from .errors import is_out_of_memory
 from .llm import ChatMessage, LLMClient
 from .prompts import build_system_prompt
 from .sanitizer import ActionFilter, Segment, clean_for_speech
@@ -195,7 +197,7 @@ class Conversation:
                     push_sentence(sentence)
             except Exception as exc:  # noqa: BLE001 - reported to the user as a turn error
                 log.exception("LLM stream failed")
-                errors.append(f"The language model failed: {exc}")
+                errors.append(describe_error(exc, "The language model"))
             finally:
                 metrics.mark("llm_done")
                 sentences.put(_END)
@@ -236,7 +238,9 @@ class Conversation:
                     index += 1
             except Exception as exc:  # noqa: BLE001
                 log.exception("TTS failed")
-                errors.append(f"Speech synthesis failed: {exc}")
+                errors.append(describe_error(exc, "Speech synthesis"))
+                if is_out_of_memory(exc):
+                    _release_gpu_cache()
                 while sentences.get() is not _END:  # drain so the LLM worker never blocks
                     pass
             finally:
@@ -261,3 +265,14 @@ class Conversation:
             self.history.append(ChatMessage("user", user_text))
             self.history.append(ChatMessage("assistant", reply))
         yield TurnDone(reply, metrics)
+
+
+def _release_gpu_cache() -> None:
+    """After a CUDA out-of-memory error, give the cached blocks back so the next turn can work."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:  # noqa: BLE001
+        log.debug("Could not empty the CUDA cache", exc_info=True)

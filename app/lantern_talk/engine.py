@@ -32,8 +32,10 @@ import numpy as np
 from .audio_prep import VOICE_EXTENSIONS
 from .characters import Character, CharacterError, CharacterStore
 from .downloads import DownloadJob
+from .errors import describe as describe_error
 from .gpu import query_gpu
-from .hardware import effective_profile
+from . import __version__
+from .hardware import PROFILES, effective_profile
 from .llm import NO_THINKING_ARGS, ChatMessage, LlamaServer, LLMClient, SamplingConfig, ServerConfig
 from .memory import (
     FACT_UPDATE_EVERY, FACTS_PROMPT, FACTS_SYSTEM, SUMMARY_PROMPT, SUMMARY_SYSTEM, MemoryStore, estimate_tokens,
@@ -82,6 +84,8 @@ class State(str, Enum):
 
 
 IDLE_STATES = {State.LISTENING, State.PAUSED, State.MIC_OFF}
+CONTEXT_SIZES = (2048, 4096, 8192, 16384, 32768, 65536)
+SESSION_BITRATES = (32, 48, 64, 96, 128)
 
 
 @dataclass
@@ -269,6 +273,8 @@ class Engine:
             "memory": self.memory_view(),
             "resume": self.resume,
             "sessions": list_sessions(self.paths.sessions),
+            "profiles": [{"name": p.name, "description": p.description} for p in PROFILES.values()],
+            "version": __version__,
             "recording": self.recorder.files(),
         }
 
@@ -501,7 +507,7 @@ class Engine:
                 self._enter_idle()
             except Exception as exc:  # noqa: BLE001 - details go to the log
                 log.exception("Command %s failed", name)
-                self._emit({"type": "error", "message": f"Something went wrong ({exc}). Details are in logs\\server.log."})
+                self._emit({"type": "error", "message": describe_error(exc)})
                 self._enter_idle()
 
     # -- model catalog ----------------------------------------------------------------
@@ -716,6 +722,7 @@ class Engine:
 
     def _turn(self, text: str, language: str | None, source: str, stt_ms: int | None = None,
               audio: np.ndarray | None = None, audio_sr: int = 0) -> None:
+        self._recover_llm()
         if self.fatal_error or not self.c.server.running:
             raise UserError(self.fatal_error or "The language model is not loaded.")
         self._set_state(State.THINKING, "")
@@ -779,6 +786,16 @@ class Engine:
         self._enter_idle()
         if reply_text:
             self._maintain_memory()  # between turns; a new utterance waits in the queue
+
+    def _recover_llm(self) -> None:
+        """llama-server stopped on its own (crash, killed): start it again before the next turn."""
+        if self.fatal_error or self.c.server.running or self._loaded_model is None:
+            return
+        log.warning("llama-server is not running any more; restarting it")
+        self._loaded_model = None
+        self.vram_mb.pop("llm", None)
+        self._ensure_llm()
+        self._emit({"type": "notice", "message": "The language model had stopped and was started again."})
 
     def _display_voice(self, ref: str | None) -> str | None:
         if ref is None:
@@ -1269,10 +1286,12 @@ class Engine:
 
     def _apply_changes(self, changed: dict[str, Any]) -> None:
         s = self.store.settings
+        self._validate(changed)
         if "end_silence_ms" in changed:
             self.segmenter.config.end_silence_ms = s.end_silence_ms
         if "vad_threshold" in changed:
             self.segmenter.config.threshold = s.vad_threshold
+            self.segmenter.config.neg_threshold = max(0.1, s.vad_threshold - 0.15)
         if "match_language" in changed:
             self.conversation.config.match_language = s.match_language
         if "num_step" in changed:
@@ -1308,6 +1327,23 @@ class Engine:
             self._save_character_from_settings(changed)
         if changed.keys() - {"show_actions"}:
             self._enter_idle()
+
+    def _validate(self, changed: dict[str, Any]) -> None:
+        """Reject values the settings screen never sends (hand-edited or stale clients)."""
+        s = self.store.settings
+        checks = {
+            "vad_threshold": (0.2 <= s.vad_threshold <= 0.9, "Speech detection must be between 0.2 and 0.9."),
+            "end_silence_ms": (200 <= s.end_silence_ms <= 3000, "End of speech must be between 200 and 3000 ms."),
+            "context": (s.context in CONTEXT_SIZES, f"Context length must be one of {', '.join(map(str, CONTEXT_SIZES))}."),
+            "session_bitrate_kbps": (s.session_bitrate_kbps in SESSION_BITRATES,
+                                     f"MP3 quality must be one of {', '.join(map(str, SESSION_BITRATES))} kbit/s."),
+            "session_gap_ms": (0 <= s.session_gap_ms <= 3000, "The pause between turns must be 0 to 3000 ms."),
+            "hardware_profile_override": (s.hardware_profile_override in ("", *PROFILES),
+                                          f"Unknown hardware profile {s.hardware_profile_override}."),
+        }
+        for key, (ok, message) in checks.items():
+            if key in changed and not ok:
+                raise UserError(message)
 
     def _save_character_from_settings(self, changed: dict[str, Any]) -> None:
         """Voice and show-actions picked in the side panel belong to the active character (spec §10)."""

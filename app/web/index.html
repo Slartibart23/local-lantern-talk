@@ -47,6 +47,9 @@
         <p class="muted small" id="no-sessions">No recorded sessions yet.</p>
       </section>
       <div class="quit-area">
+        <button type="button" id="open-settings" class="secondary quit-btn settings-btn">
+          <svg aria-hidden="true"><use href="#i-sliders"/></svg><span>Settings</span>
+        </button>
         <button type="button" id="quit-app" class="secondary quit-btn">
           <svg aria-hidden="true"><use href="#i-power"/></svg><span>Quit app</span>
         </button>
@@ -149,25 +152,6 @@
         </div>
         <label class="switch"><input type="checkbox" id="match-language"><span>Match built-in voice to spoken language</span></label>
         <p class="hint">Add a clip with 3–10 s of clean speech to clone a voice (MP3, WAV, FLAC, OGG, OPUS, M4A…). It is trimmed and its volume evened out automatically. Files are kept in <code>user_data\voices</code>; you can also copy them there and reload the page. Only clone voices with the speaker's consent.</p>
-        <button type="button" id="regenerate-builtins" class="link-btn">Regenerate built-in voices</button>
-      </section>
-
-      <section>
-        <h2>Speech quality</h2>
-        <label class="field-label" for="tts-steps">Synthesis steps</label>
-        <select id="tts-steps">
-          <option value="16">Fast — 16 steps</option>
-          <option value="32">Standard — 32 steps</option>
-          <option value="48">High — 48 steps</option>
-          <option value="64">Best — 64 steps</option>
-        </select>
-        <label class="field-label" for="tts-precision">Precision</label>
-        <select id="tts-precision">
-          <option value="fp16">fp16 — fast</option>
-          <option value="bf16">bf16 — fast</option>
-          <option value="fp32">fp32 — full precision, about 2.6× slower</option>
-        </select>
-        <p class="hint">More steps and fp32 can sound cleaner but take longer before the reply starts. Synthesis time roughly doubles from 32 to 64 steps; fp32 also needs about 2 GB more VRAM.</p>
       </section>
 
       <section>
@@ -184,13 +168,6 @@
         <div class="row">
           <button type="button" id="open-catalog" class="secondary">Change model…</button>
         </div>
-      </section>
-
-      <section>
-        <h2>Microphone</h2>
-        <label class="switch"><input type="checkbox" id="mic-enabled"><span>Microphone on</span></label>
-        <label class="field-label" for="end-silence">End of speech after <output id="end-silence-out" for="end-silence"></output></label>
-        <input type="range" id="end-silence" min="300" max="1500" step="50">
       </section>
 
       <section>
@@ -349,6 +326,91 @@
         <button type="submit" class="primary">Save</button>
       </div>
     </form>
+  </div>
+
+  <div id="settings" class="catalog" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
+    <div class="catalog-panel settings-panel">
+      <header class="catalog-head">
+        <div>
+          <h1 id="settings-title">Settings</h1>
+          <p class="muted small" id="settings-version">—</p>
+        </div>
+        <button type="button" id="close-settings" class="icon-btn" aria-label="Close the settings">✕</button>
+      </header>
+
+      <div class="settings-grid">
+        <section aria-labelledby="set-audio-title">
+          <h2 id="set-audio-title">Audio devices</h2>
+          <label class="field-label" for="input-device">Microphone</label>
+          <select id="input-device"></select>
+          <label class="field-label" for="output-device">Speaker / headphones</label>
+          <select id="output-device"></select>
+          <p class="hint" id="device-hint">Chosen for this browser. Device names appear once the microphone is allowed.</p>
+        </section>
+
+        <section aria-labelledby="set-mic-title">
+          <h2 id="set-mic-title">Microphone</h2>
+          <label class="switch"><input type="checkbox" id="mic-enabled"><span>Microphone on</span></label>
+          <label class="field-label" for="vad-threshold">Speech detection <output id="vad-threshold-out" for="vad-threshold"></output></label>
+          <input type="range" id="vad-threshold" min="0.3" max="0.8" step="0.05">
+          <div class="range-labels"><span>more sensitive</span><span>ignores more noise</span></div>
+          <label class="field-label" for="end-silence">End of speech after <output id="end-silence-out" for="end-silence"></output></label>
+          <input type="range" id="end-silence" min="300" max="1500" step="50">
+          <p class="hint">How long you can pause before your turn ends. Raise it if you get cut off mid-sentence.</p>
+        </section>
+
+        <section aria-labelledby="set-voice-title">
+          <h2 id="set-voice-title">Voice output</h2>
+          <label class="switch"><input type="checkbox" id="set-voice-output"><span>Voice output on</span></label>
+          <label class="field-label" for="tts-steps">Synthesis steps</label>
+          <select id="tts-steps">
+            <option value="16">Fast — 16 steps</option>
+            <option value="32">Standard — 32 steps</option>
+            <option value="48">High — 48 steps</option>
+            <option value="64">Best — 64 steps</option>
+          </select>
+          <label class="field-label" for="tts-precision">Precision</label>
+          <select id="tts-precision">
+            <option value="fp16">fp16 — fast</option>
+            <option value="bf16">bf16 — fast</option>
+            <option value="fp32">fp32 — full precision, about 2.6× slower</option>
+          </select>
+          <p class="hint">More steps and fp32 can sound cleaner but take longer before the reply starts. Synthesis time roughly doubles from 32 to 64 steps; fp32 also needs about 2 GB more VRAM.</p>
+          <button type="button" id="regenerate-builtins" class="secondary">Regenerate built-in voices</button>
+        </section>
+
+        <section aria-labelledby="set-llm-title">
+          <h2 id="set-llm-title">Language model</h2>
+          <label class="field-label" for="context-size">Context length</label>
+          <select id="context-size">
+            <option value="4096">4096 tokens — least VRAM</option>
+            <option value="8192">8192 tokens — default</option>
+            <option value="16384">16384 tokens</option>
+            <option value="32768">32768 tokens — most VRAM</option>
+          </select>
+          <p class="hint">How much of the conversation the model sees at once. Longer chats are summarized into the character's memory anyway. A longer context needs more GPU memory; the model is reloaded when you change it.</p>
+          <label class="field-label" for="hardware-profile">Hardware profile</label>
+          <select id="hardware-profile"></select>
+          <p class="hint" id="profile-hint">Sets the recommended quantization in the model catalog and how speech recognition runs. Speech recognition changes after a restart.</p>
+        </section>
+
+        <section aria-labelledby="set-rec-title">
+          <h2 id="set-rec-title">Session recording</h2>
+          <label class="switch"><input type="checkbox" id="set-record-sessions"><span>Record sessions</span></label>
+          <label class="field-label" for="session-bitrate">MP3 quality</label>
+          <select id="session-bitrate">
+            <option value="32">32 kbit/s — about 15 MB per hour</option>
+            <option value="48">48 kbit/s — about 22 MB per hour</option>
+            <option value="64">64 kbit/s — about 29 MB per hour (default)</option>
+            <option value="96">96 kbit/s — about 43 MB per hour</option>
+            <option value="128">128 kbit/s — about 58 MB per hour</option>
+          </select>
+          <label class="field-label" for="session-gap">Pause between turns <output id="session-gap-out" for="session-gap"></output></label>
+          <input type="range" id="session-gap" min="0" max="2000" step="100">
+          <p class="hint">Applies to new recordings; waiting time is never recorded.</p>
+        </section>
+      </div>
+    </div>
   </div>
 
   <audio id="replay-audio" preload="none" hidden></audio>
