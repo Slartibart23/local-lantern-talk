@@ -119,6 +119,8 @@ project uses [Semantic Versioning](https://semver.org/).
   starter model instead (spec §4).
 
 ### Fixed
+- After an update the browser could keep using an old cached `app.js`, so new controls (e.g.
+  Decorations) did nothing; the page's scripts and styles are now always revalidated.
 - `update.bat` on a ZIP installation: falls back to the main branch while there is no
   release, and uses the GitHub CLI login for a private repository.
 - Switches were drawn on the checkbox itself, which Firefox does not render; they are now

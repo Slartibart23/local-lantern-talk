@@ -113,7 +113,12 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
         # Blocks DNS-rebinding: only requests addressed to this local server are served.
         if request.headers.get("host") not in allowed_hosts:
             return PlainTextResponse("Forbidden", status_code=403)
-        return await call_next(request)
+        response = await call_next(request)
+        if request.url.path.startswith("/static/"):
+            # Always revalidate the page's scripts and styles, so a browser never mixes a new
+            # page with an old cached app.js after an update (cheap on localhost: 304s).
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     @app.get("/")
     async def index() -> FileResponse:

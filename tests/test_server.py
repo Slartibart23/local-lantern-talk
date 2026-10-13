@@ -83,7 +83,8 @@ def client():  # noqa: ANN201
 def test_index_served(client: TestClient) -> None:
     r = client.get("/")
     assert r.status_code == 200 and "Local Lantern Talk" in r.text
-    assert client.get("/static/app.js").status_code == 200
+    js = client.get("/static/app.js")
+    assert js.status_code == 200 and js.headers["cache-control"] == "no-cache"  # never a stale app.js
     assert client.get("/api/ping").json()["app"] == "local-lantern-talk"
 
 
