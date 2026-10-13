@@ -54,3 +54,10 @@ def test_write_profile_keeps_user_choices(tmp_path: Path) -> None:
     write_profile(settings_file, GpuInfo("RTX 5090", 32_607, "616.92"), select_profile(32_607))
     data = json.loads(settings_file.read_text())
     assert data["hardware_profile"] == "high" and data["num_step"] == 64
+
+
+def test_installer_uses_the_same_high_profile_threshold() -> None:
+    from lantern_talk.hardware import HIGH_MIN_MIB
+
+    script = (Path(__file__).parents[1] / "scripts" / "install.ps1").read_text(encoding="utf-8")
+    assert f"$HighProfileMinMiB = {HIGH_MIN_MIB}" in script

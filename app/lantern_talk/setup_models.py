@@ -20,7 +20,6 @@ def _load_pins(paths: Paths) -> dict:
 
 def _download_url(url: str, target: Path) -> None:
     if target.exists():
-        print(f"    Already present: {target.name}")
         return
     partial = target.with_suffix(target.suffix + ".part")
     print(f"    Downloading {target.name} ...")
@@ -55,12 +54,14 @@ def download_vad(paths: Paths, pins: dict) -> Path:
     return target
 
 
-def download_m1_llm(paths: Paths, pins: dict) -> Path:
+def download_starter_llm(paths: Paths, pins: dict, quant: str) -> Path:
+    """Optional starter model, offered by the installer until the model catalog (M4) exists."""
     from huggingface_hub import hf_hub_download
 
-    spec = pins["m1_llm"]
-    print(f"  LLM {spec['file']} ({spec['repo']})")
-    return Path(hf_hub_download(repo_id=spec["repo"], filename=spec["file"], local_dir=paths.llm_models))
+    spec = pins["starter_llm"]
+    entry = spec["files"].get(quant) or next(iter(spec["files"].values()))
+    print(f"  Starter language model {entry['file']} ({spec['repo']})")
+    return Path(hf_hub_download(repo_id=spec["repo"], filename=entry["file"], local_dir=paths.llm_models))
 
 
 def download_fonts(paths: Paths, pins: dict) -> None:
@@ -73,7 +74,13 @@ def download_fonts(paths: Paths, pins: dict) -> None:
     _download_url(spec["license_url"], paths.fonts / "OFL-LICENSE.txt")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Download the core models (resumable).")
+    parser.add_argument("--starter-llm", metavar="QUANT",
+                        help="also download the starter language model in this quantization (e.g. Q5_K_M)")
+    args = parser.parse_args(argv)
     paths = get_paths()
     apply_portable_env(paths)
     pins = _load_pins(paths)
@@ -82,9 +89,10 @@ def main() -> int:
         download_vad(paths, pins)
         download_whisper(paths, pins)
         download_omnivoice(paths, pins)
-        download_m1_llm(paths, pins)
+        if args.starter_llm:
+            download_starter_llm(paths, pins, args.starter_llm)
     except Exception as exc:  # noqa: BLE001 - shown to the user, details in the trace below
-        print(f"\nDownload failed: {exc}\nRe-run the installer to resume.", file=sys.stderr)
+        print(f"\nDownload failed: {exc}\nRe-run install.bat to resume.", file=sys.stderr)
         raise
     print("  All core models are present.")
     return 0

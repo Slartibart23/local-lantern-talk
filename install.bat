@@ -2,11 +2,16 @@
 setlocal
 title Local Lantern Talk - Install
 call "%~dp0scripts\env.bat"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\install.ps1"
-if errorlevel 1 (
+rem Options: -Yes (no questions), -NoStarterModel, -NoMicTest
+rem Started from a PowerShell 7 terminal, Windows PowerShell would inherit PowerShell 7's
+rem module path and miss its own built-in commands; let it use its defaults.
+set "PSModulePath="
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\install.ps1" %*
+set "RESULT=%ERRORLEVEL%"
+if "%RESULT%"=="1" (
     echo.
-    echo Installation failed. See the messages above. Re-running install.bat resumes where it stopped.
-    pause
-    exit /b 1
+    echo Installation failed. See the messages above.
+    echo Re-running install.bat resumes where it stopped.
 )
 pause
+exit /b %RESULT%

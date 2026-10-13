@@ -69,6 +69,10 @@ class Paths:
         return self.root / "tmp"
 
     @property
+    def ffmpeg(self) -> Path:
+        return self.runtime / "ffmpeg" / "bin" / "ffmpeg.exe"
+
+    @property
     def fonts(self) -> Path:
         return self.runtime / "fonts"
 
