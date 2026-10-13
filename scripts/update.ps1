@@ -57,6 +57,14 @@ function Test-AppRunning {
     return $false
 }
 
+function Invoke-Native([scriptblock]$Command) {
+    # Windows PowerShell 5.1 turns any stderr output of a native program into an error
+    # under ErrorActionPreference Stop (git writes progress there); judge by exit code.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $Command 2>&1 | ForEach-Object { "$_" } } finally { $ErrorActionPreference = $previous }
+}
+
 function Get-AppVersion {
     $init = Get-Content -Raw -LiteralPath (Join-Path $Root 'app\lantern_talk\__init__.py')
     if ($init -match '__version__\s*=\s*"([^"]+)"') { return $Matches[1] }
@@ -88,12 +96,12 @@ if ((Test-Path -LiteralPath (Join-Path $Root '.git')) -and $git) {
             Write-Host '    Commit or stash them, then run update.bat again.' -ForegroundColor Red
             exit 1
         }
-        $upstream = git rev-parse --abbrev-ref '@{upstream}' 2>$null
+        $upstream = Invoke-Native { git rev-parse --abbrev-ref '@{upstream}' } | Select-Object -First 1
         if ($LASTEXITCODE -ne 0 -or -not $upstream) {
             Write-Note 'This git checkout has no remote branch to pull from; the code stays as it is.'
         } else {
             Write-Note "git pull from $upstream"
-            git pull --ff-only
+            Invoke-Native { git pull --ff-only } | ForEach-Object { Write-Note $_ }
             if ($LASTEXITCODE -ne 0) { throw 'git pull failed (see above). Your files were not changed.' }
         }
     } finally { Pop-Location }
