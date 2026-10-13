@@ -116,6 +116,7 @@ class FakeServer:
     def start(self, config: Any) -> None:
         self.running = True
         self.started_with.append(config.model.name)
+        self.last_config = config
 
     def stop(self) -> None:
         self.running = False
@@ -156,10 +157,18 @@ class Recorder:
 
 
 @pytest.fixture()
-def setup(tmp_path: Path):  # noqa: ANN201
+def setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
+    import shutil
+
+    from lantern_talk import engine as engine_module
+
+    # A fixed fake GPU (24 GB, 6 GB in use) keeps the tests independent of this machine.
+    monkeypatch.setattr(engine_module, "query_gpu",
+                        lambda: {"name": "Test GPU", "used_mb": 6000, "total_mb": 24000})
     root = tmp_path / "root"
     (root / "app").mkdir(parents=True)
     (root / "config").mkdir()
+    shutil.copy(ROOT / "config" / "model_catalog.yaml", root / "config" / "model_catalog.yaml")
     paths = Paths(root)
     paths.llm_models.mkdir(parents=True)
     (paths.llm_models / "test-model-Q4_K_M.gguf").write_bytes(b"x")
@@ -391,3 +400,94 @@ def test_precision_change_reloads_omnivoice(setup) -> None:  # noqa: ANN001
     engine.update_settings({"tts_precision": "fp8"})
     rec.wait_for(lambda ev: any(e["type"] == "error" for e in ev[start:]))
     assert engine.store.settings.tts_precision == "bf16"  # rolled back
+
+
+# ---------------------------------------------------------------- model catalog (M4)
+
+def fake_download(engine, size: int = 10):  # noqa: ANN001, ANN201
+    """Replace the network download with one that writes the file immediately."""
+    def start(key, url, dest, expected_size=0, on_done=None):  # noqa: ANN001, ANN202
+        from lantern_talk.downloads import DownloadJob
+
+        dest.write_bytes(b"x" * size)
+        job = DownloadJob(key=key, file_name=dest.name, url=url, dest=str(dest), state="done")
+        on_done(job)
+        return job
+
+    engine.models.downloader.start = start
+
+
+def test_snapshot_lists_catalog_and_local_model(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    models = engine.snapshot()["models"]
+    ids = {m["id"] for m in models}
+    assert {"gemma4-12b", "cydonia-24b-v4.3"} <= ids
+    local = [m for m in models if m["source"] == "local"]
+    assert local and local[0]["state"] == "loaded" and local[0]["variant"] == "unknown"
+
+
+def test_llm_runs_without_thinking_and_keeps_room_for_voice(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    args = comps.server.last_config.extra_args
+    assert args[args.index("--reasoning-budget") + 1] == "0"
+    assert args[args.index("--fit-target") + 1] == str(1024 + 2560)  # voice output on
+    assert comps.server.last_config.gpu_layers == "auto"
+
+
+def test_download_then_load(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    fake_download(engine)
+    start = len(rec.events)
+    engine.download_model("gemma4-12b")
+    rec.wait_for(lambda ev: any(e["type"] == "settings" and e["settings"]["model"].startswith("gemma-4-12b")
+                                for e in ev[start:]))
+    file = engine.store.settings.model
+    assert file == "gemma-4-12b-it-Q5_K_M.gguf"  # 24 GB fake GPU: profile quant Q5 fits
+    assert comps.server.started_with[-1] == file
+    view = {m["id"]: m for m in engine.list_models()}
+    assert view["gemma4-12b"]["state"] == "loaded"
+
+
+def test_loaded_model_cannot_be_deleted(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    start = len(rec.events)
+    engine.delete_model(engine.store.settings.model)
+    rec.wait_for(lambda ev: any(e["type"] == "error" and "loaded" in e["message"] for e in ev[start:]))
+    assert (engine.paths.llm_models / engine.store.settings.model).exists()
+
+
+def test_delete_other_model(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    other = engine.paths.llm_models / "other-Q4_K_M.gguf"
+    other.write_bytes(b"x")
+    engine.delete_model(other.name)
+    rec.wait_for(lambda ev: not other.exists())
+
+
+def test_model_too_big_is_refused(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    (engine.paths.llm_models / "huge-Q8_0.gguf").write_bytes(b"x")
+    engine.models.gpu_layers = lambda name, ctx, margin: (0, 64)
+    start = len(rec.events)
+    engine.update_settings({"model": "huge-Q8_0.gguf"})
+    rec.wait_for(lambda ev: any(e["type"] == "error" and "too big" in e["message"] for e in ev[start:]))
+
+
+def test_partial_offload_notice(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    (engine.paths.llm_models / "big-Q4_K_M.gguf").write_bytes(b"x")
+    engine.models.gpu_layers = lambda name, ctx, margin: (30, 48)
+    start = len(rec.events)
+    engine.update_settings({"model": "big-Q4_K_M.gguf"})
+    rec.wait_for(lambda ev: any(e["type"] == "model_status" for e in ev[start:]))
+    status = [e for e in rec.events[start:] if e["type"] == "model_status"][-1]
+    assert status["partial"] and "30 of 48" in status["notice"]
+
+
+def test_label_for_hand_copied_model(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    file = engine.store.settings.model
+    engine.set_model_label(file, "uncensored")
+    rec.wait_for(lambda ev: any(e["type"] == "models" for e in ev))
+    local = [m for m in engine.list_models() if m["source"] == "local"][0]
+    assert local["variant"] == "uncensored"

@@ -6,12 +6,16 @@ time; opening another tab takes over the session.
 WebSocket protocol (``/ws``)
 ----------------------------
 Browser → server, JSON: ``text``, ``mic_format`` (sample_rate), ``playback_ended``,
-``pause``, ``settings`` (values), ``new_conversation``, ``reference_text`` (voice, text). Binary: microphone PCM
+``pause``, ``settings`` (values), ``new_conversation``, ``reference_text`` (voice, text),
+``download_model`` (id, quant), ``cancel_download``, ``delete_model`` (file),
+``add_custom_model`` (source, quant, variant), ``remove_custom_model`` (id),
+``set_model_label`` (file, variant). Binary: microphone PCM
 (int16 mono at the announced sample rate).
 
 Server → browser, JSON: ``hello`` (full snapshot), ``state``, ``user_message``,
 ``assistant_start``, ``segment``, ``audio`` (immediately followed by one binary
 message with int16 PCM), ``turn_done``, ``settings``, ``components``, ``voices``, ``voice_info``,
+``models``, ``model_status``, ``download`` (progress),
 ``cleared``, ``error``, ``replaced``.
 
 HTTP: ``POST /api/voices?filename=…`` with the raw audio file as body adds a
@@ -178,6 +182,19 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
                     engine.update_settings(dict(data.get("values") or {}))
                 elif kind == "new_conversation":
                     engine.new_conversation()
+                elif kind == "download_model":
+                    engine.download_model(str(data.get("id", "")), data.get("quant") or None)
+                elif kind == "cancel_download":
+                    engine.cancel_download()
+                elif kind == "delete_model":
+                    engine.delete_model(str(data.get("file", "")))
+                elif kind == "add_custom_model":
+                    engine.add_custom_model(str(data.get("source", "")), data.get("quant") or None,
+                                            str(data.get("variant", "unknown")))
+                elif kind == "remove_custom_model":
+                    engine.remove_custom_model(str(data.get("id", "")))
+                elif kind == "set_model_label":
+                    engine.set_model_label(str(data.get("file", "")), str(data.get("variant", "")))
                 elif kind == "reference_text":
                     engine.set_reference_text(str(data.get("voice", "")), str(data.get("text", "")))
                 elif kind == "refresh":

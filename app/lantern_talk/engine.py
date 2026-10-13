@@ -29,7 +29,10 @@ from typing import Any
 
 import numpy as np
 
+from .downloads import DownloadJob
+from .gpu import query_gpu
 from .llm import LlamaServer, LLMClient, ServerConfig
+from .models import ModelError, ModelManager
 from .paths import Paths
 from .pipeline import Conversation, ConversationConfig, SegmentEvent, SpeechAudio, TurnDone, TurnError
 from .prompts import DEFAULT_ASSISTANT_PERSONA
@@ -106,11 +109,15 @@ class Engine:
         components: Components,
         emit: EmitFn,
         persona: str = DEFAULT_ASSISTANT_PERSONA,
+        models: ModelManager | None = None,
     ) -> None:
         self.paths = paths
         self.store = store
         self.c = components
         self._emit_fn = emit
+        self.models = models or ModelManager(paths, self._on_download_update)
+        self.vram_mb: dict[str, int] = {}          # measured VRAM per component (spec §5)
+        self.model_status: dict[str, Any] = {}     # GPU layers of the loaded LLM
         s = store.settings
         self.state = State.LOADING
         self.detail = "Starting…"
@@ -181,8 +188,28 @@ class Engine:
         """Transcript of a custom voice clip; an empty text means "use Whisper"."""
         self._commands.put(("reftext", (voice, text)))
 
+    # -- model catalog (spec §13) -----------------------------------------------------
+    def download_model(self, entry_id: str, quant: str | None = None, load_after: bool = True) -> None:
+        self._commands.put(("download", (entry_id, quant, load_after)))
+
+    def cancel_download(self) -> None:
+        self.models.cancel_download()
+
+    def delete_model(self, file_name: str) -> None:
+        self._commands.put(("delete_model", file_name))
+
+    def add_custom_model(self, text: str, quant: str | None, variant: str, download: bool = True) -> None:
+        self._commands.put(("add_custom", (text, quant, variant, download)))
+
+    def remove_custom_model(self, entry_id: str) -> None:
+        self._commands.put(("remove_custom", entry_id))
+
+    def set_model_label(self, file_name: str, variant: str) -> None:
+        self._commands.put(("set_label", (file_name, variant)))
+
     def snapshot(self) -> dict[str, Any]:
         """Everything a freshly connected browser needs to render the UI."""
+        job = self.models.downloader.job
         return {
             "type": "hello",
             "state": self.state.value,
@@ -190,6 +217,9 @@ class Engine:
             "settings": asdict(self.store.settings),
             "voices": self.list_voices(),
             "models": self.list_models(),
+            "model_status": self.model_status,
+            "download": job.public() if job else None,
+            "gpu": self.gpu_summary(),
             "transcript": self.transcript,
             "components": self.components_status(),
             "voice_info": self.voice_info(),
@@ -251,11 +281,8 @@ class Engine:
         return {"builtin": builtin, "custom": custom}
 
     def list_models(self) -> list[dict[str, Any]]:
-        models = []
-        if self.paths.llm_models.is_dir():
-            for f in sorted(self.paths.llm_models.glob("*.gguf")):
-                models.append({"file": f.name, "size_gb": round(f.stat().st_size / 1e9, 1), "quant": _quant(f.name)})
-        return models
+        loaded = self._loaded_model if self.c.server.running else None
+        return self.models.view(self.available_llm_gb(), self.preferred_quant(), loaded)
 
     def components_status(self) -> dict[str, Any]:
         return {
@@ -263,7 +290,49 @@ class Engine:
             "vad": bool(self.c.vad.loaded),
             "omnivoice": bool(self.c.tts.loaded),
             "llm": self._loaded_model if self.c.server.running else None,
+            "vram_mb": {k: v for k, v in self.vram_mb.items() if self._component_loaded(k)},
         }
+
+    def _component_loaded(self, name: str) -> bool:
+        return {"whisper": self.c.stt.loaded, "omnivoice": self.c.tts.loaded,
+                "llm": self.c.server.running}.get(name, False)
+
+    # -- VRAM bookkeeping (spec §5) --------------------------------------------------------
+    def gpu_summary(self) -> dict[str, Any]:
+        s = self.store.settings
+        profile = effective_profile(asdict(s))
+        return {"name": s.gpu_name, "vram_mib": s.gpu_vram_mib, "profile": profile.name,
+                "recommended_quant": profile.default_quant, "available_gb": round(self.available_llm_gb(), 1)}
+
+    def preferred_quant(self) -> str:
+        return effective_profile(asdict(self.store.settings)).default_quant
+
+    def llm_margin_mib(self) -> int:
+        """Free VRAM kept for other components: OmniVoice grows by ~2.4 GB while speaking."""
+        return 1024 + (2560 if self.store.settings.voice_output else 0)
+
+    def available_llm_gb(self) -> float:
+        """VRAM a language model may use: free memory plus what the current model occupies."""
+        gpu = query_gpu()
+        if gpu is None:
+            total = self.store.settings.gpu_vram_mib or 0
+            return max(0.0, (total - self.llm_margin_mib()) / 1024) if total else 0.0
+        llm = self.vram_mb.get("llm", 0) if self.c.server.running else 0
+        free = int(gpu["total_mb"]) - int(gpu["used_mb"]) + llm
+        return max(0.0, (free - self.llm_margin_mib()) / 1024)
+
+    @staticmethod
+    def _gpu_used_mb() -> int:
+        gpu = query_gpu()
+        return int(gpu["used_mb"]) if gpu else 0
+
+    def _measured(self, name: str, load: Callable[[], None]) -> None:
+        """Run ``load`` and remember how much VRAM it took (nvidia-smi delta)."""
+        before = self._gpu_used_mb()
+        load()
+        after = self._gpu_used_mb()
+        if before and after:
+            self.vram_mb[name] = max(0, after - before)
 
     # ------------------------------------------------------------------ events / state
     def _emit(self, msg: dict[str, Any], binary: bytes | None = None) -> None:
@@ -336,6 +405,12 @@ class Engine:
             "settings": self._apply_settings,
             "new": lambda _: self._clear_conversation(),
             "reftext": lambda arg: self._handle_reference_text(*arg),
+            "download": lambda arg: self._handle_download(*arg),
+            "download_done": self._handle_download_done,
+            "delete_model": self._handle_delete_model,
+            "add_custom": lambda arg: self._handle_add_custom(*arg),
+            "remove_custom": self._handle_remove_custom,
+            "set_label": lambda arg: self._handle_set_label(*arg),
         }
         while True:
             name, arg = self._commands.get()
@@ -343,13 +418,63 @@ class Engine:
                 return
             try:
                 handlers[name](arg)
-            except UserError as exc:
+            except (UserError, ModelError) as exc:
                 self._emit({"type": "error", "message": str(exc)})
                 self._enter_idle()
             except Exception as exc:  # noqa: BLE001 - details go to the log
                 log.exception("Command %s failed", name)
                 self._emit({"type": "error", "message": f"Something went wrong ({exc}). Details are in logs\\server.log."})
                 self._enter_idle()
+
+    # -- model catalog ----------------------------------------------------------------
+    def _emit_models(self) -> None:
+        self._emit({"type": "models", "models": self.list_models()})
+
+    def _on_download_update(self, job: DownloadJob) -> None:
+        """Called from the download thread (progress, finished, failed)."""
+        self._emit({"type": "download", **job.public()})
+
+    def _handle_download(self, entry_id: str, quant: str | None, load_after: bool) -> None:
+        def on_done(job: DownloadJob) -> None:
+            self._commands.put(("download_done", (job, load_after)))
+
+        self.models.start_download(entry_id, quant, self.available_llm_gb(), self.preferred_quant(), on_done)
+        self._emit_models()
+
+    def _handle_download_done(self, arg: tuple[DownloadJob, bool]) -> None:
+        job, load_after = arg
+        if job.state == "error":
+            self._emit({"type": "error", "message": job.error})
+        elif job.state == "done" and load_after:
+            # Spec §13.3: a model selected for the first time is loaded right after its download.
+            self.store.settings.model = job.file_name
+            self.store.save()
+            self._ensure_llm()
+            self.fatal_error = None
+            self._emit({"type": "settings", "settings": asdict(self.store.settings)})
+            self._emit({"type": "components", "components": self.components_status()})
+            self._enter_idle()
+        self._emit_models()
+
+    def _handle_delete_model(self, file_name: str) -> None:
+        if file_name == self._loaded_model and self.c.server.running:
+            raise UserError("This model is loaded. Load another model before deleting it.")
+        self.models.delete_file(file_name)
+        self._emit_models()
+
+    def _handle_add_custom(self, text: str, quant: str | None, variant: str, download: bool) -> None:
+        entry = self.models.add_custom(text, quant, variant, self.preferred_quant())
+        self._emit_models()
+        if download:
+            self._handle_download(entry.id, next(iter(entry.files)), True)
+
+    def _handle_remove_custom(self, entry_id: str) -> None:
+        self.models.remove_custom(entry_id)
+        self._emit_models()
+
+    def _handle_set_label(self, file_name: str, variant: str) -> None:
+        self.models.set_label(file_name, variant)
+        self._emit_models()
 
     # -- loading -------------------------------------------------------------------
     def _load_all(self) -> None:
@@ -372,8 +497,7 @@ class Engine:
 
     def _load_mic(self) -> None:
         self._set_state(State.LOADING, "Loading speech recognition…")
-        self.c.stt.load()
-        self.c.vad.load()
+        self._measured("whisper", lambda: (self.c.stt.load(), self.c.vad.load()))
 
     def _unload_mic(self) -> None:
         self.c.stt.unload()
@@ -381,7 +505,7 @@ class Engine:
 
     def _load_voice_output(self) -> None:
         self._set_state(State.LOADING, "Loading voice synthesis…")
-        self.c.tts.load()
+        self._measured("omnivoice", self.c.tts.load)
         self.conversation.tts = self.c.tts
         self._prepare_voice()
 
@@ -410,11 +534,10 @@ class Engine:
         return voice.split(":", 1)[-1]
 
     def _model_path(self) -> Path:
-        models = self.list_models()
-        if not models:
-            raise UserError("No language model found. Put a GGUF file into models\\llm (or run install.bat).")
+        names = sorted(self.models.downloaded_files())
+        if not names:
+            raise UserError("No language model yet. Open the model catalog (Change model…) and download one.")
         wanted = self.store.settings.model
-        names = [m["file"] for m in models]
         name = wanted if wanted in names else names[0]
         if name != wanted:
             self.store.settings.model = name
@@ -426,13 +549,35 @@ class Engine:
         ctx = self.store.settings.context
         if self.c.server.running and self._loaded_model == path.name and self._loaded_context == ctx:
             return
-        self._set_state(State.LOADING, f"Loading model {path.name}…")
+        entry = self.models.entry_for_file(path.name)
+        label = entry.display_name if entry else path.name
+        self._set_state(State.LOADING, f"Loading model {label}…")
+        # Stop the old model first so the fit check sees the memory it frees.
+        self.c.server.stop()
         self._loaded_model = None
+        self.vram_mb.pop("llm", None)
+        margin = self.llm_margin_mib()
+        on_gpu, total = self.models.gpu_layers(path.name, ctx, margin)
+        if total and on_gpu == 0:
+            raise UserError(f"{label} is too big for the free GPU memory. Pick a smaller model or "
+                            "quantization, or turn voice output off to free memory.")
+        config = ServerConfig(model=path, context=ctx, gpu_layers="auto",
+                              extra_args=["--fit-target", str(margin),
+                                          # no hidden "thinking" before answering: it costs seconds
+                                          "--reasoning-budget", "0"])
         try:
-            self.c.server.start(ServerConfig(model=path, context=ctx))
+            self._measured("llm", lambda: self.c.server.start(config))
         except Exception as exc:
-            raise UserError(f"Could not load {path.name}: {exc}") from exc
+            raise UserError(f"Could not load {label}: {exc}") from exc
         self._loaded_model, self._loaded_context = path.name, ctx
+        partial = bool(total and on_gpu < total)
+        self.model_status = {
+            "file": path.name, "name": label, "gpu_layers": on_gpu, "total_layers": total, "partial": partial,
+            "notice": (f"{on_gpu} of {total} layers fit on the GPU; the rest runs on the CPU, so replies are "
+                       "slower. A smaller quantization or model would be faster.") if partial else "",
+        }
+        self._emit({"type": "model_status", **self.model_status})
+        self._emit({"type": "models", "models": self.list_models()})
 
     # -- turns ---------------------------------------------------------------------
     def _handle_utterance(self, utt: Utterance) -> None:
@@ -603,8 +748,3 @@ def _append_segment(segments: list[dict[str, str]], kind: str, text: str) -> Non
         segments[-1]["text"] += text
     else:
         segments.append({"kind": kind, "text": text})
-
-
-def _quant(file_name: str) -> str:
-    m = re.search(r"(IQ\d_[A-Z0-9]+|Q\d_K_[SML]|Q\d_K|Q\d_\d|Q\d|BF16|F16|F32)", file_name, re.IGNORECASE)
-    return m.group(1).upper() if m else "?"
