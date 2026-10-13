@@ -37,7 +37,7 @@ from .resample import StreamingResampler
 from .settings import SettingsStore
 from .stt import WhisperSTT
 from .textlang import guess_language
-from .tts import OmniVoiceTTS, VoiceLibrary
+from .tts import PRECISIONS, OmniVoiceTTS, VoiceLibrary
 from .vad import SAMPLE_RATE, SegmenterConfig, SileroVAD, Utterance, UtteranceSegmenter
 
 log = logging.getLogger(__name__)
@@ -77,9 +77,9 @@ class Components:
     llm: Any
 
 
-def build_components(paths: Paths, num_step: int) -> Components:
+def build_components(paths: Paths, num_step: int, precision: str = "fp16") -> Components:
     stt = WhisperSTT(paths.whisper_models / "large-v3-turbo")
-    tts = OmniVoiceTTS(paths.omnivoice_model, num_step=num_step)
+    tts = OmniVoiceTTS(paths.omnivoice_model, num_step=num_step, precision=precision)
     voices = VoiceLibrary(
         tts, paths.config / "builtin_voices.yaml", paths.builtin_voices, paths.voice_cache,
         transcribe=lambda audio, sr, lang: stt.transcribe_at(audio, sr, lang).text,
@@ -174,6 +174,10 @@ class Engine:
     def new_conversation(self) -> None:
         self._commands.put(("new", None))
 
+    def set_reference_text(self, voice: str, text: str) -> None:
+        """Transcript of a custom voice clip; an empty text means "use Whisper"."""
+        self._commands.put(("reftext", (voice, text)))
+
     def snapshot(self) -> dict[str, Any]:
         """Everything a freshly connected browser needs to render the UI."""
         return {
@@ -185,6 +189,7 @@ class Engine:
             "models": self.list_models(),
             "transcript": self.transcript,
             "components": self.components_status(),
+            "voice_info": self.voice_info(),
         }
 
     # ------------------------------------------------------------------ voices
@@ -327,6 +332,7 @@ class Engine:
             "pause": self._handle_pause,
             "settings": self._apply_settings,
             "new": lambda _: self._clear_conversation(),
+            "reftext": lambda arg: self._handle_reference_text(*arg),
         }
         while True:
             name, arg = self._commands.get()
@@ -383,6 +389,7 @@ class Engine:
         if self.store.settings.voice_output:
             self._set_state(State.LOADING, f"Preparing voice {self._voice_label(voice)}…")
             self.c.voices.prompt_for(ref)
+        self._emit({"type": "voice_info", **self.voice_info()})
 
     def _voice_ref(self, voice: str) -> str:
         """Map a UI voice id to a VoiceLibrary id (built-in id or file path)."""
@@ -498,6 +505,30 @@ class Engine:
         self.transcript.clear()
         self._emit({"type": "cleared"})
 
+    # -- custom voice reference text -----------------------------------------------------
+    def voice_info(self) -> dict[str, Any]:
+        """Details of the selected voice for the UI (reference text of custom clips)."""
+        voice = self.store.settings.voice
+        info: dict[str, Any] = {"voice": voice, "custom": voice.startswith("custom:"),
+                                "reference_text": None, "origin": None}
+        if info["custom"]:
+            path = self.paths.voices / voice.removeprefix("custom:")
+            ref = self.c.voices.reference_text(path) if path.exists() else None
+            if ref:
+                info["reference_text"], info["origin"] = ref
+            info["text_file"] = str(path.with_suffix(".txt").relative_to(self.paths.root))
+        return info
+
+    def _handle_reference_text(self, voice: str, text: str) -> None:
+        if not voice.startswith("custom:"):
+            raise UserError("Only your own voices have a reference text.")
+        path = Path(self._voice_ref(voice))
+        self.c.voices.set_reference_text(path, text[:2000])
+        if voice == self.store.settings.voice:
+            self._prepare_voice()  # rebuild the voice with the new transcript
+        self._emit({"type": "voice_info", **self.voice_info()})
+        self._enter_idle()
+
     # -- settings ----------------------------------------------------------------------
     def _handle_pause(self, paused: bool) -> None:
         self.paused = bool(paused)
@@ -533,7 +564,16 @@ class Engine:
         if "match_language" in changed:
             self.conversation.config.match_language = s.match_language
         if "num_step" in changed:
+            if not 8 <= s.num_step <= 96:
+                raise UserError("Speech quality steps must be between 8 and 96.")
             self.c.tts.num_step = s.num_step
+        if "tts_precision" in changed:
+            if s.tts_precision not in PRECISIONS:
+                raise UserError(f"Unknown precision {s.tts_precision}.")
+            self.c.tts.precision = s.tts_precision
+            if s.voice_output and "voice_output" not in changed:
+                self.c.tts.unload()  # reloaded below with the new precision
+                self._load_voice_output()
         if "mic_enabled" in changed:
             if s.mic_enabled:
                 self._load_mic()

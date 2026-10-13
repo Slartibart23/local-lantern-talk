@@ -6,12 +6,12 @@ time; opening another tab takes over the session.
 WebSocket protocol (``/ws``)
 ----------------------------
 Browser → server, JSON: ``text``, ``mic_format`` (sample_rate), ``playback_ended``,
-``pause``, ``settings`` (values), ``new_conversation``. Binary: microphone PCM
+``pause``, ``settings`` (values), ``new_conversation``, ``reference_text`` (voice, text). Binary: microphone PCM
 (int16 mono at the announced sample rate).
 
 Server → browser, JSON: ``hello`` (full snapshot), ``state``, ``user_message``,
 ``assistant_start``, ``segment``, ``audio`` (immediately followed by one binary
-message with int16 PCM), ``turn_done``, ``settings``, ``components``, ``voices``,
+message with int16 PCM), ``turn_done``, ``settings``, ``components``, ``voices``, ``voice_info``,
 ``cleared``, ``error``, ``replaced``.
 
 HTTP: ``POST /api/voices?filename=…`` with the raw audio file as body adds a
@@ -84,7 +84,7 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
             hub.engine = engine_factory(hub.emit)
         else:
             store = SettingsStore(paths.settings_file)
-            components = build_components(paths, store.settings.num_step)
+            components = build_components(paths, store.settings.num_step, store.settings.tts_precision)
             hub.engine = Engine(paths, store, components, hub.emit)
         hub.engine.start()
         sender = asyncio.create_task(_sender(hub))
@@ -178,6 +178,8 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
                     engine.update_settings(dict(data.get("values") or {}))
                 elif kind == "new_conversation":
                     engine.new_conversation()
+                elif kind == "reference_text":
+                    engine.set_reference_text(str(data.get("voice", "")), str(data.get("text", "")))
                 elif kind == "refresh":
                     await ws.send_json(engine.snapshot())
         except WebSocketDisconnect:

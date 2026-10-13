@@ -100,8 +100,35 @@
           <button type="button" id="add-voice" class="secondary">Add voice…</button>
           <input type="file" id="voice-file" accept=".mp3,.wav,.flac,.ogg,audio/*" hidden>
         </div>
+        <div id="reftext-box" class="reftext" hidden>
+          <label class="field-label" for="reftext">Reference text <span id="reftext-origin" class="badge"></span></label>
+          <textarea id="reftext" rows="4" placeholder="Exactly what is said in the clip, word for word"></textarea>
+          <div class="row">
+            <button type="button" id="reftext-save" class="secondary">Save text</button>
+            <button type="button" id="reftext-whisper" class="secondary">Use Whisper</button>
+          </div>
+          <p class="hint">The clone is best when this matches the clip exactly. Saved as <code id="reftext-file"></code>.</p>
+        </div>
         <label class="switch"><input type="checkbox" id="match-language"><span>Match built-in voice to spoken language</span></label>
         <p class="hint">Add an MP3 / WAV clip with 3–10 s of clean speech to clone a voice. Files are kept in <code>user_data\voices</code>; you can also copy them there and reload the page. Only clone voices with the speaker's consent.</p>
+      </section>
+
+      <section>
+        <h2>Speech quality</h2>
+        <label class="field-label" for="tts-steps">Synthesis steps</label>
+        <select id="tts-steps">
+          <option value="16">Fast — 16 steps</option>
+          <option value="32">Standard — 32 steps</option>
+          <option value="48">High — 48 steps</option>
+          <option value="64">Best — 64 steps</option>
+        </select>
+        <label class="field-label" for="tts-precision">Precision</label>
+        <select id="tts-precision">
+          <option value="fp16">fp16 — fast</option>
+          <option value="bf16">bf16 — fast</option>
+          <option value="fp32">fp32 — full precision, about 2.6× slower</option>
+        </select>
+        <p class="hint">More steps and fp32 can sound cleaner but take longer before the reply starts. Synthesis time roughly doubles from 32 to 64 steps; fp32 also needs about 2 GB more VRAM.</p>
       </section>
 
       <section>

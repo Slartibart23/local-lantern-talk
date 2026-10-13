@@ -77,6 +77,7 @@ class FakeSynth:
 
 class FakeTTS(Loadable):
     num_step = 32
+    precision = "fp16"
 
     def synthesize(self, text: str, prompt: object, language: str | None = None) -> FakeSynth:
         return FakeSynth(np.zeros(2400, dtype=np.float32))
@@ -86,6 +87,7 @@ class FakeVoices:
     def __init__(self) -> None:
         self.builtins = load_builtin_voices(ROOT / "config" / "builtin_voices.yaml")
         self.prepared: list[str] = []
+        self.texts: dict[str, tuple[str, str]] = {}
 
     def prompt_for(self, voice: str) -> object:
         self.prepared.append(voice)
@@ -98,6 +100,12 @@ class FakeVoices:
 
     def language_of(self, voice: str) -> str | None:
         return None
+
+    def reference_text(self, source: Path) -> tuple[str, str] | None:
+        return self.texts.get(source.name)
+
+    def set_reference_text(self, source: Path, text: str) -> None:
+        self.texts[source.name] = (text, "user")
 
 
 class FakeServer:
@@ -348,3 +356,38 @@ def test_add_voice_warns_about_length(setup) -> None:  # noqa: ANN001
     engine, comps, rec = setup
     assert "only 1.5 s" in engine.add_voice("short.wav", wav_bytes(1.5))["warnings"][0]
     assert "first 15 s" in engine.add_voice("long.wav", wav_bytes(25))["warnings"][0]
+
+
+def test_reference_text_rebuilds_active_custom_voice(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    voice = engine.add_voice("me.wav", wav_bytes(5))["id"]
+    engine.update_settings({"voice": voice})
+    rec.wait_for(lambda ev: any(e["type"] == "voice_info" and e["voice"] == voice for e in ev))
+    prepared_before = len(comps.voices.prepared)
+    start = len(rec.events)
+    engine.set_reference_text(voice, "Das ist mein Text.")
+    rec.wait_for(lambda ev: any(e["type"] == "voice_info" and e["reference_text"] for e in ev[start:]))
+    info = [e for e in rec.events[start:] if e["type"] == "voice_info"][-1]
+    assert info["reference_text"] == "Das ist mein Text." and info["origin"] == "user"
+    assert info["text_file"].endswith("me.txt")
+    assert len(comps.voices.prepared) == prepared_before + 1  # voice prepared again
+    rec.wait_state("listening", start)
+
+
+def test_reference_text_only_for_custom_voices(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    start = len(rec.events)
+    engine.set_reference_text("builtin:de_male", "x")
+    rec.wait_for(lambda ev: any(e["type"] == "error" for e in ev[start:]))
+
+
+def test_precision_change_reloads_omnivoice(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    loads = comps.tts.load_calls
+    engine.update_settings({"tts_precision": "bf16"})
+    rec.wait_for(lambda ev: any(e["type"] == "settings" and e["settings"]["tts_precision"] == "bf16" for e in ev))
+    assert comps.tts.precision == "bf16" and comps.tts.load_calls == loads + 1
+    start = len(rec.events)
+    engine.update_settings({"tts_precision": "fp8"})
+    rec.wait_for(lambda ev: any(e["type"] == "error" for e in ev[start:]))
+    assert engine.store.settings.tts_precision == "bf16"  # rolled back

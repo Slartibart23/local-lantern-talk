@@ -23,7 +23,8 @@ class Settings:
     show_actions: bool = True
     end_silence_ms: int = 700
     vad_threshold: float = 0.5
-    num_step: int = 32
+    num_step: int = 32              # OmniVoice diffusion steps (16 fast ... 64 best)
+    tts_precision: str = "fp16"     # OmniVoice precision: fp16 | bf16 | fp32
     context: int = 8192
 
     def update(self, values: dict[str, Any]) -> dict[str, Any]:

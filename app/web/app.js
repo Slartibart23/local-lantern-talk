@@ -29,6 +29,7 @@ const app = {
   pendingAudio: null,   // metadata of the next binary message
   playback: { scheduled: 0, ended: 0, nextTime: 0, turnDone: false },
   currentAi: null,      // { el, bubble, lastSpeech }
+  voiceInfo: null,      // reference text etc. of the selected voice
 };
 
 // ---------------------------------------------------------------- WebSocket
@@ -66,6 +67,7 @@ function handleEvent(msg) {
       applySettings();
       renderComponents(msg.components);
       renderTranscript(msg.transcript);
+      renderVoiceInfo(msg.voice_info);
       setState(msg.state, msg.detail);
       break;
     case "state":
@@ -95,6 +97,9 @@ function handleEvent(msg) {
       break;
     case "components":
       renderComponents(msg.components);
+      break;
+    case "voice_info":
+      renderVoiceInfo(msg);
       break;
     case "voices":
       app.voices = msg.voices;
@@ -389,6 +394,8 @@ function applySettings() {
   $("voice-select").disabled = false;
   $("model-select").value = s.model;
   $("end-silence").value = s.end_silence_ms;
+  setSelect($("tts-steps"), String(s.num_step), `${s.num_step} steps`);
+  $("tts-precision").value = s.tts_precision;
   $("end-silence-out").textContent = `${s.end_silence_ms} ms`;
   $("messages").classList.toggle("hide-actions", !s.show_actions);
   $("header-voice").textContent = s.voice_output ? `Voice: ${voiceName(s.voice)}` : "Text replies";
@@ -400,6 +407,32 @@ function applySettings() {
     if (s.mic_enabled) startMic(); else stopMic();
   }
   setState(app.state, app.detail);
+}
+
+function setSelect(sel, value, label) {
+  if (![...sel.options].some((o) => o.value === value)) sel.append(new Option(label, value));
+  sel.value = value;
+}
+
+function renderVoiceInfo(info) {
+  app.voiceInfo = info;
+  const box = $("reftext-box");
+  box.hidden = !(info && info.custom);
+  if (box.hidden) return;
+  const area = $("reftext");
+  if (document.activeElement !== area) area.value = info.reference_text || "";
+  const origin = $("reftext-origin");
+  origin.className = "badge" + (info.origin === "user" ? " user" : "");
+  origin.textContent = info.origin === "user" ? "your text"
+    : info.origin === "whisper" ? "from Whisper — please check" : "not transcribed yet";
+  $("reftext-file").textContent = info.text_file || "";
+  $("reftext-whisper").disabled = info.origin !== "user";
+}
+
+function saveReferenceText(text) {
+  if (!app.voiceInfo) return;
+  send({ type: "reference_text", voice: app.voiceInfo.voice, text });
+  $("reftext").blur();
 }
 
 function changeSetting(key, value) {
@@ -542,6 +575,10 @@ function init() {
   $("end-silence").onchange = (e) => changeSetting("end_silence_ms", Number(e.target.value));
   $("new-conv").onclick = () => send({ type: "new_conversation" });
   $("add-voice").onclick = () => $("voice-file").click();
+  $("reftext-save").onclick = () => saveReferenceText($("reftext").value);
+  $("reftext-whisper").onclick = () => { $("reftext").value = ""; saveReferenceText(""); };
+  $("tts-steps").onchange = (e) => changeSetting("num_step", Number(e.target.value));
+  $("tts-precision").onchange = (e) => changeSetting("tts_precision", e.target.value);
   $("voice-file").onchange = (e) => uploadVoice(e.target);
   $("toggle-left").onclick = () => togglePanel("left");
   $("toggle-right").onclick = () => togglePanel("right");

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -25,6 +26,9 @@ log = logging.getLogger(__name__)
 
 OUTPUT_SAMPLE_RATE = 24_000
 REF_SAMPLE_RATE = 24_000
+# OmniVoice weights are stored in fp32. fp16 / bf16 are ~2.6x faster than fp32 and
+# need about half the VRAM (measured on an RTX 5090: 2.3 GB vs 4.2 GB).
+PRECISIONS = {"fp16": "float16", "bf16": "bfloat16", "fp32": "float32"}
 DESIGN_ATTEMPTS = 5
 DESIGN_MIN_SIMILARITY = 0.75
 
@@ -75,10 +79,11 @@ class SynthResult:
 class OmniVoiceTTS:
     """Loads OmniVoice in-process; can be unloaded to free VRAM."""
 
-    def __init__(self, model_dir: Path, device: str = "cuda:0", num_step: int = 32) -> None:
+    def __init__(self, model_dir: Path, device: str = "cuda:0", num_step: int = 32, precision: str = "fp16") -> None:
         self.model_dir = model_dir
         self.device = device
         self.num_step = num_step
+        self.precision = precision  # "fp16" | "bf16" | "fp32"; takes effect on the next load()
         self._model = None
 
     @property
@@ -97,7 +102,8 @@ class OmniVoiceTTS:
         from transformers.utils import logging as hf_logging
 
         hf_logging.disable_progress_bar()  # no "Loading weights" bars in the console
-        self._model = OmniVoice.from_pretrained(str(self.model_dir), device_map=self.device, dtype=torch.float16)
+        dtype = PRECISIONS.get(self.precision, "float16")
+        self._model = OmniVoice.from_pretrained(str(self.model_dir), device_map=self.device, dtype=getattr(torch, dtype))
         # The first generation is ~1.3 s slower (CUDA kernel setup); pay that now, not in the first reply.
         with torch.inference_mode():
             self._model.generate(text="Hello.", num_step=self.num_step)
@@ -237,31 +243,85 @@ class VoiceLibrary:
         self._prompts[f"builtin:{voice_id}"] = self._builtin_prompt(voice_id, regenerate=True)
 
     # -- custom reference clips --------------------------------------------------------
+    @staticmethod
+    def text_file_for(source: Path) -> Path:
+        """User-provided transcript next to the clip: ``clip.mp3`` -> ``clip.txt``."""
+        return source.with_suffix(".txt")
+
+    def reference_text(self, source: Path) -> tuple[str, str] | None:
+        """``(text, origin)`` used for a custom clip; origin is ``"user"`` or ``"whisper"``.
+
+        ``None`` while the clip has not been transcribed yet.
+        """
+        user_text = self._user_text(source)
+        if user_text:
+            return user_text, "user"
+        cached = self._whisper_cache(source)
+        if cached.exists():
+            return cached.read_text(encoding="utf-8").strip(), "whisper"
+        return None
+
+    def set_reference_text(self, source: Path, text: str) -> None:
+        """Store the transcript of a clip; an empty text falls back to Whisper."""
+        target = self.text_file_for(source)
+        text = text.strip()
+        if text:
+            target.write_text(text + "\n", encoding="utf-8")
+        else:
+            target.unlink(missing_ok=True)
+        self._prompts.pop(str(source), None)  # prepared again with the new text
+
+    def _user_text(self, source: Path) -> str:
+        f = self.text_file_for(source)
+        return f.read_text(encoding="utf-8").strip() if f.exists() else ""
+
+    def _whisper_cache(self, source: Path) -> Path:
+        return self.custom_cache_dir / f"{source.stem}-{file_fingerprint(source)}.whisper.txt"
+
     def _custom_prompt(self, source: Path) -> object:
         if not source.exists():
             raise FileNotFoundError(f"Voice file not found: {source}")
         self.custom_cache_dir.mkdir(parents=True, exist_ok=True)
-        key = file_fingerprint(source)
-        prompt_file = self.custom_cache_dir / f"{source.stem}-{key}.pt"
-        if prompt_file.exists():
-            return _load_prompt(prompt_file)
+        user_text = self._user_text(source)
+        ref_text = user_text
+        if not ref_text and self._whisper_cache(source).exists():
+            ref_text = self._whisper_cache(source).read_text(encoding="utf-8").strip()
+        if ref_text:
+            prompt_file = self._prompt_file(source, ref_text)
+            if prompt_file.exists():
+                return _load_prompt(prompt_file)
+
         log.info("Preparing custom voice %s ...", source.name)
         audio = load_reference_audio(source)
         duration = len(audio) / REF_SAMPLE_RATE
         if duration < 3:
             log.warning("Reference clip %s is only %.1fs; 3-10 s of clean speech works best.", source.name, duration)
-        elif duration > 20:
+        elif duration > 20 and not user_text:
+            # Whisper transcribes what is kept; a user transcript covers the whole clip.
             log.warning("Reference clip %s is %.0fs long; it will be trimmed. 3-10 s works best.", source.name, duration)
             audio = audio[: 15 * REF_SAMPLE_RATE]
-        ref_text = self.transcribe(audio, REF_SAMPLE_RATE, None)
         if not ref_text:
-            raise ValueError(f"No speech found in voice clip {source.name}.")
+            ref_text = self.transcribe(audio, REF_SAMPLE_RATE, None).strip()
+            if not ref_text:
+                raise ValueError(f"No speech found in voice clip {source.name}.")
+            self._whisper_cache(source).write_text(ref_text + "\n", encoding="utf-8")
+        prompt_file = self._prompt_file(source, ref_text)
         prompt = self.tts.make_prompt(audio, REF_SAMPLE_RATE, ref_text)
         prompt.save(str(prompt_file))  # type: ignore[attr-defined]
-        for old in self.custom_cache_dir.glob(f"{source.stem}-*.pt"):
-            if old != prompt_file:
-                old.unlink(missing_ok=True)
+        self._remove_stale_cache(source, keep={prompt_file, self._whisper_cache(source)})
         return prompt
+
+    def _prompt_file(self, source: Path, ref_text: str) -> Path:
+        text_key = hashlib.sha1(ref_text.encode("utf-8")).hexdigest()[:8]
+        return self.custom_cache_dir / f"{source.stem}-{file_fingerprint(source)}-{text_key}.pt"
+
+    def _remove_stale_cache(self, source: Path, keep: set[Path]) -> None:
+        # Exact pattern, so "clip-2.mp3" never matches the files of "clip.mp3".
+        # The optional text key also covers prompts cached by older versions.
+        own = re.compile(re.escape(source.stem) + r"-[0-9a-f]{16}((-[0-9a-f]{8})?\.pt|\.whisper\.txt)")
+        for f in self.custom_cache_dir.iterdir():
+            if own.fullmatch(f.name) and f not in keep:
+                f.unlink(missing_ok=True)
 
 
 def load_reference_audio(path: Path) -> np.ndarray:

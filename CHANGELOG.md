@@ -29,6 +29,10 @@ project uses [Semantic Versioning](https://semver.org/).
   voice-output toggles (unloading Whisper / VAD / OmniVoice), GPU memory display.
 - "Add voice…" uploads an MP3 / WAV / FLAC / OGG reference clip into `user_dataoices`,
   with a warning for clips outside the recommended 3–10 s.
+- Reference text for custom voices: the Whisper transcript is shown and can be corrected
+  in the UI (saved as `clip.txt` next to `clip.mp3`); the voice is rebuilt with it.
+- Speech quality settings: OmniVoice synthesis steps (16-64) and precision (fp16 / bf16 /
+  fp32). There is only one official OmniVoice model; these are its quality levers.
 - Typed messages get their language guessed (DE / EN / ES / FR) so the reply voice matches.
 
 ### Fixed
