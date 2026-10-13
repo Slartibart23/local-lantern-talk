@@ -14,6 +14,13 @@ from lantern_talk.tts import VoiceLibrary
 ROOT = Path(__file__).parents[1]
 
 
+def owned_by(stem: str, name: str) -> bool:
+    """Cache file of voice ``stem``: "<stem>-<16 hex>..." (a fingerprint may start with a digit)."""
+    import re
+
+    return re.match(re.escape(stem) + "-[0-9a-f]{16}[-.]", name) is not None
+
+
 class FakePrompt:
     def __init__(self, ref_text: str) -> None:
         self.ref_text = ref_text
@@ -58,7 +65,7 @@ def test_whisper_transcript_is_used_and_cached(lib) -> None:  # noqa: ANN001
     assert library.reference_text(clip) == ("whisper heard this", "whisper")
     assert fake.prompt_texts == ["whisper heard this"]
     # A new session reuses the cached prompt: no second transcription.
-    library2 = VoiceLibrary(fake, library.builtin_dir.parent / "x.yaml" if False else ROOT / "config" / "builtin_voices.yaml",
+    library2 = VoiceLibrary(fake, ROOT / "config" / "builtin_voices.yaml",
                             library.builtin_dir, library.custom_cache_dir, library.transcribe)
     library2.prompt_for(str(clip))
     assert len(calls) == 1
@@ -74,7 +81,7 @@ def test_user_text_overrides_whisper(lib) -> None:  # noqa: ANN001
     prompt = library.prompt_for(str(clip))
     assert prompt.ref_text == "Das ist der echte Text."
     assert len(calls) == 1  # Whisper not needed again
-    pts = sorted(p.name for p in library.custom_cache_dir.glob("clip-*.pt") if not p.name.startswith("clip-2"))
+    pts = [p.name for p in library.custom_cache_dir.iterdir() if owned_by("clip", p.name) and p.suffix == ".pt"]
     assert len(pts) == 1  # the prompt built from the Whisper text was removed
 
 
@@ -91,8 +98,8 @@ def test_empty_user_text_falls_back_to_whisper(lib) -> None:  # noqa: ANN001
 def test_cleanup_never_touches_similarly_named_voice(lib) -> None:  # noqa: ANN001
     library, fake, calls, voices = lib
     library.prompt_for(str(voices / "clip-2.wav"))
-    before = {p.name for p in library.custom_cache_dir.iterdir() if p.name.startswith("clip-2")}
+    before = {p.name for p in library.custom_cache_dir.iterdir() if owned_by("clip-2", p.name)}
     library.set_reference_text(voices / "clip.wav", "Anderer Text")
     library.prompt_for(str(voices / "clip.wav"))
-    after = {p.name for p in library.custom_cache_dir.iterdir() if p.name.startswith("clip-2")}
+    after = {p.name for p in library.custom_cache_dir.iterdir() if owned_by("clip-2", p.name)}
     assert before and before == after
