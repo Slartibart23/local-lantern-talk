@@ -18,7 +18,9 @@ The catalog focuses on **German**, roleplay and assistant use. It lives in
 | Gemma 4 26B-A4B Heretic | uncensored | Roleplay & assistant | 16.8 GB | Best German in the catalog; mixture-of-experts, stays fast when partly on the CPU |
 | Cydonia 24B v4.3 | uncensored | Roleplay | 14.3 GB | Community favorite, lots of dialogue |
 | Magidonia 24B v4.3 | uncensored | Roleplay | 14.3 GB | Cydonia's sibling on the Magistral base |
+| Magidonia 24B v4.3 Heretic | uncensored | Roleplay | 14.3 GB | Magidonia with refusals removed |
 | Skyfall 31B v4.2 | uncensored | Roleplay | 19.0 GB | Larger; for 32 GB GPUs |
+| Qwen 3.8 27B Abliterated | uncensored | Assistant & roleplay | 16.6 GB | Strong all-rounder; dense model, best on 32 GB GPUs |
 | Gemma 4 12B Heretic | uncensored | Roleplay & assistant | 7.4 GB | Good German, for smaller GPUs |
 | Rocinante 12B v1.1 | uncensored | Roleplay | 7.5 GB | Classic; clearly strongest in English |
 | Gemma 4 26B-A4B | censored | Assistant | 17.0 GB | Very good German |
@@ -117,5 +119,8 @@ variable `HF_TOKEN` before running `start.bat`.
 
 ## Context length
 
-The default context is 8192 tokens (about 6,000 words of conversation). Longer
-conversations are summarized by the memory feature in a later version.
+The default context is 8192 tokens (about 6,000 words of conversation). It can be
+changed in **Settings → Language model** (4096 to 32768 tokens); a longer context needs
+more GPU memory, and the model is reloaded when you change it. Longer conversations are
+summarized into the character's memory (see [memory.md](memory.md)), so the default is
+enough for most chats.

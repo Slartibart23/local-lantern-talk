@@ -122,7 +122,7 @@ switched.
 
 ## Speech quality
 
-**Speech quality** in the side panel sets OmniVoice's synthesis steps (16–64, default
+**Settings → Voice output** sets OmniVoice's synthesis steps (16–64, default
 32) and precision (fp16 / bf16 / fp32, default fp16). More steps and fp32 can sound
 slightly cleaner but delay every reply — on an RTX 5090 Laptop GPU, 64 steps add about
 1 s before the reply starts. There is only one official OmniVoice model; these settings

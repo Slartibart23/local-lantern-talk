@@ -77,7 +77,9 @@ project uses [Semantic Versioning](https://semver.org/).
   Markdown transcript ("Elara: …", spoken words only) with the MP3 offsets kept in a
   hidden index for replay; replay buttons on every message (microphone muted while playing);
   recent sessions in the sidebar, opened read-only with replay; global and per-character
-  switch, REC badge, "Open session folder". `docs/sessions.md`.
+  switch, REC badge, "Open session folder". `docs/recording.md`.
+- Model catalog: Magidonia 24B v4.3 Heretic and Qwen 3.8 27B Abliterated; Cydonia 24B v4.3
+  now uses bartowski's imatrix quantizations.
 - "Quit app" button: closes the app from the browser, unloads all models and frees the
   GPU memory; conversations are saved.
 

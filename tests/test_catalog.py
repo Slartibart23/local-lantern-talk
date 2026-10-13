@@ -19,11 +19,12 @@ BY_ID = {e.id: e for e in CATALOG}
 # ---------------------------------------------------------------- shipped catalog
 
 def test_shipped_catalog_is_valid() -> None:
-    assert len(CATALOG) == 9
+    assert len(CATALOG) == 11
+    assert len({e.id for e in CATALOG}) == len(CATALOG)
     for e in CATALOG:
         assert e.variant in ("censored", "uncensored")
         assert e.hf_repo.count("/") == 1
-        assert {"Q4_K_M", "Q5_K_M", "Q6_K"} <= set(e.files)
+        assert "Q4_K_M" in e.files and len(e.files) >= 3  # a small, a default and a larger choice
         for qf in e.files.values():
             assert qf.file.endswith(".gguf") and qf.size_bytes > 1e9
             assert qf.min_vram_gb > qf.size_gb  # KV cache and buffers come on top
