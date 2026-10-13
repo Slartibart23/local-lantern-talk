@@ -31,7 +31,7 @@ import numpy as np
 
 from .downloads import DownloadJob
 from .gpu import query_gpu
-from .llm import LlamaServer, LLMClient, ServerConfig
+from .llm import NO_THINKING_ARGS, LlamaServer, LLMClient, ServerConfig
 from .models import ModelError, ModelManager
 from .paths import Paths
 from .pipeline import Conversation, ConversationConfig, SegmentEvent, SpeechAudio, TurnDone, TurnError
@@ -573,8 +573,7 @@ class Engine:
         if fit.nothing_fits:
             raise UserError(f"{label} is too big for the free GPU memory. Pick a smaller model or "
                             "quantization, or turn voice output off to free memory.")
-        # no hidden "thinking" before answering: it costs seconds per reply
-        no_thinking = ["--reasoning-budget", "0"]
+        no_thinking = NO_THINKING_ARGS
         if fit.known:
             # Apply llama-fit-params' split exactly (incl. MoE expert offload), keeping
             # room for OmniVoice; llama-server's own --fit would ignore an explicit -ngl.

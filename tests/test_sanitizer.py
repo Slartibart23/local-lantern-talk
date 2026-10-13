@@ -148,7 +148,33 @@ STREAM_CASES = [
     "Look_at_this and _that_ thing.",
     "Text\n```py\nx = 1\n```\nAfter code.",
     "Start (aside) end.\nOOC: bye\nReal line.",
+    "<think>The user wants the capital. Paris.</think>Die Hauptstadt ist Paris.",
+    "[THINK]Let me plan this scene carefully.[/THINK] *grins* Willkommen!",
+    "Fine. <thinking>should I lie? no</thinking> The answer is 4 < 5.",
 ]
+
+
+# ---------------------------------------------------------------- reasoning (safety net)
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("<think>The user wants the capital.</think>Die Hauptstadt ist Paris.", "Die Hauptstadt ist Paris."),
+        ("<THINK>Upper case tags.</THINK>Hallo!", "Hallo!"),
+        ("[THINK]Plan the scene.[/THINK]Willkommen, Fremder!", "Willkommen, Fremder!"),
+        ("<reasoning>step 1</reasoning>Okay.", "Okay."),
+        ("Moment. <think>still thinking when the reply ends", "Moment."),
+        ("Answer.</think> Done.", "Answer. Done."),  # stray closing tag is dropped
+        ("a <b>bold</b> word", "a bold word"),       # other tags are not reasoning
+    ],
+)
+def test_reasoning_is_never_spoken(text: str, expected: str) -> None:
+    assert spoken_text(text) == expected
+
+
+def test_reasoning_kind_is_reported() -> None:
+    segs = split_segments("<think>secret plan</think>Hello there.")
+    assert ("thinking", "secret plan") in kinds(segs)
 
 
 @pytest.mark.parametrize("text", STREAM_CASES)

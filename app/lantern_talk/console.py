@@ -27,7 +27,7 @@ from pathlib import Path
 import numpy as np
 
 from .hardware import effective_profile
-from .llm import LlamaServer, LLMClient, ServerConfig
+from .llm import NO_THINKING_ARGS, LlamaServer, LLMClient, ServerConfig
 from .logging_setup import setup_logging
 from .paths import Paths, apply_portable_env, get_paths, path_warnings
 from .pipeline import Conversation, ConversationConfig, SegmentEvent, SpeechAudio, TurnDone, TurnError
@@ -166,6 +166,8 @@ def run_and_show_turn(
             seg = event.segment
             if seg.spoken:
                 say(seg.text, end="")
+            elif seg.kind == "thinking":
+                pass  # model reasoning is neither spoken nor shown
             else:
                 say(f"{DIM_ITALIC}{seg.text}{RESET}{DIM} (not spoken){RESET} ", end="")
         elif isinstance(event, SpeechAudio) and player is not None:
@@ -275,7 +277,8 @@ def main(argv: list[str] | None = None) -> int:
 
         model = Path(args.model) if args.model else default_model(paths, settings)
         status(f"Loading model {model.name}")
-        server.start(ServerConfig(model=model, context=args.context, gpu_layers=args.gpu_layers))
+        server.start(ServerConfig(model=model, context=args.context, gpu_layers=args.gpu_layers,
+                                  extra_args=NO_THINKING_ARGS))
 
         conv = Conversation(
             LLMClient(server), tts, voices,

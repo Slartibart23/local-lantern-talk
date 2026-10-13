@@ -245,6 +245,7 @@ function appendSegment(kind, text) {
 }
 
 function renderSegment(target, kind, text) {
+  if (kind === "thinking") return;  // model reasoning is neither spoken nor shown
   if (kind === "speech") {
     if (!target.lastSpeech) {
       target.lastSpeech = document.createElement("span");

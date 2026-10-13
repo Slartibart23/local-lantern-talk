@@ -19,6 +19,11 @@ log = logging.getLogger(__name__)
 
 HOST = "127.0.0.1"
 
+# No "thinking" before answering: it costs seconds per reply, and some models (e.g. Qwen3)
+# would otherwise write their reasoning into the reply. enable_thinking is the switch the
+# Qwen / Gemma 4 chat templates use; templates without it ignore the variable.
+NO_THINKING_ARGS = ["--reasoning-budget", "0", "--chat-template-kwargs", '{"enable_thinking": false}']
+
 
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

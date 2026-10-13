@@ -5,7 +5,9 @@ LLM output is split into *segments*:
 * ``speech`` — text that may be sent to TTS (after :func:`clean_for_speech`),
 * ``action`` — roleplay actions such as ``*smiles*``, ``_nods_`` or ``[sighs]``,
 * ``ooc``    — out-of-character text such as ``((brb))`` or ``[OOC: ...]``,
-* ``code``   — fenced code blocks.
+* ``code``   — fenced code blocks,
+* ``thinking`` — model reasoning such as ``<think>…</think>`` or ``[THINK]…[/THINK]``
+  (normally switched off in llama-server; this is the safety net). Never shown.
 
 Only ``speech`` segments are ever spoken. :class:`ActionFilter` works on a token
 stream: when a marker opens, the text is held back until the marker closes or
@@ -20,7 +22,11 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Literal
 
-SegmentKind = Literal["speech", "action", "ooc", "code"]
+SegmentKind = Literal["speech", "action", "ooc", "code", "thinking"]
+
+# Reasoning blocks some models emit (Qwen / DeepSeek style tags; Magistral uses [THINK]).
+_THINK_TAGS = (("<think>", "</think>"), ("<thinking>", "</thinking>"), ("<reasoning>", "</reasoning>"))
+_THINK_TAG_PREFIX_LEN = max(len(t) for pair in _THINK_TAGS for t in pair)
 
 
 @dataclass(frozen=True)
@@ -116,6 +122,8 @@ class _Parser:
                     i = self._paren(i)
                 elif ch == "[":
                     i = self._bracket(i)
+                elif ch == "<":
+                    i = self._angle(i)
                 elif ch == "`":
                     i += 1  # inline code marker: dropped, content stays
                 else:
@@ -207,6 +215,32 @@ class _Parser:
             return len(text) if end < 0 else end + 1
         return i + 1  # ordinary parenthesis: drop it, keep the content
 
+    def _find_ci(self, marker: str, start: int) -> int:
+        """Case-insensitive :meth:`_find`."""
+        pos = self.text.lower().find(marker, start)
+        if pos < 0 and not self.final:
+            raise _Pending
+        return pos
+
+    def _angle(self, i: int) -> int:
+        """``<think>…</think>`` style reasoning blocks; any other ``<`` is ordinary text."""
+        text = self.text
+        head = text[i: i + _THINK_TAG_PREFIX_LEN].lower()
+        for open_tag, close_tag in _THINK_TAGS:
+            if head.startswith(open_tag):
+                end = self._find_ci(close_tag, i + len(open_tag))
+                self._emit("thinking", text[i + len(open_tag): end if end >= 0 else len(text)])
+                return len(text) if end < 0 else end + len(close_tag)
+        for _, close_tag in _THINK_TAGS:
+            if head.startswith(close_tag):
+                return i + len(close_tag)  # stray closing tag: drop it
+        if not self.final and len(head) < _THINK_TAG_PREFIX_LEN and any(
+            tag.startswith(head) for pair in _THINK_TAGS for tag in pair
+        ):
+            raise _Pending  # could still become a tag
+        self._speech.append("<")
+        return i + 1
+
     def _bracket(self, i: int) -> int:
         text = self.text
         self._need(i + 1)
@@ -216,6 +250,12 @@ class _Parser:
             return len(text) if end < 0 else end + 2
         end = self._find("]", i + 1)
         inner = text[i + 1: end if end >= 0 else len(text)]
+        if end >= 0 and inner.strip().upper() == "THINK":
+            close = self._find_ci("[/think]", end + 1)  # Magistral-style reasoning block
+            self._emit("thinking", text[end + 1: close if close >= 0 else len(text)])
+            return len(text) if close < 0 else close + len("[/think]")
+        if end >= 0 and inner.strip().upper() == "/THINK":
+            return end + 1  # stray closing marker
         if end >= 0:
             self._need(end + 1)
             if self._char(end + 1) == "(":
