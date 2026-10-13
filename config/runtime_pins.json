@@ -1,0 +1,43 @@
+{
+  "_comment": "Pinned versions of everything the installer downloads. Update deliberately and test.",
+  "uv": {
+    "version": "0.13.0",
+    "url": "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-x86_64-pc-windows-msvc.zip"
+  },
+  "python": "3.12",
+  "llama_cpp": {
+    "tag": "b11582",
+    "builds": {
+      "cuda-13.4": {
+        "min_driver": 580.0,
+        "zip": "llama-b11582-bin-win-cuda-13.4-x64.zip",
+        "cudart": "cudart-llama-bin-win-cuda-13.4-x64.zip"
+      },
+      "cuda-12.4": {
+        "min_driver": 551.61,
+        "zip": "llama-b11582-bin-win-cuda-12.4-x64.zip",
+        "cudart": "cudart-llama-bin-win-cuda-12.4-x64.zip"
+      }
+    },
+    "base_url": "https://github.com/ggml-org/llama.cpp/releases/download/b11582/"
+  },
+  "models": {
+    "whisper": {
+      "large-v3-turbo": {
+        "repo": "dropbox-dash/faster-whisper-large-v3-turbo",
+        "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf"
+      }
+    },
+    "omnivoice": {
+      "repo": "k2-fsa/OmniVoice"
+    },
+    "vad": {
+      "url": "https://raw.githubusercontent.com/snakers4/silero-vad/v6.2.3/src/silero_vad/data/silero_vad.jit",
+      "file": "silero_vad.jit"
+    }
+  },
+  "m1_llm": {
+    "repo": "bartowski/google_gemma-3-12b-it-GGUF",
+    "file": "google_gemma-3-12b-it-Q5_K_M.gguf"
+  }
+}
