@@ -12,7 +12,7 @@ models:
     hf_repo: mradermacher/gemma-4-26B-A4B-it-ultra-uncensored-heretic-i1-GGUF
     context_default: 8192
     license_note: "Apache-2.0 (Gemma 4). Uncensored community build of Google's Gemma 4."
-    languages_note: "Very good German and many other languages."
+    languages_note: "Very good German, French and Spanish, and many other languages."
     note: "Mixture-of-experts: only 4B parameters active, so it stays fast even when partly on the CPU."
     files:
       Q4_K_M:
@@ -35,7 +35,7 @@ models:
     hf_repo: bartowski/TheDrummer_Cydonia-24B-v4.3-GGUF
     context_default: 8192
     license_note: "Apache-2.0 base (Mistral Small 3.2); roleplay finetune by TheDrummer, imatrix quants by bartowski."
-    languages_note: "Strongest in English; good German."
+    languages_note: "Strongest in English; good German, French and Spanish."
     files:
       Q4_K_M:
         file: "TheDrummer_Cydonia-24B-v4.3-Q4_K_M.gguf"
@@ -57,7 +57,7 @@ models:
     hf_repo: TheDrummer/Magidonia-24B-v4.3-GGUF
     context_default: 8192
     license_note: "Apache-2.0 base (Magistral Small 2509); roleplay finetune by TheDrummer."
-    languages_note: "Strongest in English; good German."
+    languages_note: "Strongest in English; good German, French and Spanish."
     files:
       Q4_K_M:
         file: "Cydonia-24B-v4zk-Q4_K_M.gguf"
@@ -79,7 +79,7 @@ models:
     hf_repo: mradermacher/Magidonia-24B-v4.3-heretic-v2-i1-GGUF
     context_default: 8192
     license_note: "Apache-2.0 base (Magistral Small 2509); TheDrummer's Magidonia, decensored by coder3101 with Heretic; imatrix quants by mradermacher."
-    languages_note: "Strongest in English; good German."
+    languages_note: "Strongest in English; good German, French and Spanish."
     files:
       Q4_K_M:
         file: "Magidonia-24B-v4.3-heretic-v2.i1-Q4_K_M.gguf"
@@ -101,7 +101,7 @@ models:
     hf_repo: TheDrummer/Skyfall-31B-v4.2-GGUF
     context_default: 8192
     license_note: "Apache-2.0 base (Magistral Small 2509); upscaled roleplay finetune by TheDrummer."
-    languages_note: "Strongest in English; good German."
+    languages_note: "Strongest in English; good German, French and Spanish."
     files:
       Q4_K_M:
         file: "Skyfall-31B-v4y-Q4_K_M.gguf"
@@ -123,7 +123,7 @@ models:
     hf_repo: huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF
     context_default: 8192
     license_note: "Apache-2.0 (Qwen 3.8). Uncensored (abliterated) build by huihui-ai, based on Unsloth's dynamic quants."
-    languages_note: "Good German and many other languages."
+    languages_note: "Good German, French and Spanish, and many other languages."
     note: "Dense 27B model: on a 24 GB GPU with voice output, Q4 runs partly on the CPU and replies are slower; best on 32 GB GPUs. Reasoning is switched off."
     files:
       Q4_K_S:
@@ -146,7 +146,7 @@ models:
     hf_repo: culturerevolt/gemma-4-12b-heretic-abliterated-GGUF
     context_default: 8192
     license_note: "Apache-2.0 (Gemma 4). Uncensored community build of Google's Gemma 4."
-    languages_note: "Good German and many other languages."
+    languages_note: "Good German, French and Spanish, and many other languages."
     files:
       Q4_K_M:
         file: "gemma-4-12b-heretic-Q4_K_M.gguf"
@@ -168,7 +168,7 @@ models:
     hf_repo: TheDrummer/Rocinante-12B-v1.1-GGUF
     context_default: 8192
     license_note: "Apache-2.0 base (Mistral Nemo); roleplay finetune by TheDrummer."
-    languages_note: "Clearly strongest in English; German is weaker."
+    languages_note: "Clearly strongest in English; German, French and Spanish are weaker."
     files:
       Q4_K_M:
         file: "Rocinante-12B-v1.1-Q4_K_M.gguf"
@@ -190,7 +190,7 @@ models:
     hf_repo: bartowski/google_gemma-4-26B-A4B-it-GGUF
     context_default: 8192
     license_note: "Apache-2.0 (Gemma 4)."
-    languages_note: "Very good German and many other languages."
+    languages_note: "Very good German, French and Spanish, and many other languages."
     note: "Mixture-of-experts: only 4B parameters active, so it stays fast even when partly on the CPU."
     files:
       Q4_K_M:
@@ -213,7 +213,7 @@ models:
     hf_repo: bartowski/mistralai_Mistral-Small-3.2-24B-Instruct-2506-GGUF
     context_default: 8192
     license_note: "Apache-2.0 (Mistral Small 3.2)."
-    languages_note: "Good German, French, Spanish, Italian."
+    languages_note: "Good German, French, Spanish and Italian."
     files:
       Q4_K_M:
         file: "mistralai_Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf"
@@ -235,7 +235,7 @@ models:
     hf_repo: unsloth/gemma-4-12b-it-GGUF
     context_default: 8192
     license_note: "Apache-2.0 (Gemma 4)."
-    languages_note: "Good German and many other languages."
+    languages_note: "Good German, French and Spanish, and many other languages."
     files:
       Q4_K_M:
         file: "gemma-4-12b-it-Q4_K_M.gguf"
