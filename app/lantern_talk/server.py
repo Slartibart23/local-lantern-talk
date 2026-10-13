@@ -9,13 +9,15 @@ Browser → server, JSON: ``text``, ``mic_format`` (sample_rate), ``playback_end
 ``pause``, ``settings`` (values), ``new_conversation``, ``reference_text`` (voice, text),
 ``download_model`` (id, quant), ``cancel_download``, ``delete_model`` (file),
 ``add_custom_model`` (source, quant, variant), ``remove_custom_model`` (id),
-``set_model_label`` (file, variant). Binary: microphone PCM
+``set_model_label`` (file, variant), ``preview_voice`` (voice), ``rename_voice`` (voice, name),
+``delete_voice`` (voice), ``regenerate_builtin_voices``. Binary: microphone PCM
 (int16 mono at the announced sample rate).
 
 Server → browser, JSON: ``hello`` (full snapshot), ``state``, ``user_message``,
 ``assistant_start``, ``segment``, ``audio`` (immediately followed by one binary
 message with int16 PCM), ``turn_done``, ``settings``, ``components``, ``voices``, ``voice_info``,
-``models``, ``model_status``, ``download`` (progress),
+``models``, ``model_status``, ``download`` (progress), ``custom_suggestions``,
+``preview_start`` / ``preview_done`` (voice preview audio in between), ``notice``,
 ``cleared``, ``error``, ``replaced``.
 
 HTTP: ``POST /api/voices?filename=…`` with the raw audio file as body adds a
@@ -195,6 +197,14 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
                     engine.remove_custom_model(str(data.get("id", "")))
                 elif kind == "set_model_label":
                     engine.set_model_label(str(data.get("file", "")), str(data.get("variant", "")))
+                elif kind == "preview_voice":
+                    engine.preview_voice(str(data.get("voice", "")))
+                elif kind == "rename_voice":
+                    engine.rename_voice(str(data.get("voice", "")), str(data.get("name", ""))[:120])
+                elif kind == "delete_voice":
+                    engine.delete_voice(str(data.get("voice", "")))
+                elif kind == "regenerate_builtin_voices":
+                    engine.regenerate_builtin_voices()
                 elif kind == "reference_text":
                     engine.set_reference_text(str(data.get("voice", "")), str(data.get("text", "")))
                 elif kind == "refresh":

@@ -99,10 +99,34 @@ class FakeVoices:
         return match_builtin_voice(voice, language, self.builtins)
 
     def language_of(self, voice: str) -> str | None:
-        return None
+        b = self.builtins.get(voice.removeprefix("builtin:"))
+        return b.language if b else None
 
     def reference_text(self, source: Path) -> tuple[str, str] | None:
         return self.texts.get(source.name)
+
+    def clip_report(self, source: Path) -> dict[str, Any] | None:
+        import soundfile as sf
+
+        from lantern_talk.audio_prep import analyze
+
+        try:
+            audio, _ = sf.read(str(source), dtype="float32")
+        except Exception:  # noqa: BLE001
+            return None
+        return analyze(audio, audio).to_dict()
+
+    def custom_language(self, source: Path) -> str | None:
+        return "de"
+
+    def forget(self, source: Path) -> None:
+        self.forgotten = [*getattr(self, "forgotten", []), source.name]
+
+    def cleanup_cache(self, voices_dir: Path) -> None:
+        pass
+
+    def regenerate_builtin(self, voice_id: str) -> None:
+        self.regenerated = [*getattr(self, "regenerated", []), voice_id]
 
     def set_reference_text(self, source: Path, text: str) -> None:
         self.texts[source.name] = (text, "user")
@@ -324,8 +348,11 @@ def wav_bytes(seconds: float) -> bytes:
 
     import soundfile as sf
 
+    # syllable-like tone bursts: a clean "recording" without background noise
+    t = np.arange(int(24_000 * seconds)) / 24_000
+    audio = (0.3 * (np.sin(2 * np.pi * 3 * t) > 0) * np.sin(2 * np.pi * 200 * t)).astype(np.float32)
     buf = io.BytesIO()
-    sf.write(buf, np.zeros(int(24_000 * seconds), dtype=np.float32), 24_000, format="WAV")
+    sf.write(buf, audio, 24_000, format="WAV")
     return buf.getvalue()
 
 
@@ -363,8 +390,73 @@ def test_add_voice_rejects_bad_files(setup, name: str, data: bytes, message: str
 
 def test_add_voice_warns_about_length(setup) -> None:  # noqa: ANN001
     engine, comps, rec = setup
-    assert "only 1.5 s" in engine.add_voice("short.wav", wav_bytes(1.5))["warnings"][0]
+    assert "Only 1.5 s" in engine.add_voice("short.wav", wav_bytes(1.5))["warnings"][0]
     assert "first 15 s" in engine.add_voice("long.wav", wav_bytes(25))["warnings"][0]
+
+
+def test_add_voice_accepts_messenger_formats(setup) -> None:  # noqa: ANN001
+    from lantern_talk.engine import UserError
+
+    engine, comps, rec = setup
+    with pytest.raises(UserError, match="Could not read"):  # accepted extension, broken content
+        engine.add_voice("voice-note.opus", b"not really opus")
+    with pytest.raises(UserError, match="OPUS, M4A"):
+        engine.add_voice("clip.exe", b"MZ")
+
+
+def test_rename_voice_keeps_selection(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    voice = engine.add_voice("anna.wav", wav_bytes(5))["id"]
+    (engine.paths.voices / "anna.txt").write_text("Hallo", encoding="utf-8")
+    engine.update_settings({"voice": voice})
+    rec.wait_for(lambda ev: any(e["type"] == "settings" and e["settings"]["voice"] == voice for e in ev))
+    start = len(rec.events)
+    engine.rename_voice(voice, "Anna <ruhig>")
+    rec.wait_for(lambda ev: any(e["type"] == "settings" and e["settings"]["voice"] != voice for e in ev[start:]))
+    assert engine.store.settings.voice == "custom:Anna _ruhig.wav"
+    assert (engine.paths.voices / "Anna _ruhig.wav").exists() and (engine.paths.voices / "Anna _ruhig.txt").exists()
+    assert not (engine.paths.voices / "anna.wav").exists()
+
+
+def test_delete_selected_voice_falls_back_to_builtin(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    voice = engine.add_voice("anna.wav", wav_bytes(5))["id"]
+    engine.update_settings({"voice": voice})
+    rec.wait_for(lambda ev: any(e["type"] == "settings" and e["settings"]["voice"] == voice for e in ev))
+    start = len(rec.events)
+    engine.delete_voice(voice)
+    rec.wait_for(lambda ev: any(e["type"] == "voices" for e in ev[start:]))
+    rec.wait_for(lambda ev: any(e["type"] == "settings" and e["settings"]["voice"] == "builtin:en_female"
+                                for e in ev[start:]))
+    assert not (engine.paths.voices / "anna.wav").exists()
+
+
+def test_builtin_voices_cannot_be_deleted(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    start = len(rec.events)
+    engine.delete_voice("builtin:de_male")
+    rec.wait_for(lambda ev: any(e["type"] == "error" and "cannot" in e["message"] for e in ev[start:]))
+
+
+def test_preview_speaks_sample_in_voice_language(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    start = len(rec.events)
+    engine.preview_voice("builtin:fr_male")
+    rec.wait_for(lambda ev: any(e["type"] == "preview_done" for e in ev[start:]))
+    audio = [e for e in rec.events[start:] if e["type"] == "audio"]
+    assert audio and audio[0]["text"].startswith("Bonjour")
+    assert engine.state is State.SPEAKING  # mic stays muted until the browser played it
+    engine.playback_ended()
+    rec.wait_state("listening", start)
+    assert engine.store.settings.voice == "builtin:en_female"  # preview does not change the selection
+
+
+def test_regenerate_builtin_voices(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    start = len(rec.events)
+    engine.regenerate_builtin_voices()
+    rec.wait_for(lambda ev: any(e["type"] == "notice" for e in ev[start:]))
+    assert len(comps.voices.regenerated) == 8
 
 
 def test_reference_text_rebuilds_active_custom_voice(setup) -> None:  # noqa: ANN001

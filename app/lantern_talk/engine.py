@@ -37,6 +37,7 @@ from .paths import Paths
 from .pipeline import Conversation, ConversationConfig, SegmentEvent, SpeechAudio, TurnDone, TurnError
 from .prompts import DEFAULT_ASSISTANT_PERSONA
 from .resample import StreamingResampler
+from .audio_prep import VOICE_EXTENSIONS
 from .hardware import effective_profile
 from .settings import Settings, SettingsStore
 from .stt import WhisperSTT
@@ -46,12 +47,19 @@ from .vad import SAMPLE_RATE, SegmenterConfig, SileroVAD, Utterance, UtteranceSe
 
 log = logging.getLogger(__name__)
 
-AUDIO_EXTENSIONS = (".mp3", ".wav", ".flac", ".ogg")
+AUDIO_EXTENSIONS = VOICE_EXTENSIONS
+DEFAULT_VOICE = "builtin:en_female"
+# Sample sentences for previewing a voice, in the voice's language.
+PREVIEW_TEXT = {
+    "de": "Hallo! So klinge ich. Ich freue mich auf unser Gespräch.",
+    "en": "Hello! This is how I sound. I'm looking forward to our conversation.",
+    "es": "¡Hola! Así sueno yo. Me alegra poder hablar contigo.",
+    "fr": "Bonjour ! Voici ma voix. Je me réjouis de notre conversation.",
+}
 POST_PLAYBACK_MUTE_S = 0.3        # ignore the mic briefly after playback (room echo)
 PLAYBACK_WAIT_MARGIN_S = 15.0     # safety timeout if the browser never reports playback end
 LANGUAGE_CONFIDENCE = 0.6         # below this, keep the previously detected language
 MAX_VOICE_UPLOAD_BYTES = 50 * 2**20
-RECOMMENDED_CLIP_S = (3.0, 10.0)  # spec §7.1: 3-10 s of clean speech
 
 EmitFn = Callable[[dict[str, Any], bytes | None], None]
 
@@ -89,6 +97,7 @@ def build_components(paths: Paths, settings: Settings) -> Components:
     voices = VoiceLibrary(
         tts, paths.config / "builtin_voices.yaml", paths.builtin_voices, paths.voice_cache,
         transcribe=lambda audio, sr, lang: stt.transcribe_at(audio, sr, lang).text,
+        ffmpeg=paths.ffmpeg,
     )
     server = LlamaServer(paths.llama_server, paths.logs, env=dict(os.environ))
     return Components(
@@ -229,43 +238,48 @@ class Engine:
     def add_voice(self, filename: str, data: bytes) -> dict[str, Any]:
         """Store an uploaded reference clip in ``user_data/voices`` (spec §7.1).
 
-        Returns the new voice id plus warnings about the clip length. The file name
-        is sanitized and never overwrites an existing voice.
+        Returns the new voice id plus the clip's quality warnings (length, noise,
+        clipping). The file name is sanitized and never overwrites an existing voice.
         """
-        import soundfile as sf
-
         name = Path(filename).name  # drop any directory part
         suffix = Path(name).suffix.lower()
         if suffix not in AUDIO_EXTENSIONS:
-            raise UserError("Please upload an MP3, WAV, FLAC or OGG file.")
+            raise UserError("Please upload an audio file: MP3, WAV, FLAC, OGG, OPUS, M4A, AAC or WEBM.")
         if not data:
             raise UserError("The file is empty.")
         if len(data) > MAX_VOICE_UPLOAD_BYTES:
             raise UserError("The file is too large. A voice clip only needs 3-10 seconds of speech.")
-        stem = re.sub(r"[^\w\- ]+", "_", Path(name).stem).strip(" ._") or "voice"
         self.paths.voices.mkdir(parents=True, exist_ok=True)
+        target = self._free_voice_path(_safe_stem(Path(name).stem), suffix)
+        target.write_bytes(data)
+        report = self.c.voices.clip_report(target)
+        if report is None:
+            target.unlink(missing_ok=True)
+            raise UserError(f"Could not read {name} as audio.")
+        self._emit({"type": "voices", "voices": self.list_voices()})
+        return {"id": f"custom:{target.name}", "name": target.stem, "duration_s": report["duration_s"],
+                "warnings": report["warnings"]}
+
+    def _free_voice_path(self, stem: str, suffix: str, ignore: Path | None = None) -> Path:
+        """``stem + suffix`` in user_data\\voices, numbered if the name is taken."""
         target = self.paths.voices / f"{stem}{suffix}"
         n = 2
-        while target.exists():
+        while target.exists() and target != ignore:
             target = self.paths.voices / f"{stem} ({n}){suffix}"
             n += 1
-        target.write_bytes(data)
-        try:
-            duration = sf.info(str(target)).duration
-        except Exception as exc:  # noqa: BLE001 - unreadable upload
-            target.unlink(missing_ok=True)
-            raise UserError(f"Could not read {name} as audio.") from exc
-        warnings = []
-        low, high = RECOMMENDED_CLIP_S
-        if duration < low:
-            warnings.append(f"The clip is only {duration:.1f} s long; {low:.0f}-{high:.0f} s of clean speech clone best.")
-        elif duration > 20:
-            warnings.append(f"The clip is {duration:.0f} s long; only the first 15 s are used. {low:.0f}-{high:.0f} s work best.")
-        elif duration > high:
-            warnings.append(f"The clip is {duration:.0f} s long; {low:.0f}-{high:.0f} s usually clone best.")
-        self._emit({"type": "voices", "voices": self.list_voices()})
-        return {"id": f"custom:{target.name}", "name": target.stem, "duration_s": round(duration, 1),
-                "warnings": warnings}
+        return target
+
+    def rename_voice(self, voice: str, new_name: str) -> None:
+        self._commands.put(("rename_voice", (voice, new_name)))
+
+    def delete_voice(self, voice: str) -> None:
+        self._commands.put(("delete_voice", voice))
+
+    def preview_voice(self, voice: str) -> None:
+        self._commands.put(("preview_voice", voice))
+
+    def regenerate_builtin_voices(self) -> None:
+        self._commands.put(("regenerate_builtins", None))
 
     # ------------------------------------------------------------------ listings
     def list_voices(self) -> dict[str, list[dict[str, str]]]:
@@ -417,6 +431,10 @@ class Engine:
             "add_custom": lambda arg: self._handle_add_custom(*arg),
             "remove_custom": self._handle_remove_custom,
             "set_label": lambda arg: self._handle_set_label(*arg),
+            "rename_voice": lambda arg: self._handle_rename_voice(*arg),
+            "delete_voice": self._handle_delete_voice,
+            "preview_voice": self._handle_preview_voice,
+            "regenerate_builtins": self._handle_regenerate_builtins,
         }
         while True:
             name, arg = self._commands.get()
@@ -492,6 +510,8 @@ class Engine:
     def _load_all(self) -> None:
         s = self.store.settings
         try:
+            if self.paths.voices.is_dir():
+                self.c.voices.cleanup_cache(self.paths.voices)  # caches of deleted / replaced clips
             if s.mic_enabled:
                 self._load_mic()
             if s.voice_output:
@@ -697,7 +717,78 @@ class Engine:
             if ref:
                 info["reference_text"], info["origin"] = ref
             info["text_file"] = str(path.with_suffix(".txt").relative_to(self.paths.root))
+            info["report"] = self.c.voices.clip_report(path) if path.exists() else None
+            info["language"] = self.c.voices.custom_language(path) if path.exists() else None
         return info
+
+    # -- managing voices (spec §7.1 / §7.2) -------------------------------------------------
+    def _custom_path(self, voice: str) -> Path:
+        if not voice.startswith("custom:"):
+            raise UserError("Built-in voices cannot be renamed or deleted.")
+        return Path(self._voice_ref(voice))
+
+    def _handle_rename_voice(self, voice: str, new_name: str) -> None:
+        path = self._custom_path(voice)
+        target = self._free_voice_path(_safe_stem(new_name), path.suffix, ignore=path)
+        if target == path:
+            return
+        path.rename(target)  # keeps the time stamp, so the voice cache stays valid
+        text = path.with_suffix(".txt")
+        if text.exists():
+            text.rename(target.with_suffix(".txt"))
+        self.c.voices.forget(path)
+        new_id = f"custom:{target.name}"
+        if self.store.settings.voice == voice:
+            self.store.settings.voice = new_id
+            self.store.save()
+            self.conversation.config.voice = str(target)
+            self._emit({"type": "settings", "settings": asdict(self.store.settings)})
+        self._emit({"type": "voices", "voices": self.list_voices()})
+        self._emit({"type": "voice_info", **self.voice_info()})
+
+    def _handle_delete_voice(self, voice: str) -> None:
+        path = self._custom_path(voice)
+        path.unlink(missing_ok=True)
+        path.with_suffix(".txt").unlink(missing_ok=True)
+        self.c.voices.forget(path)
+        self.c.voices.cleanup_cache(self.paths.voices)
+        if self.store.settings.voice == voice:
+            # The selected voice is gone: fall back to a built-in one (it follows the language).
+            self._apply_settings({"voice": DEFAULT_VOICE})
+        self._emit({"type": "voices", "voices": self.list_voices()})
+        self._emit({"type": "voice_info", **self.voice_info()})
+
+    def _handle_preview_voice(self, voice: str) -> None:
+        """Speak a sample sentence with ``voice`` (does not change the selected voice)."""
+        if not self.store.settings.voice_output or self.conversation.tts is None:
+            raise UserError("Turn voice output on to preview voices.")
+        ref = self._voice_ref(voice)
+        language = self.c.voices.language_of(ref) or self.last_language or "en"
+        text = PREVIEW_TEXT.get(language, PREVIEW_TEXT["en"])
+        self._set_state(State.LOADING, f"Preparing voice {self._voice_label(voice)}…")
+        prompt = self.c.voices.prompt_for(ref)
+        result = self.c.tts.synthesize(text, prompt, language)
+        self._playback_done.clear()
+        self._set_state(State.SPEAKING, "Voice preview")
+        self._emit({"type": "preview_start", "voice": voice, "text": text})
+        pcm = (np.clip(result.audio, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
+        self._emit({"type": "audio", "index": 0, "sample_rate": 24_000, "text": text}, pcm)
+        self._emit({"type": "preview_done"})
+        if not self._playback_done.wait(timeout=result.duration_s + PLAYBACK_WAIT_MARGIN_S):
+            log.warning("Browser did not report the end of the preview.")
+        time.sleep(POST_PLAYBACK_MUTE_S)
+        self._enter_idle()
+
+    def _handle_regenerate_builtins(self, _: Any = None) -> None:
+        if not self.store.settings.voice_output or not self.c.tts.loaded:
+            raise UserError("Turn voice output on to generate the built-in voices.")
+        builtins = list(self.c.voices.builtins.values())
+        for n, spec in enumerate(builtins, 1):
+            self._set_state(State.LOADING, f"Generating built-in voice {n} of {len(builtins)}: {spec.name}…")
+            self.c.voices.regenerate_builtin(spec.id)
+        self._prepare_voice()
+        self._emit({"type": "notice", "message": "All 8 built-in voices were generated again."})
+        self._enter_idle()
 
     def _handle_reference_text(self, voice: str, text: str) -> None:
         if not voice.startswith("custom:"):
@@ -780,3 +871,8 @@ def _append_segment(segments: list[dict[str, str]], kind: str, text: str) -> Non
         segments[-1]["text"] += text
     else:
         segments.append({"kind": kind, "text": text})
+
+
+def _safe_stem(stem: str) -> str:
+    """A file name stem without path separators or characters Windows does not allow."""
+    return re.sub(r"[^\w\- ()]+", "_", stem).strip(" ._") or "voice"

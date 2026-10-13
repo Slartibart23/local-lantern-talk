@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -154,10 +153,12 @@ def _load_prompt(path: Path) -> object:
 
 
 def file_fingerprint(path: Path) -> str:
-    """Cache key that changes whenever the source file changes."""
+    """Cache key that changes when the audio changes, but not when the file is renamed."""
     st = path.stat()
     h = hashlib.sha1()
-    h.update(f"{path.name}|{st.st_size}|{st.st_mtime_ns}".encode())
+    h.update(f"{st.st_size}|{st.st_mtime_ns}|".encode())
+    with open(path, "rb") as f:
+        h.update(f.read(1 << 18))  # first 256 KB: guards against an unchanged size and time
     return h.hexdigest()[:16]
 
 
@@ -175,12 +176,14 @@ class VoiceLibrary:
         builtin_dir: Path,
         custom_cache_dir: Path,
         transcribe: Callable[[np.ndarray, int, str | None], str],
+        ffmpeg: Path | None = None,
     ) -> None:
         self.tts = tts
         self.builtins = load_builtin_voices(builtin_config)
         self.builtin_dir = builtin_dir
         self.custom_cache_dir = custom_cache_dir
         self.transcribe = transcribe
+        self.ffmpeg = ffmpeg if ffmpeg and ffmpeg.exists() else None
         self._prompts: dict[str, object] = {}
 
     def prompt_for(self, voice: str) -> object:
@@ -198,7 +201,8 @@ class VoiceLibrary:
         if voice.startswith("builtin:"):
             b = self.builtins.get(voice.removeprefix("builtin:"))
             return b.language if b else None
-        return None
+        path = Path(voice)
+        return self.custom_language(path) if path.exists() else None
 
     # -- built-in ------------------------------------------------------------------
     def _builtin_prompt(self, voice_id: str, regenerate: bool = False) -> object:
@@ -243,6 +247,12 @@ class VoiceLibrary:
         self._prompts[f"builtin:{voice_id}"] = self._builtin_prompt(voice_id, regenerate=True)
 
     # -- custom reference clips --------------------------------------------------------
+    # Cache files in user_data\voices\.cache, keyed by the audio fingerprint (not the name,
+    # so renaming a voice keeps its cache):
+    #   <fp>.prepared.wav   trimmed, loudness-normalized 24 kHz clip (ffmpeg)
+    #   <fp>.meta.json      quality report (length, noise, clipping)
+    #   <fp>.whisper.txt    Whisper transcript, if the user gave none
+    #   <fp>-<text>.pt      OmniVoice prompt built from the clip and its transcript
     @staticmethod
     def text_file_for(source: Path) -> Path:
         """User-provided transcript next to the clip: ``clip.mp3`` -> ``clip.txt``."""
@@ -256,7 +266,7 @@ class VoiceLibrary:
         user_text = self._user_text(source)
         if user_text:
             return user_text, "user"
-        cached = self._whisper_cache(source)
+        cached = self._cache_file(source, ".whisper.txt")
         if cached.exists():
             return cached.read_text(encoding="utf-8").strip(), "whisper"
         return None
@@ -271,56 +281,113 @@ class VoiceLibrary:
             target.unlink(missing_ok=True)
         self._prompts.pop(str(source), None)  # prepared again with the new text
 
+    def custom_language(self, source: Path) -> str | None:
+        """Language of a custom clip, guessed from its transcript (DE / EN / ES / FR)."""
+        from .textlang import guess_language
+
+        ref = self.reference_text(source)
+        return guess_language(ref[0]) if ref else None
+
+    def clip_report(self, source: Path) -> dict[str, object] | None:
+        """Quality report of a clip (computed once, then cached); None if it cannot be read."""
+        import json
+
+        from .audio_prep import PrepError, analyze
+
+        meta = self._cache_file(source, ".meta.json")
+        if meta.exists():
+            try:
+                return json.loads(meta.read_text(encoding="utf-8"))
+            except ValueError:
+                pass
+        try:
+            prepared = self._prepared_audio(source)
+            original = load_audio(source, REF_SAMPLE_RATE) if self.ffmpeg is None else self._decode(source)
+        except (PrepError, OSError, RuntimeError):
+            return None
+        report = analyze(original, prepared).to_dict()
+        meta.write_text(json.dumps(report), encoding="utf-8")
+        return report
+
+    def forget(self, source: Path) -> None:
+        """Drop everything cached for a clip (after it was deleted or replaced)."""
+        self._prompts.pop(str(source), None)
+
+    def cleanup_cache(self, voices_dir: Path) -> None:
+        """Remove cache files that belong to no current voice file."""
+        if not self.custom_cache_dir.is_dir():
+            return
+        current = {file_fingerprint(f) for f in voices_dir.iterdir()
+                   if f.is_file() and f.suffix.lower() != ".txt"}
+        for f in self.custom_cache_dir.iterdir():
+            if f.is_file() and f.name[:16] not in current:
+                f.unlink(missing_ok=True)
+
+    def _cache_file(self, source: Path, suffix: str) -> Path:
+        return self.custom_cache_dir / f"{file_fingerprint(source)}{suffix}"
+
     def _user_text(self, source: Path) -> str:
         f = self.text_file_for(source)
         return f.read_text(encoding="utf-8").strip() if f.exists() else ""
 
-    def _whisper_cache(self, source: Path) -> Path:
-        return self.custom_cache_dir / f"{source.stem}-{file_fingerprint(source)}.whisper.txt"
+    def _decode(self, source: Path) -> np.ndarray:
+        from .audio_prep import decode
+
+        assert self.ffmpeg is not None
+        return decode(source, self.ffmpeg, REF_SAMPLE_RATE)
+
+    def _prepared_audio(self, source: Path) -> np.ndarray:
+        """The clip as OmniVoice should hear it: trimmed and loudness-normalized (cached)."""
+        import soundfile as sf
+
+        from .audio_prep import prepare
+
+        if self.ffmpeg is None:  # e.g. ffmpeg missing: OmniVoice's own preprocessing still applies
+            return load_reference_audio(source)
+        self.custom_cache_dir.mkdir(parents=True, exist_ok=True)
+        cached = self._cache_file(source, ".prepared.wav")
+        if cached.exists():
+            audio, _ = sf.read(str(cached), dtype="float32")
+            return audio
+        return prepare(source, cached, self.ffmpeg)
 
     def _custom_prompt(self, source: Path) -> object:
         if not source.exists():
             raise FileNotFoundError(f"Voice file not found: {source}")
         self.custom_cache_dir.mkdir(parents=True, exist_ok=True)
         user_text = self._user_text(source)
-        ref_text = user_text
-        if not ref_text and self._whisper_cache(source).exists():
-            ref_text = self._whisper_cache(source).read_text(encoding="utf-8").strip()
+        whisper_file = self._cache_file(source, ".whisper.txt")
+        ref_text = user_text or (whisper_file.read_text(encoding="utf-8").strip() if whisper_file.exists() else "")
         if ref_text:
             prompt_file = self._prompt_file(source, ref_text)
             if prompt_file.exists():
                 return _load_prompt(prompt_file)
 
         log.info("Preparing custom voice %s ...", source.name)
-        audio = load_reference_audio(source)
+        audio = self._prepared_audio(source)
         duration = len(audio) / REF_SAMPLE_RATE
-        if duration < 3:
-            log.warning("Reference clip %s is only %.1fs; 3-10 s of clean speech works best.", source.name, duration)
-        elif duration > 20 and not user_text:
+        if duration > 20 and not user_text:
             # Whisper transcribes what is kept; a user transcript covers the whole clip.
-            log.warning("Reference clip %s is %.0fs long; it will be trimmed. 3-10 s works best.", source.name, duration)
             audio = audio[: 15 * REF_SAMPLE_RATE]
         if not ref_text:
             ref_text = self.transcribe(audio, REF_SAMPLE_RATE, None).strip()
             if not ref_text:
                 raise ValueError(f"No speech found in voice clip {source.name}.")
-            self._whisper_cache(source).write_text(ref_text + "\n", encoding="utf-8")
-        prompt_file = self._prompt_file(source, ref_text)
+            whisper_file.write_text(ref_text + "\n", encoding="utf-8")
         prompt = self.tts.make_prompt(audio, REF_SAMPLE_RATE, ref_text)
+        prompt_file = self._prompt_file(source, ref_text)
         prompt.save(str(prompt_file))  # type: ignore[attr-defined]
-        self._remove_stale_cache(source, keep={prompt_file, self._whisper_cache(source)})
+        self._remove_old_prompts(source, keep=prompt_file)
         return prompt
 
     def _prompt_file(self, source: Path, ref_text: str) -> Path:
         text_key = hashlib.sha1(ref_text.encode("utf-8")).hexdigest()[:8]
-        return self.custom_cache_dir / f"{source.stem}-{file_fingerprint(source)}-{text_key}.pt"
+        return self.custom_cache_dir / f"{file_fingerprint(source)}-{text_key}.pt"
 
-    def _remove_stale_cache(self, source: Path, keep: set[Path]) -> None:
-        # Exact pattern, so "clip-2.mp3" never matches the files of "clip.mp3".
-        # The optional text key also covers prompts cached by older versions.
-        own = re.compile(re.escape(source.stem) + r"-[0-9a-f]{16}((-[0-9a-f]{8})?\.pt|\.whisper\.txt)")
-        for f in self.custom_cache_dir.iterdir():
-            if own.fullmatch(f.name) and f not in keep:
+    def _remove_old_prompts(self, source: Path, keep: Path) -> None:
+        """Prompts built from an older transcript of the same clip."""
+        for f in self.custom_cache_dir.glob(f"{file_fingerprint(source)}-*.pt"):
+            if f != keep:
                 f.unlink(missing_ok=True)
 
 

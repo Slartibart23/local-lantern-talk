@@ -1,7 +1,8 @@
-"""Custom voice preparation: Whisper transcript vs. user-provided reference text."""
+"""Custom voice preparation: transcript, caching, ffmpeg preparation and quality report."""
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -9,21 +10,17 @@ import pytest
 import soundfile as sf
 
 from lantern_talk import tts as tts_module
-from lantern_talk.tts import VoiceLibrary
+from lantern_talk.paths import Paths
+from lantern_talk.tts import VoiceLibrary, file_fingerprint
 
 ROOT = Path(__file__).parents[1]
-
-
-def owned_by(stem: str, name: str) -> bool:
-    """Cache file of voice ``stem``: "<stem>-<16 hex>..." (a fingerprint may start with a digit)."""
-    import re
-
-    return re.match(re.escape(stem) + "-[0-9a-f]{16}[-.]", name) is not None
+FFMPEG = Paths(ROOT).ffmpeg
 
 
 class FakePrompt:
-    def __init__(self, ref_text: str) -> None:
+    def __init__(self, ref_text: str, n_samples: int = 0) -> None:
         self.ref_text = ref_text
+        self.n_samples = n_samples
 
     def save(self, path: str) -> None:
         Path(path).write_text(self.ref_text, encoding="utf-8")
@@ -31,75 +28,111 @@ class FakePrompt:
 
 class FakeTTS:
     def __init__(self) -> None:
-        self.prompt_texts: list[str] = []
+        self.prompts: list[FakePrompt] = []
 
     def make_prompt(self, audio: np.ndarray, sample_rate: int, ref_text: str) -> FakePrompt:
-        self.prompt_texts.append(ref_text)
-        return FakePrompt(ref_text)
+        self.prompts.append(FakePrompt(ref_text, len(audio)))
+        return self.prompts[-1]
 
 
-@pytest.fixture()
-def lib(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
+def tone_clip(path: Path, seconds: float, lead_silence: float = 0.0) -> None:
+    sr = 24_000
+    t = np.arange(int(sr * seconds)) / sr
+    voice = (0.3 * (np.sin(2 * np.pi * 3 * t) > 0) * np.sin(2 * np.pi * 200 * t)).astype(np.float32)
+    sf.write(path, np.concatenate([np.zeros(int(sr * lead_silence), np.float32), voice]), sr)
+
+
+def make_library(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ffmpeg: Path | None = None,
+                 transcript: str = "Hallo, das ist meine Stimme."):  # noqa: ANN201
     monkeypatch.setattr(tts_module, "_load_prompt", lambda p: FakePrompt(Path(p).read_text(encoding="utf-8")))
     voices = tmp_path / "voices"
     voices.mkdir()
-    for name in ("clip.wav", "clip-2.wav"):
-        sf.write(voices / name, np.zeros(24_000 * 4, dtype=np.float32), 24_000)
     calls: list[int] = []
 
     def transcribe(audio: np.ndarray, sr: int, lang: str | None) -> str:
         calls.append(len(audio))
-        return "whisper heard this"
+        return transcript
 
     fake = FakeTTS()
-    library = VoiceLibrary(fake, ROOT / "config" / "builtin_voices.yaml", tmp_path / "builtin",
-                           voices / ".cache", transcribe)
-    return library, fake, calls, voices
+    lib = VoiceLibrary(fake, ROOT / "config" / "builtin_voices.yaml", tmp_path / "builtin",
+                       voices / ".cache", transcribe, ffmpeg=ffmpeg)
+    return lib, fake, calls, voices
 
 
-def test_whisper_transcript_is_used_and_cached(lib) -> None:  # noqa: ANN001
-    library, fake, calls, voices = lib
-    clip = voices / "clip.wav"
-    assert library.reference_text(clip) is None
-    library.prompt_for(str(clip))
-    assert library.reference_text(clip) == ("whisper heard this", "whisper")
-    assert fake.prompt_texts == ["whisper heard this"]
+def test_whisper_transcript_is_used_and_cached(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    lib, fake, calls, voices = make_library(tmp_path, monkeypatch)
+    clip = voices / "anna.wav"
+    tone_clip(clip, 4)
+    assert lib.reference_text(clip) is None
+    lib.prompt_for(str(clip))
+    assert lib.reference_text(clip) == ("Hallo, das ist meine Stimme.", "whisper")
+    assert lib.custom_language(clip) == "de"
     # A new session reuses the cached prompt: no second transcription.
-    library2 = VoiceLibrary(fake, ROOT / "config" / "builtin_voices.yaml",
-                            library.builtin_dir, library.custom_cache_dir, library.transcribe)
-    library2.prompt_for(str(clip))
+    lib2 = VoiceLibrary(fake, ROOT / "config" / "builtin_voices.yaml", lib.builtin_dir,
+                        lib.custom_cache_dir, lib.transcribe)
+    lib2.prompt_for(str(clip))
     assert len(calls) == 1
 
 
-def test_user_text_overrides_whisper(lib) -> None:  # noqa: ANN001
-    library, fake, calls, voices = lib
-    clip = voices / "clip.wav"
-    library.prompt_for(str(clip))
-    library.set_reference_text(clip, "  Das ist der echte Text.  ")
-    assert (voices / "clip.txt").read_text(encoding="utf-8") == "Das ist der echte Text.\n"
-    assert library.reference_text(clip) == ("Das ist der echte Text.", "user")
-    prompt = library.prompt_for(str(clip))
-    assert prompt.ref_text == "Das ist der echte Text."
+def test_user_text_overrides_whisper(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    lib, fake, calls, voices = make_library(tmp_path, monkeypatch)
+    clip = voices / "anna.wav"
+    tone_clip(clip, 4)
+    lib.prompt_for(str(clip))
+    lib.set_reference_text(clip, "  Das ist der echte Text.  ")
+    assert (voices / "anna.txt").read_text(encoding="utf-8") == "Das ist der echte Text.\n"
+    assert lib.reference_text(clip) == ("Das ist der echte Text.", "user")
+    assert lib.prompt_for(str(clip)).ref_text == "Das ist der echte Text."
     assert len(calls) == 1  # Whisper not needed again
-    pts = [p.name for p in library.custom_cache_dir.iterdir() if owned_by("clip", p.name) and p.suffix == ".pt"]
-    assert len(pts) == 1  # the prompt built from the Whisper text was removed
+    assert len(list(lib.custom_cache_dir.glob("*.pt"))) == 1  # the old prompt was removed
 
 
-def test_empty_user_text_falls_back_to_whisper(lib) -> None:  # noqa: ANN001
-    library, fake, calls, voices = lib
-    clip = voices / "clip.wav"
-    library.set_reference_text(clip, "Mein Text")
-    library.prompt_for(str(clip))
-    library.set_reference_text(clip, "   ")
-    assert not (voices / "clip.txt").exists()
-    assert library.prompt_for(str(clip)).ref_text == "whisper heard this"
+def test_empty_user_text_falls_back_to_whisper(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    lib, fake, calls, voices = make_library(tmp_path, monkeypatch)
+    clip = voices / "anna.wav"
+    tone_clip(clip, 4)
+    lib.set_reference_text(clip, "Mein Text")
+    lib.prompt_for(str(clip))
+    lib.set_reference_text(clip, "   ")
+    assert not (voices / "anna.txt").exists()
+    assert lib.prompt_for(str(clip)).ref_text == "Hallo, das ist meine Stimme."
 
 
-def test_cleanup_never_touches_similarly_named_voice(lib) -> None:  # noqa: ANN001
-    library, fake, calls, voices = lib
-    library.prompt_for(str(voices / "clip-2.wav"))
-    before = {p.name for p in library.custom_cache_dir.iterdir() if owned_by("clip-2", p.name)}
-    library.set_reference_text(voices / "clip.wav", "Anderer Text")
-    library.prompt_for(str(voices / "clip.wav"))
-    after = {p.name for p in library.custom_cache_dir.iterdir() if owned_by("clip-2", p.name)}
-    assert before and before == after
+def test_rename_keeps_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    lib, fake, calls, voices = make_library(tmp_path, monkeypatch)
+    clip = voices / "anna.wav"
+    tone_clip(clip, 4)
+    lib.prompt_for(str(clip))
+    renamed = voices / "Anna (ruhig).wav"
+    os.replace(clip, renamed)  # renaming keeps the file's time stamp
+    assert file_fingerprint(renamed) == file_fingerprint(clip.with_name(renamed.name))
+    lib.prompt_for(str(renamed))
+    assert len(calls) == 1 and len(fake.prompts) == 1
+
+
+def test_cleanup_removes_only_orphans(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    lib, fake, calls, voices = make_library(tmp_path, monkeypatch)
+    keep, gone = voices / "keep.wav", voices / "gone.wav"
+    tone_clip(keep, 4)
+    tone_clip(gone, 5)
+    lib.prompt_for(str(keep))
+    lib.prompt_for(str(gone))
+    gone_fp = file_fingerprint(gone)
+    gone.unlink()
+    lib.cleanup_cache(voices)
+    names = [f.name for f in lib.custom_cache_dir.iterdir()]
+    assert names and all(n.startswith(file_fingerprint(keep)) for n in names)
+    assert not any(n.startswith(gone_fp) for n in names)
+
+
+@pytest.mark.skipif(not FFMPEG.exists(), reason="ffmpeg not installed")
+def test_prepared_clip_is_used_and_reported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    lib, fake, calls, voices = make_library(tmp_path, monkeypatch, ffmpeg=FFMPEG)
+    clip = voices / "padded.wav"
+    tone_clip(clip, 4, lead_silence=2.0)
+    lib.prompt_for(str(clip))
+    assert fake.prompts[0].n_samples < 24_000 * 4.6  # leading silence trimmed by ffmpeg
+    assert list(lib.custom_cache_dir.glob("*.prepared.wav"))
+    report = lib.clip_report(clip)
+    assert report is not None and 3.4 < report["duration_s"] < 4.6
+    assert list(lib.custom_cache_dir.glob("*.meta.json"))
