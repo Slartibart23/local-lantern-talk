@@ -335,7 +335,9 @@ def voice_loop(conv: Conversation, stt: WhisperSTT, segmenter: UtteranceSegmente
         except queue.Empty:
             continue
         for utt in segmenter.feed(frames):
-            t_end = time.perf_counter()
+            # The segmenter reports the utterance only after the end-of-speech silence
+            # has elapsed; measure latency from when the user actually stopped talking.
+            t_end = time.perf_counter() - segmenter.config.end_silence_ms / 1000
             mic.mute()  # ignore input until our reply has finished playing
             status("Transcribing")
             tr = stt.transcribe(utt.audio)
