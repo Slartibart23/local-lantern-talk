@@ -49,3 +49,17 @@ def test_python_sources_compile_without_warnings() -> None:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             compile((ROOT / name).read_text(encoding="utf-8"), name, "exec")
+
+
+@pytest.mark.skipif(not Path(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe").exists(),
+                    reason="Windows PowerShell not available")
+def test_installer_script_parses_in_windows_powershell() -> None:
+    """install.bat runs the script with Windows PowerShell 5.1; a syntax error would break every install."""
+    script = ROOT / "scripts" / "install.ps1"
+    check = (
+        "$errors = $null; "
+        f"[void][System.Management.Automation.Language.Parser]::ParseFile('{script}', [ref]$null, [ref]$errors); "
+        "if ($errors) { $errors | ForEach-Object { $_.ToString() }; exit 1 }"
+    )
+    out = subprocess.run(["powershell.exe", "-NoProfile", "-Command", check], capture_output=True, text=True)
+    assert out.returncode == 0, out.stdout + out.stderr
