@@ -69,6 +69,14 @@ class Paths:
         return self.root / "tmp"
 
     @property
+    def fonts(self) -> Path:
+        return self.runtime / "fonts"
+
+    @property
+    def web(self) -> Path:
+        return self.app / "web"
+
+    @property
     def venv_python(self) -> Path:
         return self.runtime / "venv" / "Scripts" / "python.exe"
 

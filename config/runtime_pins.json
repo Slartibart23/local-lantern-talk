@@ -59,6 +59,53 @@
       "file": "silero_vad.jit"
     }
   },
+  "fonts": {
+    "_comment": "IBM Plex (SIL Open Font License 1.1) from the @fontsource npm packages, served locally so the UI works offline.",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans@5.3.0/files/ibm-plex-sans-latin-400-normal.woff2",
+        "file": "ibm-plex-sans-latin-400-normal.woff2"
+      },
+      {
+        "url": "https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans@5.3.0/files/ibm-plex-sans-latin-ext-400-normal.woff2",
+        "file": "ibm-plex-sans-latin-ext-400-normal.woff2"
+      },
+      {
+        "url": "https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans@5.3.0/files/ibm-plex-sans-latin-500-normal.woff2",
+        "file": "ibm-plex-sans-latin-500-normal.woff2"
+      },
+      {
+        "url": "https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans@5.3.0/files/ibm-plex-sans-latin-ext-500-normal.woff2",
+        "file": "ibm-plex-sans-latin-ext-500-normal.woff2"
+      },
+      {
+        "url": "https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans@5.3.0/files/ibm-plex-sans-latin-600-normal.woff2",
+        "file": "ibm-plex-sans-latin-600-normal.woff2"
+      },
+      {
+        "url": "https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans@5.3.0/files/ibm-plex-sans-latin-ext-600-normal.woff2",
+        "file": "ibm-plex-sans-latin-ext-600-normal.woff2"
+      },
+      {
+        "url": "https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans@5.3.0/files/ibm-plex-sans-latin-400-italic.woff2",
+        "file": "ibm-plex-sans-latin-400-italic.woff2"
+      },
+      {
+        "url": "https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-mono@5.3.0/files/ibm-plex-mono-latin-400-normal.woff2",
+        "file": "ibm-plex-mono-latin-400-normal.woff2"
+      },
+      {
+        "url": "https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans@5.3.0/files/ibm-plex-sans-latin-ext-400-italic.woff2",
+        "file": "ibm-plex-sans-latin-ext-400-italic.woff2"
+      },
+      {
+        "url": "https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-mono@5.3.0/files/ibm-plex-mono-latin-ext-400-normal.woff2",
+        "file": "ibm-plex-mono-latin-ext-400-normal.woff2"
+      }
+    ],
+    "license_url": "https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans@5.3.0/LICENSE"
+  },
   "m1_llm": {
     "repo": "bartowski/google_gemma-3-12b-it-GGUF",
     "file": "google_gemma-3-12b-it-Q5_K_M.gguf"

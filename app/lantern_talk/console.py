@@ -32,6 +32,7 @@ from .paths import Paths, apply_portable_env, get_paths, path_warnings
 from .pipeline import Conversation, ConversationConfig, SegmentEvent, SpeechAudio, TurnDone, TurnError
 from .prompts import DEFAULT_ASSISTANT_PERSONA, language_name
 from .stt import WhisperSTT
+from .textlang import guess_language
 from .tts import OUTPUT_SAMPLE_RATE, OmniVoiceTTS, VoiceLibrary
 from .vad import FRAME_SAMPLES, SAMPLE_RATE, SegmenterConfig, SileroVAD, UtteranceSegmenter
 
@@ -310,7 +311,7 @@ def text_loop(conv: Conversation, player: Player | None) -> None:
             continue
         if text == "/quit":
             return
-        run_and_show_turn(conv, player, text, None)
+        run_and_show_turn(conv, player, text, guess_language(text))
 
 
 def voice_loop(conv: Conversation, stt: WhisperSTT, segmenter: UtteranceSegmenter,
@@ -331,6 +332,7 @@ def voice_loop(conv: Conversation, stt: WhisperSTT, segmenter: UtteranceSegmente
             return
         if text:
             mic.mute()
+            last_language = guess_language(text) or last_language
             run_and_show_turn(conv, player, text, last_language)
             _resume_listening(mic, segmenter)
             continue

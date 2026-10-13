@@ -58,3 +58,19 @@ def free_cuda_cache() -> None:
             torch.cuda.empty_cache()
     except Exception:  # noqa: BLE001
         pass
+
+
+def query_gpu() -> dict[str, object] | None:
+    """Name and memory of the first NVIDIA GPU via nvidia-smi (None if unavailable)."""
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.used,memory.total", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        ).stdout.strip().splitlines()
+        name, used, total = (p.strip() for p in out[0].split(","))
+        return {"name": name, "used_mb": int(used), "total_mb": int(total)}
+    except Exception:  # noqa: BLE001 - informational only
+        return None

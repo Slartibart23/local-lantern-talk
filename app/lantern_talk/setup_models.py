@@ -63,11 +63,22 @@ def download_m1_llm(paths: Paths, pins: dict) -> Path:
     return Path(hf_hub_download(repo_id=spec["repo"], filename=spec["file"], local_dir=paths.llm_models))
 
 
+def download_fonts(paths: Paths, pins: dict) -> None:
+    """IBM Plex web fonts for the offline UI (SIL Open Font License)."""
+    spec = pins["fonts"]
+    paths.fonts.mkdir(parents=True, exist_ok=True)
+    print(f"  Fonts (IBM Plex {spec['version']})")
+    for f in spec["files"]:
+        _download_url(f["url"], paths.fonts / f["file"])
+    _download_url(spec["license_url"], paths.fonts / "OFL-LICENSE.txt")
+
+
 def main() -> int:
     paths = get_paths()
     apply_portable_env(paths)
     pins = _load_pins(paths)
     try:
+        download_fonts(paths, pins)
         download_vad(paths, pins)
         download_whisper(paths, pins)
         download_omnivoice(paths, pins)

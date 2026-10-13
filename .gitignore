@@ -31,3 +31,6 @@ desktop.ini
 .DS_Store
 .vscode/
 .idea/
+
+# Local tool configuration
+/.claude/
