@@ -4,8 +4,8 @@ Fully local, portable Windows app for spoken (or typed) conversations with a loc
 large language model that answers in a synthesized — optionally cloned — voice.
 Assistant use and character roleplay, with per-character memory and session recording.
 
-> **Status: M1 (core loop, console only).** The web UI, installer checks, model
-> catalog, characters, memory and recording follow in later milestones (see `SPEC.md` §17).
+> **Status: M2 (web UI).** Installer checks and hardware profiles, the model catalog,
+> characters, memory and session recording follow in later milestones (see `SPEC.md` §17).
 
 ## Requirements
 
@@ -32,27 +32,45 @@ start (about 12 s extra on an RTX 5090) and caches them in `runtime\cache\`; it 
 also somewhat slower than the CUDA 13 build. After a
 driver update, re-run `install.bat` to switch to the CUDA 13 build.
 
-## M1 quick start
+## Quick start
 
 1. Run `install.bat` (downloads ~12 GB: portable Python + PyTorch, llama.cpp,
-   Whisper, OmniVoice, Silero VAD, and the Gemma 3 12B test model).
-2. Run `console.bat` and talk. Wait for `[Listening]`, speak, pause briefly.
-   You can also type a message and press Enter at any time.
+   Whisper, OmniVoice, Silero VAD, fonts, and the Gemma 3 12B test model).
+2. Run `start.bat`. It starts the app and opens `http://127.0.0.1:7865` in your browser.
+   Keep the console window open while you use the app; closing it quits the app.
+3. Click **Start** and allow the microphone. When the status shows **Listening**,
+   just talk — or type in the message box at any time.
 
-Useful options (`console.bat --help` for all):
+The app only listens on `127.0.0.1` and accepts requests from its own page only.
+One browser tab is active at a time; opening a second tab takes over.
 
-| Option | Effect |
-|---|---|
-| `--voice builtin:de_male` | Built-in voice: `de_/en_/es_/fr_` + `male`/`female` |
-| `--voice "C:\path\clip.mp3"` | Clone a voice from a 3–10 s reference clip |
-| `--text` | Typed input only (mic, Whisper and VAD are not loaded) |
-| `--no-voice` | Text replies only (OmniVoice is not loaded) |
-| `--num-step 16` | Faster, slightly lower-quality speech synthesis |
-| `--end-silence-ms 900` | Wait longer before treating a pause as end of turn |
-| `--input-device N` / `--output-device N` | Pick audio devices (`--list-devices`) |
+## Using the app
 
-Built-in voices are generated locally with OmniVoice voice design on first use and
-stored in `models\builtin_voices\` — no audio is shipped with the repository.
+- **Status button**: Listening / Thinking / Speaking. Click it to pause listening;
+  in *Mic off* it turns the microphone back on. The mic is muted while the
+  assistant speaks, so it never hears itself.
+- **Voice**: 8 built-in voices (German, English, Spanish, French × male / female),
+  generated locally with OmniVoice voice design on first use and stored in
+  `models\builtin_voices\` — no audio is shipped with the repository. With *Match
+  built-in voice to spoken language*, a built-in voice switches to the language you
+  speak or type, so replies never have a foreign accent.
+- **Your own voices**: *Add voice…* uploads an MP3 / WAV / FLAC / OGG clip
+  (3–10 s of clean speech works best) into `user_data\voices\`. Whisper transcribes
+  it; check and correct the *Reference text* — an exact transcript clones better.
+  It is saved as `clip.txt` next to `clip.mp3`.
+- **Speech quality**: synthesis steps (16–64) and precision (fp16 / bf16 / fp32).
+  Default: 32 steps, fp16. On an RTX 5090, 64 steps add about 1 s before each reply.
+- **Language model**: any GGUF file in `models\llm\` can be selected.
+- **Microphone off / voice output off** unload Whisper + VAD / OmniVoice from VRAM;
+  with both off the app is a pure text chat.
+- Actions like `*smiles*` are never spoken; they are shown dimmed with a
+  "not spoken" label, or hidden (*Session → Show actions as text*).
+
+### Console mode
+
+`console.bat` runs the same conversation loop without a browser (used for M1 and
+for troubleshooting). Options: `console.bat --help`, e.g. `--voice builtin:de_male`,
+`--voice "C:\path\clip.mp3"`, `--text`, `--no-voice`, `--list-devices`.
 
 Logs are written to `logs\`. Everything (Python, caches, models) stays inside the
 program folder; deleting the folder removes the app completely.
