@@ -78,6 +78,15 @@ project uses [Semantic Versioning](https://semver.org/).
   hidden index for replay; replay buttons on every message (microphone muted while playing);
   recent sessions in the sidebar, opened read-only with replay; global and per-character
   switch, REC badge, "Open session folder". `docs/recording.md`.
+- Settings screen (M8): audio input / output device, speech detection, end of speech,
+  microphone and voice output, synthesis quality, context length, hardware profile
+  override, recording quality and turn gap, regenerate built-in voices.
+- `update.bat`: updates the app code (git pull, or the latest GitHub release) and the
+  Python packages / runtime tools; never touches `models\` or `user_data\`.
+- Clear error messages for GPU out-of-memory and lost language-model connections; a
+  crashed llama-server is restarted automatically before the next turn.
+- Documentation: `configuration.md`, `troubleshooting.md`, `architecture.md`,
+  `THIRD_PARTY_NOTICES.md`, screenshots and a rewritten README.
 - Model catalog: Magidonia 24B v4.3 Heretic and Qwen 3.8 27B Abliterated; Cydonia 24B v4.3
   now uses bartowski's imatrix quantizations.
 - "Quit app" button: closes the app from the browser, unloads all models and frees the

@@ -71,8 +71,8 @@ during installation (about a minute).
 ## Hardware profiles
 
 The installer picks a profile from your GPU's memory and stores it in
-`user_data\settings.json` (`hardware_profile`). You can override it with
-`hardware_profile_override` (a settings screen follows in a later version).
+`user_data\settings.json` (`hardware_profile`). You can choose another one in
+**Settings → Language model → Hardware profile** (`hardware_profile_override`).
 
 | Profile | VRAM | Whisper | Default model quantization |
 |---|---|---|---|
