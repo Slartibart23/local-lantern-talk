@@ -253,12 +253,16 @@ if ($plan.Count -eq 0) {
     Write-Ok 'Everything is already downloaded.'
 } else {
     Write-Host '    Downloads needed:'
-    foreach ($item in $plan) { Write-Host (Format-Invariant '      {0,7:N1} GB  {1}' @(($item.MB / 1000), $item.Name)) }
+    foreach ($item in $plan) {
+        if ($item.MB -lt 100) { $size = Format-Invariant '{0,4} MB' @([math]::Max(1, $item.MB)) }
+        else { $size = Format-Invariant '{0,4:N1} GB' @($item.MB / 1000) }
+        Write-Host "      $size  $($item.Name)"
+    }
     $totalGb = ($plan | Measure-Object -Property MB -Sum).Sum / 1000
     # Unpacked size: the Python environment grows to about twice its download.
     $extraGb = if (Test-Path -LiteralPath $Python) { 0.5 } else { 4.5 }
     $neededGb = $totalGb + $extraGb
-    Write-Host (Format-Invariant '      {0,7:N1} GB  total download (about {1:N0} GB disk space needed)' @($totalGb, [math]::Ceiling($neededGb))) -ForegroundColor Cyan
+    Write-Host (Format-Invariant '      {0,4:N1} GB  total download (about {1:N0} GB disk space needed)' @($totalGb, [math]::Ceiling($neededGb))) -ForegroundColor Cyan
     if ($freeGb -lt $neededGb) {
         throw (Format-Invariant 'Not enough free disk space: {0} GB free, about {1:N0} GB needed.' @($freeGb, [math]::Ceiling($neededGb)))
     }

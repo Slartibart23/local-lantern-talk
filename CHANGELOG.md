@@ -34,6 +34,18 @@ project uses [Semantic Versioning](https://semver.org/).
 - Speech quality settings: OmniVoice synthesis steps (16-64) and precision (fp16 / bf16 /
   fp32). There is only one official OmniVoice model; these are its quality levers.
 - Typed messages get their language guessed (DE / EN / ES / FR) so the reply voice matches.
+- Installer (M3): pre-checks (driver, VRAM, free space, FAT32, install path), download
+  plan with confirmation, SHA-256-verified downloads, portable ffmpeg, hardware profiles
+  (high / mid / low / unsupported) stored in settings, built-in voices generated at
+  install time, optional starter model, and a self-test (GPU / CUDA, files, speech
+  output checked by Whisper, microphone). Options `-Yes`, `-NoStarterModel`, `-NoMicTest`.
+- `docs/installation.md` with requirements, hardware profiles, measured VRAM and the
+  expected Windows warnings.
+- Git pre-commit hook and test that keep personal data and binaries out of the repository.
+
+### Changed
+- No language model is downloaded automatically any more; the installer offers the
+  starter model instead (spec §4).
 
 ### Fixed
 - `llama-server.exe` kept running (holding ~9 GB VRAM) after the console window was

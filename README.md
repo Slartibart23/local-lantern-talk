@@ -4,8 +4,8 @@ Fully local, portable Windows app for spoken (or typed) conversations with a loc
 large language model that answers in a synthesized — optionally cloned — voice.
 Assistant use and character roleplay, with per-character memory and session recording.
 
-> **Status: M2 (web UI).** Installer checks and hardware profiles, the model catalog,
-> characters, memory and session recording follow in later milestones (see `SPEC.md` §17).
+> **Status: M3 (portable installer).** The model catalog, characters, memory and session
+> recording follow in later milestones (see `SPEC.md` §17).
 
 ## Requirements
 
@@ -34,8 +34,10 @@ driver update, re-run `install.bat` to switch to the CUDA 13 build.
 
 ## Quick start
 
-1. Run `install.bat` (downloads ~12 GB: portable Python + PyTorch, llama.cpp,
-   Whisper, OmniVoice, Silero VAD, fonts, and the Gemma 3 12B test model).
+1. Run `install.bat`. It checks your GPU, driver and disk, shows what it will download
+   (about 9 GB, plus 7–8 GB for the optional starter language model) and asks before
+   starting. At the end a self-test checks the GPU, speech output and microphone.
+   Details and expected Windows warnings: [docs/installation.md](docs/installation.md).
 2. Run `start.bat`. It starts the app and opens `http://127.0.0.1:7865` in your browser.
    Keep the console window open while you use the app; closing it quits the app.
 3. Click **Start** and allow the microphone. When the status shows **Listening**,
