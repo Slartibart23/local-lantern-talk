@@ -111,6 +111,9 @@ project uses [Semantic Versioning](https://semver.org/).
   GPU memory; conversations are saved.
 
 ### Changed
+- License: PolyForm Strict 1.0.0 instead of MIT — noncommercial use; changing the software,
+  sharing changed versions or commercial use only with the author's permission. Own data and
+  configuration files may be changed (additional permissions in `LICENSE`).
 - The installer's starter model is Gemma 4 12B (Apache-2.0) instead of Gemma 3 12B.
 - No language model is downloaded automatically any more; the installer offers the
   starter model instead (spec §4).

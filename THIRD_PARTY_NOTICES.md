@@ -1,6 +1,6 @@
 # Third-party notices
 
-Local Lantern Talk itself is MIT-licensed (see [LICENSE](LICENSE)). The repository
+Local Lantern Talk itself is licensed under the PolyForm Strict License 1.0.0 (noncommercial use; see [LICENSE](LICENSE)). The repository
 contains only its own code and configuration. All components below are **downloaded by
 `install.bat` or by the app** from their official sources; they are not redistributed by
 this project. Each is used under its own license.

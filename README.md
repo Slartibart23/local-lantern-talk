@@ -175,10 +175,16 @@ later without touching your models or personal data.
 - **Uncensored models:** you are responsible for how you use them.
 - **Language models are not redistributed** by this project. Each model has its own
   license (e.g. the Gemma terms of use), which you accept when you download it.
+- **Noncommercial use only:** the app's license allows noncommercial use only (see License).
 - **Speech synthesis is non-commercial:** the OmniVoice model weights are licensed
   CC BY-NC (non-commercial use only), so the app's voice output may not be used
   commercially. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Third-party components: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[PolyForm Strict License 1.0.0](https://polyformproject.org/licenses/strict/1.0.0/) — see
+[LICENSE](LICENSE). In short: free to use for any **noncommercial** purpose; changing the
+software, sharing changed versions or commercial use only with the author's permission
+(ask via [GitHub issues](https://github.com/Slartibart23/local-lantern-talk/issues)). Your
+own characters, voices, settings and the configuration files are yours to change.
+Third-party components: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -3,7 +3,7 @@ name = "local-lantern-talk"
 version = "0.1.0"
 description = "Fully local voice conversations with a local LLM and a cloned voice."
 readme = "README.md"
-license = "MIT"
+license = "LicenseRef-PolyForm-Strict-1.0.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "torch==2.8.0",

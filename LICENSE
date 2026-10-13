@@ -1,21 +1,46 @@
-MIT License
-
+Local Lantern Talk
 Copyright (c) 2026 Slartibart23
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Licensed under the PolyForm Strict License 1.0.0
+https://polyformproject.org/licenses/strict/1.0.0/
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Required Notice: Copyright 2026 Slartibart23 (https://github.com/Slartibart23/local-lantern-talk)
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+In short (the license text at the link above is what counts):
+- You may use the software for any noncommercial purpose — for yourself, at home,
+  and in noncommercial organizations such as charities, schools and research.
+- You may not change the software, build new works on it, or pass it on to others
+  without the licensor's permission.
+- Commercial use is not allowed.
+
+
+Additional permissions
+----------------------
+
+In addition to the PolyForm Strict License 1.0.0, the licensor grants these
+permissions:
+
+1. You may create, change and delete your own data used with the software —
+   characters, voices, memory, recordings and settings in the `user_data` folder —
+   and download and use language models of your choice.
+
+2. You may change the configuration files in the `config` folder for your own use,
+   for example to add models to the model catalog. This does not permit passing on
+   changed copies of the software.
+
+
+Asking for permission
+---------------------
+
+For anything else — changing the code, sharing a changed version, or commercial
+use — ask the licensor first, for example by opening an issue at
+https://github.com/Slartibart23/local-lantern-talk/issues
+
+
+Third-party components
+----------------------
+
+The software downloads and uses third-party components (language models, speech
+recognition, speech synthesis and tools) under their own licenses; see
+THIRD_PARTY_NOTICES.md. The OmniVoice speech-synthesis model is licensed for
+noncommercial use only.
