@@ -96,9 +96,15 @@
         <label class="switch"><input type="checkbox" id="voice-output"><span>Voice output</span></label>
         <label class="field-label" for="voice-select">Voice</label>
         <select id="voice-select"></select>
+        <div class="row wrap">
+          <button type="button" id="preview-voice" class="secondary">▶ Preview</button>
+          <button type="button" id="rename-voice" class="secondary">Rename…</button>
+          <button type="button" id="delete-voice" class="secondary">Delete</button>
+        </div>
+        <ul id="voice-warnings" class="voice-warnings" hidden></ul>
         <div class="row">
           <button type="button" id="add-voice" class="secondary">Add voice…</button>
-          <input type="file" id="voice-file" accept=".mp3,.wav,.flac,.ogg,audio/*" hidden>
+          <input type="file" id="voice-file" accept=".mp3,.wav,.flac,.ogg,.opus,.m4a,.aac,.webm,audio/*" hidden>
         </div>
         <div id="reftext-box" class="reftext" hidden>
           <label class="field-label" for="reftext">Reference text <span id="reftext-origin" class="badge"></span></label>
@@ -110,7 +116,8 @@
           <p class="hint">The clone is best when this matches the clip exactly. Saved as <code id="reftext-file"></code>.</p>
         </div>
         <label class="switch"><input type="checkbox" id="match-language"><span>Match built-in voice to spoken language</span></label>
-        <p class="hint">Add an MP3 / WAV clip with 3–10 s of clean speech to clone a voice. Files are kept in <code>user_data\voices</code>; you can also copy them there and reload the page. Only clone voices with the speaker's consent.</p>
+        <p class="hint">Add a clip with 3–10 s of clean speech to clone a voice (MP3, WAV, FLAC, OGG, OPUS, M4A…). It is trimmed and its volume evened out automatically. Files are kept in <code>user_data\voices</code>; you can also copy them there and reload the page. Only clone voices with the speaker's consent.</p>
+        <button type="button" id="regenerate-builtins" class="link-btn">Regenerate built-in voices</button>
       </section>
 
       <section>

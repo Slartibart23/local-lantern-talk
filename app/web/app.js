@@ -121,6 +121,16 @@ function handleEvent(msg) {
     case "custom_suggestions":
       showSuggestions(msg);
       break;
+    case "preview_start":
+      resetPlayback();
+      break;
+    case "preview_done":
+      app.playback.turnDone = true;
+      checkPlaybackEnd();
+      break;
+    case "notice":
+      toast(msg.message, "info");
+      break;
     case "voice_info":
       renderVoiceInfo(msg);
       break;
@@ -608,6 +618,14 @@ function setSelect(sel, value, label) {
 
 function renderVoiceInfo(info) {
   app.voiceInfo = info;
+  const custom = !!(info && info.custom);
+  $("rename-voice").disabled = !custom;
+  $("delete-voice").disabled = !custom;
+  const warnings = (custom && info.report && info.report.warnings) || [];
+  const list = $("voice-warnings");
+  list.innerHTML = "";
+  for (const w of warnings) list.append(el("li", {}, w));
+  list.hidden = warnings.length === 0;
   const box = $("reftext-box");
   box.hidden = !(info && info.custom);
   if (box.hidden) return;
@@ -803,6 +821,25 @@ function init() {
   $("end-silence").onchange = (e) => changeSetting("end_silence_ms", Number(e.target.value));
   $("new-conv").onclick = () => send({ type: "new_conversation" });
   $("add-voice").onclick = () => $("voice-file").click();
+  $("preview-voice").onclick = () => send({ type: "preview_voice", voice: $("voice-select").value });
+  $("rename-voice").onclick = () => {
+    const current = voiceName($("voice-select").value);
+    const name = prompt("New name for this voice:", current);
+    if (name && name.trim() && name.trim() !== current) {
+      send({ type: "rename_voice", voice: $("voice-select").value, name: name.trim() });
+    }
+  };
+  $("delete-voice").onclick = () => {
+    const name = voiceName($("voice-select").value);
+    if (confirm(`Delete the voice "${name}"? The audio file in user_data\\voices is removed.`)) {
+      send({ type: "delete_voice", voice: $("voice-select").value });
+    }
+  };
+  $("regenerate-builtins").onclick = () => {
+    if (confirm("Generate the 8 built-in voices again? Each gets a new, slightly different sound. This takes about a minute.")) {
+      send({ type: "regenerate_builtin_voices" });
+    }
+  };
   $("reftext-save").onclick = () => saveReferenceText($("reftext").value);
   $("reftext-whisper").onclick = () => { $("reftext").value = ""; saveReferenceText(""); };
   $("tts-steps").onchange = (e) => changeSetting("num_step", Number(e.target.value));

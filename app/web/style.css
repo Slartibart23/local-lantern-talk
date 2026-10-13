@@ -266,3 +266,10 @@ input[type="range"] { width: 100%; accent-color: var(--amber); }
 .suggestions p { margin: 0 0 10px; }
 .suggestion-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .suggestion-list button { font-family: var(--mono); font-size: 12px; }
+.row.wrap { flex-wrap: wrap; }
+.row .secondary { padding: 6px 12px; font-size: 13px; }
+.voice-warnings { margin: 10px 0 0; padding: 8px 10px 8px 26px; border: 1px solid var(--amber); border-radius: 8px; background: var(--amber-soft); font-size: 12px; color: var(--text); }
+.voice-warnings[hidden] { display: none; }
+.voice-warnings li { margin: 2px 0; }
+.link-btn { border: 0; background: none; padding: 0; margin-top: 10px; color: var(--text-dim); font-size: 12px; text-decoration: underline; cursor: pointer; }
+.link-btn:hover { color: var(--amber); }

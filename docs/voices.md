@@ -14,9 +14,33 @@ use one of the 8 built-in voices or clone a voice from a short recording.
   `user_data\voices\` and selected right away.
 - Or copy the file into `user_data\voices\` yourself and reload the page.
 
-Supported formats: **MP3, WAV, FLAC, OGG** (up to 50 MB). The file name becomes the
-voice name. Your voices stay in `user_data\` and are never part of the repository or
-of updates.
+Supported formats: **MP3, WAV, FLAC, OGG, OPUS, M4A, AAC, WEBM** (up to 50 MB) — so
+messenger voice notes (`.opus`) and phone recordings (`.m4a`) work directly. The file
+name becomes the voice name. Your voices stay in `user_data\` and are never part of
+the repository or of updates.
+
+When a voice is used for the first time, the app prepares the clip with ffmpeg:
+silence at the start and end is removed, the volume is evened out (loudness
+normalization), and the audio is converted to the format OmniVoice expects. The
+result is cached in `user_data\voices\.cache` and redone automatically when you
+replace the file.
+
+### Managing voices
+
+Select a voice in the side panel, then:
+
+- **▶ Preview** speaks a short sample sentence in the voice's language (German,
+  English, Spanish or French; for your own voices the language of its transcript).
+- **Rename…** changes the name (and the file name). The prepared voice is kept, so
+  renaming is instant.
+- **Delete** removes the audio file and its transcript. If it was the selected voice,
+  a built-in voice takes over.
+
+### Quality hints
+
+After adding a clip, and under the selected voice, the app shows hints when the clip
+is too short or too long, has **noticeable background noise or reverb**, or is
+**distorted** (recorded too loud). These are best-effort checks; your ears decide.
 
 ### How long should the clip be?
 
@@ -85,6 +109,11 @@ Eight voices — German, English, Spanish and French, each male and female — a
 generated on your GPU during installation with OmniVoice *voice design*. No recordings
 of real people are shipped. Their definitions are in `config\builtin_voices.yaml`; the
 generated files are in `models\builtin_voices\`.
+
+**Regenerate built-in voices** (link at the bottom of the Voice section) creates all
+eight again. Voice design produces a slightly different voice each time, so only do
+this if you do not like the current ones; it takes about a minute and needs voice
+output to be on.
 
 With **Match built-in voice to spoken language** (on by default), a built-in voice
 switches to the built-in voice of the same gender in the language you speak or type,

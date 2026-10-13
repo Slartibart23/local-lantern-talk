@@ -4,7 +4,7 @@ Fully local, portable Windows app for spoken (or typed) conversations with a loc
 large language model that answers in a synthesized — optionally cloned — voice.
 Assistant use and character roleplay, with per-character memory and session recording.
 
-> **Status: M4 (model catalog).** Characters, memory and session recording follow in
+> **Status: M5 (voices).** Characters, memory and session recording follow in
 > later milestones (see `SPEC.md` §17).
 
 ## Requirements
@@ -56,7 +56,7 @@ One browser tab is active at a time; opening a second tab takes over.
   `models\builtin_voices\` — no audio is shipped with the repository. With *Match
   built-in voice to spoken language*, a built-in voice switches to the language you
   speak or type, so replies never have a foreign accent.
-- **Your own voices**: *Add voice…* uploads an MP3 / WAV / FLAC / OGG clip
+- **Your own voices**: *Add voice…* uploads an MP3 / WAV / FLAC / OGG / OPUS / M4A clip
   (3–10 s of clean speech works best) into `user_data\voices\`. Whisper transcribes
   it; check and correct the *Reference text* — an exact transcript clones better.
   It is saved as `clip.txt` next to `clip.mp3`. Clip length, what makes a good

@@ -55,6 +55,10 @@ project uses [Semantic Versioning](https://semver.org/).
   corrected for Windows, where CUDA over-reports free VRAM.
 - Per-component VRAM bar (language model, Whisper, OmniVoice, other).
 - `docs/models.md`.
+- Voices (M5): custom clips are prepared with ffmpeg (silence trimmed, loudness
+  normalized, 24 kHz mono) and cached; quality hints for length, background noise and
+  clipping; more formats (OPUS, M4A, AAC, WEBM); preview, rename and delete voices;
+  "Regenerate built-in voices"; custom voices use the language of their transcript.
 
 ### Changed
 - The installer's starter model is Gemma 4 12B (Apache-2.0) instead of Gemma 3 12B.
