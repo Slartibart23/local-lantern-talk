@@ -52,6 +52,14 @@ class FakeEngine:
     def new_conversation(self) -> None:
         self.calls.append(("new", None))
 
+    def add_voice(self, filename: str, data: bytes) -> dict[str, Any]:
+        from lantern_talk.engine import UserError
+
+        if not filename.endswith(".wav"):
+            raise UserError("Please upload an MP3, WAV, FLAC or OGG file.")
+        self.calls.append(("add_voice", (filename, len(data))))
+        return {"id": f"custom:{filename}", "warnings": []}
+
 
 @pytest.fixture()
 def client():  # noqa: ANN201
@@ -113,3 +121,20 @@ def test_second_tab_takes_over(client: TestClient) -> None:
         with client.websocket_connect(WS_URL, headers=GOOD_ORIGIN) as second:
             assert second.receive_json()["type"] == "hello"
             assert first.receive_json()["type"] == "replaced"
+
+
+def test_voice_upload(client: TestClient) -> None:
+    r = client.post("/api/voices", params={"filename": "me.wav"}, content=b"x" * 100, headers=GOOD_ORIGIN)
+    assert r.status_code == 200 and r.json()["id"] == "custom:me.wav"
+    assert ("add_voice", ("me.wav", 100)) in client.engine.calls  # type: ignore[attr-defined]
+    r = client.post("/api/voices", params={"filename": "me.exe"}, content=b"x", headers=GOOD_ORIGIN)
+    assert r.status_code == 400 and "MP3" in r.json()["error"]
+
+
+@pytest.mark.parametrize("origin", [None, "http://evil.example"])
+def test_voice_upload_rejects_foreign_origin(client: TestClient, origin: str | None) -> None:
+    # CSRF: a foreign page can POST to localhost, but must not be able to add files.
+    headers = {"origin": origin} if origin else {}
+    r = client.post("/api/voices", params={"filename": "me.wav"}, content=b"x", headers=headers)
+    assert r.status_code == 403
+    assert not any(c[0] == "add_voice" for c in client.engine.calls)  # type: ignore[attr-defined]

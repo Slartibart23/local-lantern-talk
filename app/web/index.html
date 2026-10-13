@@ -96,8 +96,12 @@
         <label class="switch"><input type="checkbox" id="voice-output"><span>Voice output</span></label>
         <label class="field-label" for="voice-select">Voice</label>
         <select id="voice-select"></select>
+        <div class="row">
+          <button type="button" id="add-voice" class="secondary">Add voice…</button>
+          <input type="file" id="voice-file" accept=".mp3,.wav,.flac,.ogg,audio/*" hidden>
+        </div>
         <label class="switch"><input type="checkbox" id="match-language"><span>Match built-in voice to spoken language</span></label>
-        <p class="hint">Your own voices: put MP3 / WAV clips (3–10 s of clean speech) into <code>user_data\voices</code> and reload the page. Only clone voices with the speaker's consent.</p>
+        <p class="hint">Add an MP3 / WAV clip with 3–10 s of clean speech to clone a voice. Files are kept in <code>user_data\voices</code>; you can also copy them there and reload the page. Only clone voices with the speaker's consent.</p>
       </section>
 
       <section>

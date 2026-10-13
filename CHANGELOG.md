@@ -24,6 +24,12 @@ project uses [Semantic Versioning](https://semver.org/).
   built-in voice switches to the same-gender German / Spanish / French one, so replies
   are not spoken with a foreign accent. `console.bat --no-match-language` disables it.
 - `LLT_LLAMA_BUILD` environment variable to force a llama.cpp build (troubleshooting).
+- Web UI (`start.bat`): conversation screen with status button, level meter, pause,
+  text input, actions shown as "not spoken", voice / model selection, microphone and
+  voice-output toggles (unloading Whisper / VAD / OmniVoice), GPU memory display.
+- "Add voice…" uploads an MP3 / WAV / FLAC / OGG reference clip into `user_dataoices`,
+  with a warning for clips outside the recommended 3–10 s.
+- Typed messages get their language guessed (DE / EN / ES / FR) so the reply voice matches.
 
 ### Fixed
 - `llama-server.exe` kept running (holding ~9 GB VRAM) after the console window was

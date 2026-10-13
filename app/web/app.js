@@ -96,6 +96,11 @@ function handleEvent(msg) {
     case "components":
       renderComponents(msg.components);
       break;
+    case "voices":
+      app.voices = msg.voices;
+      renderVoices();
+      $("voice-select").value = app.settings.voice;
+      break;
     case "cleared":
       renderTranscript([]);
       break;
@@ -434,12 +439,41 @@ async function refreshGpu() {
   } catch { /* the app may be restarting */ }
 }
 
+async function uploadVoice(input) {
+  const file = input.files[0];
+  input.value = "";
+  if (!file) return;
+  const btn = $("add-voice");
+  btn.disabled = true;
+  btn.textContent = "Uploading…";
+  try {
+    const r = await fetch(`/api/voices?filename=${encodeURIComponent(file.name)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file,
+    });
+    const result = await r.json();
+    if (!r.ok) { toast(result.error || "Upload failed."); return; }
+    if (result.warnings.length) toast(result.warnings.join(" "), "info");
+    // Select it right away; the backend transcribes the clip and prepares the voice.
+    $("voice-select").value = result.id;
+    $("voice-select").disabled = true;
+    changeSetting("voice", result.id);
+  } catch {
+    toast("Upload failed — is the app still running?");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Add voice…";
+  }
+}
+
 // ---------------------------------------------------------------- misc UI
 
 let toastTimer = null;
-function toast(text) {
+function toast(text, kind = "error") {
   const el = $("toast");
   el.textContent = text;
+  el.classList.toggle("info", kind === "info");
   el.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.hidden = true; }, 7000);
@@ -507,6 +541,8 @@ function init() {
   $("end-silence").oninput = (e) => { $("end-silence-out").textContent = `${e.target.value} ms`; };
   $("end-silence").onchange = (e) => changeSetting("end_silence_ms", Number(e.target.value));
   $("new-conv").onclick = () => send({ type: "new_conversation" });
+  $("add-voice").onclick = () => $("voice-file").click();
+  $("voice-file").onchange = (e) => uploadVoice(e.target);
   $("toggle-left").onclick = () => togglePanel("left");
   $("toggle-right").onclick = () => togglePanel("right");
   document.addEventListener("keydown", (ev) => {

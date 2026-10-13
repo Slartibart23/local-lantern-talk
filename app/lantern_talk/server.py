@@ -11,8 +11,11 @@ Browser → server, JSON: ``text``, ``mic_format`` (sample_rate), ``playback_end
 
 Server → browser, JSON: ``hello`` (full snapshot), ``state``, ``user_message``,
 ``assistant_start``, ``segment``, ``audio`` (immediately followed by one binary
-message with int16 PCM), ``turn_done``, ``settings``, ``components``, ``cleared``,
-``error``, ``replaced``.
+message with int16 PCM), ``turn_done``, ``settings``, ``components``, ``voices``,
+``cleared``, ``error``, ``replaced``.
+
+HTTP: ``POST /api/voices?filename=…`` with the raw audio file as body adds a
+custom voice to ``user_data/voices``.
 """
 
 from __future__ import annotations
@@ -35,7 +38,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
-from .engine import Engine, build_components
+from .engine import MAX_VOICE_UPLOAD_BYTES, Engine, UserError, build_components
 from .gpu import query_gpu
 from .logging_setup import setup_logging
 from .paths import Paths, apply_portable_env, get_paths, path_warnings
@@ -113,6 +116,23 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
     async def gpu() -> JSONResponse:
         info = await asyncio.to_thread(query_gpu)
         return JSONResponse(info or {})
+
+    @app.post("/api/voices")
+    async def upload_voice(request: Request, filename: str) -> JSONResponse:
+        # A foreign page can POST to localhost too (CSRF); only our own page may upload.
+        if request.headers.get("origin") not in allowed_origins:
+            return JSONResponse({"error": "Forbidden"}, status_code=403)
+        body = bytearray()
+        async for chunk in request.stream():
+            body += chunk
+            if len(body) > MAX_VOICE_UPLOAD_BYTES:
+                return JSONResponse({"error": "The file is too large."}, status_code=413)
+        assert hub.engine is not None
+        try:
+            result = await asyncio.to_thread(hub.engine.add_voice, filename, bytes(body))
+        except UserError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return JSONResponse(result)
 
     app.mount("/static", StaticFiles(directory=paths.web), name="static")
     if paths.fonts.is_dir():

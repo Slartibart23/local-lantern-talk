@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import os
 import queue
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -45,6 +46,8 @@ AUDIO_EXTENSIONS = (".mp3", ".wav", ".flac", ".ogg")
 POST_PLAYBACK_MUTE_S = 0.3        # ignore the mic briefly after playback (room echo)
 PLAYBACK_WAIT_MARGIN_S = 15.0     # safety timeout if the browser never reports playback end
 LANGUAGE_CONFIDENCE = 0.6         # below this, keep the previously detected language
+MAX_VOICE_UPLOAD_BYTES = 50 * 2**20
+RECOMMENDED_CLIP_S = (3.0, 10.0)  # spec §7.1: 3-10 s of clean speech
 
 EmitFn = Callable[[dict[str, Any], bytes | None], None]
 
@@ -183,6 +186,48 @@ class Engine:
             "transcript": self.transcript,
             "components": self.components_status(),
         }
+
+    # ------------------------------------------------------------------ voices
+    def add_voice(self, filename: str, data: bytes) -> dict[str, Any]:
+        """Store an uploaded reference clip in ``user_data/voices`` (spec §7.1).
+
+        Returns the new voice id plus warnings about the clip length. The file name
+        is sanitized and never overwrites an existing voice.
+        """
+        import soundfile as sf
+
+        name = Path(filename).name  # drop any directory part
+        suffix = Path(name).suffix.lower()
+        if suffix not in AUDIO_EXTENSIONS:
+            raise UserError("Please upload an MP3, WAV, FLAC or OGG file.")
+        if not data:
+            raise UserError("The file is empty.")
+        if len(data) > MAX_VOICE_UPLOAD_BYTES:
+            raise UserError("The file is too large. A voice clip only needs 3-10 seconds of speech.")
+        stem = re.sub(r"[^\w\- ]+", "_", Path(name).stem).strip(" ._") or "voice"
+        self.paths.voices.mkdir(parents=True, exist_ok=True)
+        target = self.paths.voices / f"{stem}{suffix}"
+        n = 2
+        while target.exists():
+            target = self.paths.voices / f"{stem} ({n}){suffix}"
+            n += 1
+        target.write_bytes(data)
+        try:
+            duration = sf.info(str(target)).duration
+        except Exception as exc:  # noqa: BLE001 - unreadable upload
+            target.unlink(missing_ok=True)
+            raise UserError(f"Could not read {name} as audio.") from exc
+        warnings = []
+        low, high = RECOMMENDED_CLIP_S
+        if duration < low:
+            warnings.append(f"The clip is only {duration:.1f} s long; {low:.0f}-{high:.0f} s of clean speech clone best.")
+        elif duration > 20:
+            warnings.append(f"The clip is {duration:.0f} s long; only the first 15 s are used. {low:.0f}-{high:.0f} s work best.")
+        elif duration > high:
+            warnings.append(f"The clip is {duration:.0f} s long; {low:.0f}-{high:.0f} s usually clone best.")
+        self._emit({"type": "voices", "voices": self.list_voices()})
+        return {"id": f"custom:{target.name}", "name": target.stem, "duration_s": round(duration, 1),
+                "warnings": warnings}
 
     # ------------------------------------------------------------------ listings
     def list_voices(self) -> dict[str, list[dict[str, str]]]:
@@ -518,7 +563,5 @@ def _append_segment(segments: list[dict[str, str]], kind: str, text: str) -> Non
 
 
 def _quant(file_name: str) -> str:
-    import re
-
     m = re.search(r"(IQ\d_[A-Z0-9]+|Q\d_K_[SML]|Q\d_K|Q\d_\d|Q\d|BF16|F16|F32)", file_name, re.IGNORECASE)
     return m.group(1).upper() if m else "?"

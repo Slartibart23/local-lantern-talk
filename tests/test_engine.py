@@ -300,3 +300,51 @@ def test_new_conversation_clears_history(setup) -> None:  # noqa: ANN001
     engine.new_conversation()
     rec.wait_for(lambda ev: any(e["type"] == "cleared" for e in ev))
     assert engine.transcript == [] and engine.conversation.history == []
+
+
+def wav_bytes(seconds: float) -> bytes:
+    import io
+
+    import soundfile as sf
+
+    buf = io.BytesIO()
+    sf.write(buf, np.zeros(int(24_000 * seconds), dtype=np.float32), 24_000, format="WAV")
+    return buf.getvalue()
+
+
+def test_add_voice_stores_clip_and_lists_it(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    result = engine.add_voice("Meine Stimme.wav", wav_bytes(5))
+    assert result["id"] == "custom:Meine Stimme.wav" and result["warnings"] == []
+    assert (engine.paths.voices / "Meine Stimme.wav").exists()
+    assert {"id": "custom:Meine Stimme.wav", "name": "Meine Stimme"} in engine.list_voices()["custom"]
+    assert any(e["type"] == "voices" for e in rec.events)
+    # Same name again: never overwrite an existing voice.
+    assert engine.add_voice("Meine Stimme.wav", wav_bytes(5))["id"] == "custom:Meine Stimme (2).wav"
+
+
+def test_add_voice_sanitizes_path(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    result = engine.add_voice(r"..\..\evil<>name.wav", wav_bytes(5))
+    assert result["id"] == "custom:evil_name.wav"
+    assert (engine.paths.voices / "evil_name.wav").exists()
+
+
+@pytest.mark.parametrize("name, data, message", [
+    ("clip.exe", b"MZ", "MP3, WAV"),
+    ("clip.mp3", b"", "empty"),
+    ("clip.wav", b"not audio at all", "Could not read"),
+])
+def test_add_voice_rejects_bad_files(setup, name: str, data: bytes, message: str) -> None:  # noqa: ANN001
+    from lantern_talk.engine import UserError
+
+    engine, comps, rec = setup
+    with pytest.raises(UserError, match=message):
+        engine.add_voice(name, data)
+    assert not list(engine.paths.voices.glob("clip*"))
+
+
+def test_add_voice_warns_about_length(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    assert "only 1.5 s" in engine.add_voice("short.wav", wav_bytes(1.5))["warnings"][0]
+    assert "first 15 s" in engine.add_voice("long.wav", wav_bytes(25))["warnings"][0]
