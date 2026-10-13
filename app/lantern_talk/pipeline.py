@@ -103,6 +103,7 @@ class ConversationConfig:
     persona: str
     voice: str | None             # voice id for VoiceLibrary; None = text-only replies
     max_history_messages: int = 24
+    match_language: bool = True   # swap built-in voices to the spoken language (spec §7.3)
 
 
 class Conversation:
@@ -114,10 +115,20 @@ class Conversation:
         self.voices = voices
         self.config = config
         self.history: list[ChatMessage] = []
+        self.active_voice: str | None = config.voice  # voice used by the last turn
 
     @property
     def voice_enabled(self) -> bool:
         return self.tts is not None and self.config.voice is not None
+
+    def voice_for(self, language: str | None) -> str | None:
+        """The voice to speak a reply in ``language`` with (None when voice output is off)."""
+        if not self.voice_enabled:
+            return None
+        assert self.config.voice is not None
+        if self.config.match_language:
+            return self.voices.matched(self.config.voice, language)
+        return self.config.voice
 
     def build_messages(self, user_text: str, language: str | None) -> list[ChatMessage]:
         system = ChatMessage("system", build_system_prompt(self.config.persona, language))
@@ -132,7 +143,9 @@ class Conversation:
         messages = self.build_messages(user_text, language)
         reply_parts: list[str] = []
         errors: list[str] = []
-        tts_language = language or (self.voices.language_of(self.config.voice) if self.voice_enabled else None)
+        voice = self.voice_for(language)
+        self.active_voice = voice
+        tts_language = language or (self.voices.language_of(voice) if voice else None)
 
         def llm_worker() -> None:
             action_filter = ActionFilter()
@@ -170,7 +183,7 @@ class Conversation:
         def tts_worker() -> None:
             index = 0
             try:
-                prompt = self.voices.prompt_for(self.config.voice) if self.voice_enabled else None
+                prompt = self.voices.prompt_for(voice) if voice else None
                 while True:
                     item = sentences.get()
                     if item is _END:

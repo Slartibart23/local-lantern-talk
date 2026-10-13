@@ -20,4 +20,7 @@ project uses [Semantic Versioning](https://semver.org/).
   and selects the llama.cpp build from it: CUDA 13 for driver 581+, CUDA 12 otherwise.
   The matching CUDA runtime DLLs are installed into `runtime\llama.cpp\`, and the
   installer verifies that llama.cpp finds the GPU without any CUDA Toolkit on `PATH`.
+- Built-in voices follow the spoken language (spec §7.3, on by default): an English
+  built-in voice switches to the same-gender German / Spanish / French one, so replies
+  are not spoken with a foreign accent. `console.bat --no-match-language` disables it.
 - `LLT_LLAMA_BUILD` environment variable to force a llama.cpp build (troubleshooting).

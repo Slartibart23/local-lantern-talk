@@ -44,6 +44,24 @@ def load_builtin_voices(config_file: Path) -> dict[str, BuiltinVoice]:
     return {v["id"]: BuiltinVoice(**v) for v in data["voices"]}
 
 
+def match_builtin_voice(voice: str, language: str | None, builtins: dict[str, BuiltinVoice]) -> str:
+    """Spec §7.3: swap a built-in voice for the same-gender built-in voice of ``language``.
+
+    A cloned voice keeps the accent of its reference clip, so an English voice
+    speaking German sounds English. Custom voices, unknown languages and
+    languages without a built-in voice are left unchanged.
+    """
+    if not language or not voice.startswith("builtin:"):
+        return voice
+    current = builtins.get(voice.removeprefix("builtin:"))
+    if current is None or current.language == language:
+        return voice
+    for candidate in builtins.values():
+        if candidate.language == language and candidate.gender == current.gender:
+            return f"builtin:{candidate.id}"
+    return voice
+
+
 @dataclass
 class SynthResult:
     audio: np.ndarray  # mono float32 at OUTPUT_SAMPLE_RATE
@@ -160,6 +178,9 @@ class VoiceLibrary:
             else:
                 self._prompts[voice] = self._custom_prompt(Path(voice))
         return self._prompts[voice]
+
+    def matched(self, voice: str, language: str | None) -> str:
+        return match_builtin_voice(voice, language, self.builtins)
 
     def language_of(self, voice: str) -> str | None:
         if voice.startswith("builtin:"):

@@ -153,7 +153,9 @@ def run_and_show_turn(
     status("Thinking")
     if player is not None:
         player.first_play_time = None
-    say(f"{CYAN}AI:{RESET} ", end="")
+    voice = conv.voice_for(language)
+    label = f" {DIM}({voice.removeprefix('builtin:')}){RESET}" if voice and voice != conv.config.voice else ""
+    say(f"{CYAN}AI{RESET}{label}{CYAN}:{RESET} ", end="")
     spoke = False
     metrics = None
     for event in conv.run_turn(user_text, language):
@@ -190,6 +192,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--model", help="GGUF file (default: the M1 test model in models\\llm)")
     p.add_argument("--voice", default="builtin:en_female",
                    help="builtin:<id> from config/builtin_voices.yaml, or a path to an MP3/WAV reference clip")
+    p.add_argument("--no-match-language", action="store_true",
+                   help="keep the chosen built-in voice even when you speak another language")
     p.add_argument("--text", action="store_true", help="typed input only; the microphone is not used")
     p.add_argument("--no-voice", action="store_true", help="text replies only; OmniVoice is not loaded")
     p.add_argument("--persona", default=DEFAULT_ASSISTANT_PERSONA, help="persona / system prompt")
@@ -264,7 +268,8 @@ def main(argv: list[str] | None = None) -> int:
 
         conv = Conversation(
             LLMClient(server), tts, voices,
-            ConversationConfig(persona=args.persona, voice=args.voice if use_voice else None),
+            ConversationConfig(persona=args.persona, voice=args.voice if use_voice else None,
+                               match_language=not args.no_match_language),
         )
         if use_voice:
             player = Player(_device(args.output_device))
