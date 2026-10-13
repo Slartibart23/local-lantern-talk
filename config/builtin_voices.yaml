@@ -1,0 +1,61 @@
+# Built-in voices (spec §7.2).
+#
+# No audio is shipped with the repository. Each voice is generated locally with
+# OmniVoice voice design: the model speaks `reference_text` with the attributes in
+# `instruct`, and the result is stored in models\builtin_voices\ as a reusable
+# voice-clone prompt so the voice stays identical across sentences and sessions.
+#
+# instruct attributes: gender (male/female), age (child, teenager, young adult,
+# middle-aged, elderly), pitch (very low ... very high pitch), english accent.
+# Voice design is trained on English and Chinese only; for other languages the
+# accent comes from speaking the reference text in that language.
+
+voices:
+  - id: de_male
+    name: German male
+    language: de
+    gender: male
+    instruct: "male, middle-aged, low pitch"
+    reference_text: "Guten Tag! Schön, dass Sie da sind. Ich helfe Ihnen gerne weiter, fragen Sie mich einfach."
+  - id: de_female
+    name: German female
+    language: de
+    gender: female
+    instruct: "female, young adult, moderate pitch"
+    reference_text: "Hallo und herzlich willkommen! Wie kann ich Ihnen heute helfen? Ich bin ganz Ohr."
+  - id: en_male
+    name: English male
+    language: en
+    gender: male
+    instruct: "male, middle-aged, low pitch, american accent"
+    reference_text: "Hello there! It's good to have you here. Ask me anything, and I'll do my best to help."
+  - id: en_female
+    name: English female
+    language: en
+    gender: female
+    instruct: "female, young adult, moderate pitch, british accent"
+    reference_text: "Hi, and welcome! How can I help you today? I'm happy to answer any question you have."
+  - id: es_male
+    name: Spanish male
+    language: es
+    gender: male
+    instruct: "male, middle-aged, low pitch"
+    reference_text: "¡Hola! Me alegra que estés aquí. Pregúntame lo que quieras y haré lo posible por ayudarte."
+  - id: es_female
+    name: Spanish female
+    language: es
+    gender: female
+    instruct: "female, young adult, moderate pitch"
+    reference_text: "¡Hola y bienvenida! ¿En qué puedo ayudarte hoy? Estoy aquí para lo que necesites."
+  - id: fr_male
+    name: French male
+    language: fr
+    gender: male
+    instruct: "male, middle-aged, low pitch"
+    reference_text: "Bonjour ! Je suis content que vous soyez là. Demandez-moi ce que vous voulez, je vais vous aider."
+  - id: fr_female
+    name: French female
+    language: fr
+    gender: female
+    instruct: "female, young adult, moderate pitch"
+    reference_text: "Bonjour et bienvenue ! Comment puis-je vous aider aujourd'hui ? Je suis à votre écoute."
