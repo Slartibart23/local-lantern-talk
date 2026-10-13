@@ -46,7 +46,7 @@ installs are needed, and deleting the folder removes the app completely.
 | Audio devices | Microphone, speaker / headphones (stored in the browser) | system default |
 | Microphone | Microphone on | on |
 | | Speech detection (0.3 more sensitive … 0.8 ignores more noise) | 0.50 |
-| | End of speech after | 700 ms |
+| | End of speech after (also in the right panel: *Thinking pauses*), 0.3–3 s | 0.7 s |
 | Voice output | Voice output on | on |
 | | Synthesis steps (16 / 32 / 48 / 64) | 32 |
 | | Precision (fp16 / bf16 / fp32) | fp16 |

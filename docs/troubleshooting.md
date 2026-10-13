@@ -66,7 +66,9 @@ your microphone" and the browser must be allowed).
 it does not move, the browser gets no sound (wrong device, muted microphone). If it moves
 but nothing happens, lower **Speech detection** in Settings.
 
-**My sentence is cut off**: raise **End of speech after** in Settings (e.g. 1000 ms).
+**My sentence is cut off / the character interrupts my thinking pauses**: move **Thinking
+pauses → End of speech after** in the right panel to the right (1.2–2 s works well; up to
+3 s). The same slider is in Settings → Microphone.
 
 **The app reacts to background noise or its own voice**: raise **Speech detection**, and
 use headphones if your speakers are loud. The microphone is muted while the character

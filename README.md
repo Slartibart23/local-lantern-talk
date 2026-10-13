@@ -19,8 +19,8 @@ your computer.
   and the AI speaks with that voice. Only with the speaker's consent.
 - **Characters** — assistants like *Lena* and *Max*, roleplay characters like *Elara*
   (fantasy tavern) and *Captain Vargas* (sci-fi), or your own: describe a personality
-  once, and the character behaves that way in every conversation, with its own voice
-  and, optionally, its own model.
+  once, and the character behaves that way in every conversation, with its own voice,
+  its own scene (tavern, space, red lantern, study) and, optionally, its own model.
 - **Memory** — characters remember earlier conversations across restarts: a short
   summary plus a list of facts you can view, edit and reset.
 - **Actions are never spoken** — `*smiles*` and stage directions are shown dimmed as
@@ -36,6 +36,62 @@ your computer.
 | Model catalog | Character editor | Settings |
 |---|---|---|
 | ![Model catalog](docs/images/model-catalog.png) | ![Character editor](docs/images/character-editor.png) | ![Settings](docs/images/settings.png) |
+
+## What you can do with it
+
+What a conversation feels like depends on two things you choose: the **character**
+(who you talk to) and the **language model** (how it thinks and what it is willing to
+say). The same app covers a wide range:
+
+| You want … | Character | Good models from the catalog |
+|---|---|---|
+| Casual, funny small talk | Lena, Max, or your own cheerful character | Gemma 4 12B, Gemma 4 26B-A4B |
+| A voice assistant for questions, explanations, brainstorming, writing | Lena, Max, or your own expert character | Gemma 4 26B-A4B (best German), Mistral Small 3.2, Qwen 3.8 27B |
+| In-depth, well-founded discussions | A knowledgeable character, e.g. a professor or a specialist | Gemma 4 26B-A4B, Mistral Small 3.2, Qwen 3.8 27B |
+| Interactive stories and roleplay | Elara (fantasy tavern), Captain Vargas (sci-fi), or your own | Cydonia, Magidonia, Skyfall, Gemma 4 26B-A4B Heretic |
+| Mature, uncensored roleplay (NSFW) between adults | Your own adult character | Uncensored models: Gemma 4 Heretic, Cydonia, Magidonia (Heretic), Qwen 3.8 Abliterated, Rocinante |
+
+- **Censored** models (marked *censored* in the catalog) are the original releases by
+  Google and Mistral: careful, precise, and they decline some topics. They are the best
+  choice for factual work and family use.
+- **Uncensored** models are community builds ("heretic", "abliterated") or roleplay
+  finetunes that answer without the usual refusals — including explicit content. They
+  can be slightly less precise than the originals.
+- The character's description steers tone and content just as much as the model: an
+  uncensored model with a friendly assistant persona still behaves like an assistant.
+- Every model runs **only on your computer**; nothing you say is sent anywhere.
+
+> **Adult content:** uncensored models can produce explicit and disturbing content. Use
+> them only if you are an adult, only for yourself, and within the law of your country.
+> You are responsible for what you generate. Never use the app to create content
+> involving minors, real people without their consent, or anything illegal.
+
+## How it works
+
+Everything runs locally on your NVIDIA GPU, in four steps per turn:
+
+1. **Listen** — your browser sends the microphone audio to the app. **Silero VAD**
+   detects when you start and stop speaking; **Whisper large-v3-turbo** (faster-whisper)
+   turns your words into text and recognizes the language. You can also just type.
+2. **Think** — **llama.cpp** runs the language model you picked in the **model catalog**
+   (*Language model → Change model…*). Models are GGUF files from Hugging Face; the app
+   downloads exactly one file, picks the quantization that fits your GPU memory, and
+   splits the model between GPU and CPU if it does not fit completely. You can also add
+   any other GGUF model by its Hugging Face name. The character's instructions, its
+   memory (facts and a summary of earlier chats) and rules for speakable answers are
+   sent along with your message. See [docs/models.md](docs/models.md).
+3. **Speak** — **OmniVoice** (k2-fsa) turns the reply into speech, sentence by sentence,
+   so the voice starts while the model is still writing. It speaks with one of the
+   8 built-in voices (designed with OmniVoice, shipped with the app) or clones a voice
+   from a short clip you add — 3–10 s of clean speech plus its transcript, which Whisper
+   writes for you. Built-in voices follow the language you speak. Stage directions like
+   `*smiles*` are filtered out and never spoken. See [docs/voices.md](docs/voices.md).
+4. **Remember and record** — each character keeps its own memory in a local database
+   and can record every chat as an MP3 plus a transcript.
+   See [docs/memory.md](docs/memory.md) and [docs/recording.md](docs/recording.md).
+
+A turn usually takes 2–3 seconds from the end of your sentence to the first spoken
+word on an RTX 5090. More technical details: [docs/architecture.md](docs/architecture.md).
 
 ## Requirements
 

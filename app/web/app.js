@@ -696,7 +696,9 @@ function applySettings() {
   $("end-silence").value = s.end_silence_ms;
   setSelect($("tts-steps"), String(s.num_step), `${s.num_step} steps`);
   $("tts-precision").value = s.tts_precision;
-  $("end-silence-out").textContent = `${s.end_silence_ms} ms`;
+  $("end-silence-out").textContent = `${(s.end_silence_ms / 1000).toFixed(1)} s`;
+  $("quick-end-silence").value = s.end_silence_ms;
+  $("quick-end-silence-out").textContent = `${(s.end_silence_ms / 1000).toFixed(1)} s`;
   if (!$("settings").hidden) renderSettings();
   $("messages").classList.toggle("hide-actions", !s.show_actions);
   renderHeader();
@@ -1500,8 +1502,10 @@ function init() {
     toast("Looking up the model on Hugging Face…", "info");
     $("custom-source").value = "";
   };
-  $("end-silence").oninput = (e) => { $("end-silence-out").textContent = `${e.target.value} ms`; };
-  $("end-silence").onchange = (e) => changeSetting("end_silence_ms", Number(e.target.value));
+  for (const id of ["end-silence", "quick-end-silence"]) {  // settings dialog and side panel
+    $(id).oninput = (e) => { $(`${id}-out`).textContent = `${(e.target.value / 1000).toFixed(1)} s`; };
+    $(id).onchange = (e) => changeSetting("end_silence_ms", Number(e.target.value));
+  }
   $("end-chat").onclick = endChat;
   $("resume-continue").onclick = () => { hideResume(); $("text-input").focus(); };
   $("resume-new").onclick = () => { hideResume(); app.endingChat = true; send({ type: "new_conversation" }); };

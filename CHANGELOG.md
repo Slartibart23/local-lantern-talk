@@ -103,6 +103,8 @@ project uses [Semantic Versioning](https://semver.org/).
 - Scenes per character (character editor → Scene): Tavern, Space, Red lantern, Study or
   Plain change the chat background, accent colour and fairy-light colours, and add
   hand-drawn cliparts to the side panels; the reply being spoken (or replayed) glows.
+- "Thinking pauses" slider back in the right panel; the end-of-speech pause now goes up to
+  3 s so the character does not interrupt you while you think.
 - Model catalog: Magidonia 24B v4.3 Heretic and Qwen 3.8 27B Abliterated; Cydonia 24B v4.3
   now uses bartowski's imatrix quantizations.
 - "Quit app" button: closes the app from the browser, unloads all models and frees the

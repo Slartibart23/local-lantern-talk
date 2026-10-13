@@ -179,6 +179,13 @@
         <p class="hint">Add a clip with 3–10 s of clean speech to clone a voice (MP3, WAV, FLAC, OGG, OPUS, M4A…). It is trimmed and its volume evened out automatically. Files are kept in <code>user_data\voices</code>; you can also copy them there and reload the page. Only clone voices with the speaker's consent.</p>
       </section>
 
+      <section aria-labelledby="quick-pause-title">
+        <h2 id="quick-pause-title">Thinking pauses</h2>
+        <label class="field-label" for="quick-end-silence">End of speech after <output id="quick-end-silence-out" for="quick-end-silence"></output></label>
+        <input type="range" id="quick-end-silence" min="300" max="3000" step="100">
+        <p class="hint">How long you can pause before the character answers. If it interrupts you while you think, move it to the right (1.2–2 s works well for calm conversations).</p>
+      </section>
+
       <section>
         <h2>Language model</h2>
         <div class="model-card">
@@ -389,7 +396,7 @@
           <input type="range" id="vad-threshold" min="0.3" max="0.8" step="0.05">
           <div class="range-labels"><span>more sensitive</span><span>ignores more noise</span></div>
           <label class="field-label" for="end-silence">End of speech after <output id="end-silence-out" for="end-silence"></output></label>
-          <input type="range" id="end-silence" min="300" max="1500" step="50">
+          <input type="range" id="end-silence" min="300" max="3000" step="100">
           <p class="hint">How long you can pause before your turn ends. Raise it if you get cut off mid-sentence.</p>
         </section>
 
