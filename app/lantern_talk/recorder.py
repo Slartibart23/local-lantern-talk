@@ -3,7 +3,8 @@
 Each utterance is encoded on its own (in a background thread) and appended to the
 session MP3, so the file is always playable up to the last complete utterance, even
 after a crash. Waiting time is not recorded; a short fixed gap separates the turns.
-The transcript stores, for every utterance, its offset in the MP3.
+The Markdown transcript reads like a screenplay ("Elara: …"); the offset of every
+utterance in the MP3 is kept in a hidden index file for replay.
 
 MP3 frames of separately encoded pieces can simply be concatenated. No Xing/Info
 header or ID3 tag is written, so the playback position of every piece is exactly the
@@ -12,6 +13,7 @@ sum of the frame durations before it.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import queue
@@ -178,41 +180,29 @@ class CaptureBuffer:
 
 # ---------------------------------------------------------------------------- transcript
 
-def format_offset(seconds: float) -> str:
-    minutes, sec = divmod(max(0.0, seconds), 60)
-    return f"{int(minutes):02d}:{sec:04.1f}"
-
-
 def parse_offset(text: str) -> float:
     minutes, sec = text.split(":")
     return int(minutes) * 60 + float(sec)
 
 
-def segments_markdown(segments: list[dict[str, str]], show_actions: bool) -> str:
-    """Transcript text of a reply: actions clearly marked as not spoken (or left out)."""
-    parts: list[str] = []
-    for seg in segments:
-        kind, text = seg["kind"], seg["text"]
-        if kind == "speech":
-            parts.append(text)
-        elif kind == "thinking" or not show_actions:
-            continue
-        elif kind == "code":
-            parts.append(f"\n\n```\n{text.strip()}\n```\n_[not spoken: code]_\n\n")
-        elif kind == "ooc":
-            parts.append(f" _[OOC, not spoken: {text.strip()}]_ ")
-        else:
-            parts.append(f" _[not spoken: {text.strip()}]_ ")
-    text = "".join(parts)
-    text = re.sub(r"[ \t]+", " ", text)
-    return re.sub(r"\n{3,}", "\n\n", text).strip()
+def spoken_text(segments: list[dict[str, str]]) -> str:
+    """Only what was actually said: the transcript reads like a screenplay."""
+    text = " ".join(seg["text"].strip() for seg in segments if seg["kind"] == "speech" and seg["text"].strip())
+    return re.sub(r"[ \t]+", " ", text).strip()
 
 
+def visible_segments(segments: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Segments for the session view (model reasoning is never kept)."""
+    return [{"kind": s["kind"], "text": s["text"]} for s in segments if s["kind"] != "thinking"]
+
+
+# Transcripts recorded before the screenplay format (13 Oct 2026) marked actions inline and
+# had a "### [offset] speaker · tags" heading per utterance; they can still be opened.
 _MARK_RE = re.compile(r"_\[(OOC, )?not spoken: (.*?)\]_|```\n(.*?)\n```\n_\[not spoken: code\]_", re.DOTALL)
 
 
 def markdown_segments(text: str) -> list[dict[str, str]]:
-    """Inverse of :func:`segments_markdown` for the read-only session view."""
+    """Segments of an utterance in an old-format transcript."""
     out: list[dict[str, str]] = []
     pos = 0
     for m in _MARK_RE.finditer(text):
@@ -234,7 +224,7 @@ _ENTRY_RE = re.compile(r"^### \[(\d+:\d+(?:\.\d+)?)\] (.+?)(?: · (.*))?$")
 
 
 def parse_transcript(md: str) -> dict[str, Any]:
-    """Read a session transcript written by :class:`SessionRecorder`."""
+    """Read an old-format session transcript (with offsets in the Markdown)."""
     title = ""
     entries: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
@@ -281,17 +271,23 @@ class SessionItem:
     msg_id: int
     role: str                          # "user" | "assistant"
     speaker: str                       # "You" or the character's name
-    text: str                          # transcript text (Markdown)
-    tags: list[str] = field(default_factory=list)
+    text: str                          # what was said (user: the message; assistant: speech only)
+    tags: list[str] = field(default_factory=list)   # "spoken" / "typed", language, voice, "greeting"
     audio: np.ndarray | None = None
     sample_rate: int = SESSION_SAMPLE_RATE
+    segments: list[dict[str, str]] | None = None    # assistant: everything shown in the chat
 
 
 RecordedFn = Callable[[int, str, float, float | None], None]
+INDEX_DIR = ".index"   # hidden: offsets and details of every utterance, for replay
 
 
 class SessionRecorder:
-    """Appends utterances to ``<name>.mp3`` and ``<name>.md`` in a background thread."""
+    """Appends utterances to ``<name>.mp3`` and ``<name>.md`` in a background thread.
+
+    The Markdown transcript holds only who said what ("Elara: …"). Offsets, durations
+    and actions go to ``.index\\<name>.jsonl`` next to it, which the replay view reads.
+    """
 
     def __init__(self, folder: Path, ffmpeg: Path, on_recorded: RecordedFn | None = None,
                  gap_ms: Callable[[], int] = lambda: 500, bitrate_kbps: Callable[[], int] = lambda: 64) -> None:
@@ -325,9 +321,9 @@ class SessionRecorder:
         return {"name": self.name, "mp3": f"{self.name}.mp3", "md": f"{self.name}.md"}
 
     # -- lifecycle (called from the engine thread; the work happens in the recorder thread) --
-    def start(self, name: str, title: str, header: list[str]) -> None:
+    def start(self, name: str, title: str) -> None:
         self.name = name
-        self._queue.put(("start", (name, title, header)))
+        self._queue.put(("start", (name, title)))
 
     def resume(self, name: str) -> None:
         self.name = name
@@ -364,11 +360,12 @@ class SessionRecorder:
                 if cmd == "sync":
                     arg.set()
                 elif cmd == "start":
-                    name, title, header = arg
+                    name, title = arg
                     self.folder.mkdir(parents=True, exist_ok=True)
+                    _make_index_dir(self.folder)
                     mp3, md = self.folder / f"{name}.mp3", self.folder / f"{name}.md"
                     self.duration = 0.0
-                    _append(md, f"# {title}\n\n" + "".join(f"- {h}\n" for h in header) + "\n")
+                    _append(md, f"# {title}\n\n")
                     log.info("Recording session %s", name)
                 elif cmd == "resume":
                     mp3, md = self.folder / f"{arg}.mp3", self.folder / f"{arg}.md"
@@ -384,7 +381,6 @@ class SessionRecorder:
     def _write(self, item: SessionItem, mp3: Path, md: Path) -> None:
         offset: float = self.duration
         duration: float | None = None
-        tags = list(item.tags)
         if item.audio is not None and len(item.audio):
             audio = resample(item.audio, item.sample_rate, SESSION_SAMPLE_RATE)
             audio = normalize_loudness(audio, SESSION_SAMPLE_RATE)
@@ -396,11 +392,16 @@ class SessionRecorder:
             offset = self.duration + gap / SESSION_SAMPLE_RATE
             self.duration += mp3_duration(data)
             duration = self.duration - offset
-            tags.append(f"{duration:.1f} s")
+        speaker = item.speaker.replace("\n", " ").strip() or "?"
+        entry: dict[str, Any] = {"role": item.role, "speaker": speaker, "offset": round(offset, 3),
+                                 "duration": None if duration is None else round(duration, 3), "tags": item.tags}
+        if item.role == "user":
+            entry["text"] = item.text
         else:
-            tags.append("no audio")
-        speaker = item.speaker.replace("·", "-").replace("\n", " ").strip() or "?"
-        _append(md, f"### [{format_offset(offset)}] {speaker} · {' · '.join(tags)}\n\n{item.text.strip()}\n\n")
+            entry["segments"] = visible_segments(item.segments or [{"kind": "speech", "text": item.text}])
+        _append(index_path(self.folder, mp3.stem), json.dumps(entry, ensure_ascii=False) + "\n")
+        if item.text.strip():  # the transcript reads like a screenplay: "Elara: …"
+            _append(md, f"{speaker}: {item.text.strip()}\n\n")
         if self.on_recorded is not None:
             self.on_recorded(item.msg_id, mp3.stem, offset, duration)
 
@@ -413,12 +414,55 @@ def _append(path: Path, data: bytes | str) -> None:
         os.fsync(f.fileno())
 
 
+def index_path(folder: Path, name: str) -> Path:
+    return folder / INDEX_DIR / f"{name}.jsonl"
+
+
+def _make_index_dir(folder: Path) -> None:
+    path = folder / INDEX_DIR
+    if path.is_dir():
+        return
+    path.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":  # keep the folder out of sight in Explorer
+        import ctypes
+
+        ctypes.windll.kernel32.SetFileAttributesW(str(path), 0x02)  # FILE_ATTRIBUTE_HIDDEN
+
+
+# ---------------------------------------------------------------------------- reading
+
+def load_session(folder: Path, name: str) -> dict[str, Any]:
+    """Title and utterances (with offsets) of a recorded session, for the replay view."""
+    md = folder / f"{name}.md"
+    text = md.read_text(encoding="utf-8") if md.exists() else ""
+    index = index_path(folder, name)
+    if not index.exists():
+        return parse_transcript(text)  # recorded before the screenplay format
+    title = next((line[2:].strip() for line in text.splitlines() if line.startswith("# ")), name)
+    entries = []
+    for line in index.read_text(encoding="utf-8").splitlines():
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue  # a line cut off by a crash
+        tags = entry.get("tags") or []
+        if entry.get("role") == "user":
+            entry["source"] = "voice" if "spoken" in tags else "text"
+        else:
+            entry["greeting"] = "greeting" in tags
+        entries.append(entry)
+    return {"title": title, "entries": entries}
+
+
 # ---------------------------------------------------------------------------- listing
 
 def list_sessions(folder: Path, limit: int = 30) -> list[dict[str, Any]]:
     """Recorded sessions, most recently changed first."""
     if not folder.is_dir():
         return []
+    for index in (folder / INDEX_DIR).glob("*.jsonl"):  # sessions deleted in Explorer
+        if not (folder / f"{index.stem}.md").exists() and not (folder / f"{index.stem}.mp3").exists():
+            index.unlink(missing_ok=True)
     items = []
     for md in folder.glob("*.md"):
         if not SessionRecorder.valid_name(md.stem):

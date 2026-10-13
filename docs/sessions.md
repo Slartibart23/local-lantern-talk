@@ -1,8 +1,8 @@
 # Session recording
 
 Local Lantern Talk can record each chat as **one MP3 of the whole dialogue** (your
-voice and the character's voice, alternating) plus a **Markdown transcript** with
-timestamps. Everything stays on your computer in `user_data\sessions\`.
+voice and the character's voice, alternating) plus a **Markdown transcript** that reads
+like a screenplay. Everything stays on your computer in `user_data\sessions\`.
 
 ## What is a session?
 
@@ -45,23 +45,25 @@ The pause and the bitrate can be changed in `user_data\settings.json`
 
 ## The transcript
 
-A Markdown file you can open in any text editor. Each utterance starts with its
-**position in the MP3**, the speaker and some details:
+A Markdown file you can open in any text editor. It reads like a screenplay: only
+who said what, in order.
 
 ```markdown
-### [00:12.4] You · spoken · de · 3.1 s
+# Elara — 13 Oct 2026, 15:38
 
-Erzähl mir von deiner Taverne.
+Elara: Willkommen in der Goldenen Laterne!
 
-### [00:16.0] Elara · German female · 6.8 s
+You: Erzähl mir von deiner Taverne.
 
-_[not spoken: wischt den Tresen ab]_ Ach, die Goldene Laterne …
+Elara: Ach, die Goldene Laterne … die gibt es schon seit dreißig Jahren.
 ```
 
-- Typed messages and replies without voice output are marked `typed` / `text only` /
-  `no audio`. Their timestamp is the position in the MP3 at that moment.
-- Actions appear according to the character's *Show actions as text* setting, marked
-  `_[not spoken: …]_`. Model reasoning is never written.
+- Only the spoken words are written. Actions (`*wipes the counter*`), out-of-character
+  remarks and model reasoning are left out.
+- Typed messages and replies without voice output appear like spoken ones.
+- The position of every utterance in the MP3 (for the replay buttons) is kept in a
+  hidden file, `user_data\sessions\.index\<session>.jsonl`. If you delete a session's
+  `.md` and `.mp3`, this file is removed automatically.
 
 ## Replay
 

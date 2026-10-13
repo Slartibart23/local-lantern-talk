@@ -43,7 +43,7 @@ from .models import ModelError, ModelManager, NoGGUFError
 from .paths import Paths
 from .pipeline import Conversation, ConversationConfig, SegmentEvent, SpeechAudio, TurnDone, TurnError
 from .prompts import DEFAULT_ASSISTANT_PERSONA
-from .recorder import CaptureBuffer, SessionItem, SessionRecorder, list_sessions, segments_markdown, session_title
+from .recorder import CaptureBuffer, SessionItem, SessionRecorder, list_sessions, session_title, spoken_text
 from .resample import StreamingResampler
 from .sanitizer import split_segments
 from .settings import Settings, SettingsStore
@@ -771,11 +771,10 @@ class Engine:
             time.sleep(POST_PLAYBACK_MUTE_S)
         if recording and reply_text:
             c = self.character
-            show = c.show_actions_as_text if c else self.store.settings.show_actions
             tags = [self._voice_name(reply["voice"])] if spoken and reply["voice"] else ["text only"]
             self.recorder.add(SessionItem(
-                reply["id"], "assistant", c.name if c else "Assistant", segments_markdown(reply["segments"], show),
-                tags, np.concatenate(spoken) if spoken else None, spoken_sr))
+                reply["id"], "assistant", c.name if c else "Assistant", spoken_text(reply["segments"]),
+                tags, np.concatenate(spoken) if spoken else None, spoken_sr, segments=reply["segments"]))
         self._remember_turn(user, reply, language, source, reply_text)
         self._enter_idle()
         if reply_text:
@@ -1113,17 +1112,13 @@ class Engine:
             self.recorder.resume(name)  # a resumed chat continues its recording
         else:
             name = self.recorder.new_name(char_id)
-            entry = self.models.entry_for_file(self.store.settings.model)
-            header = [f"Character: {c.name} ({c.kind})" if c else "Character: Assistant",
-                      f"Model: {entry.display_name if entry else self.store.settings.model}",
-                      f"Audio: `{name}.mp3`",
-                      f"Started: {time.strftime('%Y-%m-%d %H:%M')}"]
-            self.recorder.start(name, session_title(c.name if c else "Assistant"), header)
+            self.recorder.start(name, session_title(c.name if c else "Assistant"))
             self.memory.set_meta(char_id, "session", name)
             for item in self.transcript:  # the greeting that opened this chat
                 if item.get("greeting"):
                     self.recorder.add(SessionItem(item["id"], "assistant", c.name if c else "Assistant",
-                                                  segments_markdown(item["segments"], True), ["greeting"]))
+                                                  spoken_text(item["segments"]), ["greeting"],
+                                                  segments=item["segments"]))
         self._emit_sessions()
         return True
 

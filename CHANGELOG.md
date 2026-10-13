@@ -73,8 +73,9 @@ project uses [Semantic Versioning](https://semver.org/).
   when a character's last chat is loaded after a restart or a switch.
 - Session recording (M7): one MP3 per chat with the whole dialogue (full-quality user
   audio, common loudness, 0.5 s gaps instead of waiting time, 64 kbit/s mono), appended
-  utterance by utterance in the background so it survives crashes; a Markdown transcript
-  with MP3 offsets; replay buttons on every message (microphone muted while playing);
+  utterance by utterance in the background so it survives crashes; a screenplay-style
+  Markdown transcript ("Elara: …", spoken words only) with the MP3 offsets kept in a
+  hidden index for replay; replay buttons on every message (microphone muted while playing);
   recent sessions in the sidebar, opened read-only with replay; global and per-character
   switch, REC badge, "Open session folder". `docs/sessions.md`.
 - "Quit app" button: closes the app from the browser, unloads all models and frees the

@@ -48,7 +48,7 @@ from .engine import MAX_VOICE_UPLOAD_BYTES, Engine, UserError, build_components
 from .gpu import query_gpu
 from .logging_setup import setup_logging
 from .paths import Paths, apply_portable_env, get_paths, path_warnings
-from .recorder import SessionRecorder, list_sessions, parse_transcript
+from .recorder import SessionRecorder, list_sessions, load_session
 from .settings import SettingsStore
 
 log = logging.getLogger(__name__)
@@ -177,7 +177,7 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
             return JSONResponse({"error": "Forbidden"}, status_code=403)
         if path is None:
             return JSONResponse({"error": "Not found"}, status_code=404)
-        data = await asyncio.to_thread(lambda: parse_transcript(path.read_text(encoding="utf-8")))
+        data = await asyncio.to_thread(load_session, paths.sessions, name)
         has_audio = (paths.sessions / f"{name}.mp3").is_file()
         return JSONResponse({"name": name, "audio": has_audio, **data})
 

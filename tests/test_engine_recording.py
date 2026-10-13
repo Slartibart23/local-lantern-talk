@@ -11,7 +11,7 @@ from test_engine import loud, quiet
 from test_engine_characters import _turn, _wait, setup  # noqa: F401 - the fixture is used by name
 from test_recorder import FFMPEG, needs_ffmpeg
 
-from lantern_talk.recorder import mp3_duration, parse_transcript
+from lantern_talk.recorder import load_session, mp3_duration
 from lantern_talk.vad import FRAME_SAMPLES, SegmenterConfig, Utterance, UtteranceSegmenter
 
 pytestmark = needs_ffmpeg
@@ -26,8 +26,7 @@ def _start(setup):  # noqa: ANN001, ANN202
 def _session(engine) -> tuple[Path, dict]:  # noqa: ANN001
     engine.recorder.wait_idle()
     name = engine.memory.get_meta("lena", "session")
-    md = engine.paths.sessions / f"{name}.md"
-    return engine.paths.sessions / f"{name}.mp3", parse_transcript(md.read_text(encoding="utf-8"))
+    return engine.paths.sessions / f"{name}.mp3", load_session(engine.paths.sessions, name)
 
 
 def test_typed_turn_records_greeting_and_reply(setup) -> None:  # noqa: F811
@@ -40,10 +39,12 @@ def test_typed_turn_records_greeting_and_reply(setup) -> None:  # noqa: F811
     assert roles == [("assistant", "greeting"), ("user", "typed"), ("assistant", "German female")]
     reply = session["entries"][2]
     assert reply["duration"] and reply["duration"] > 0
-    # the transcript rounds to 0.1 s; the exact values go to the browser (event "recorded")
-    assert mp3_duration(mp3.read_bytes()) == pytest.approx(reply["offset"] + reply["duration"], abs=0.11)
-    # actions are in the transcript, marked as not spoken
+    assert mp3_duration(mp3.read_bytes()) == pytest.approx(reply["offset"] + reply["duration"], abs=0.002)
+    # the replay view still shows the actions; the Markdown has only the spoken words
     assert reply["segments"][0] == {"kind": "action", "text": "lächelt"}
+    md = mp3.with_suffix(".md").read_text(encoding="utf-8").split("\n\n", 1)[1]
+    assert md == ("Lena: Hi, ich bin Lena! Schön, dass du da bist. Was steht heute an?\n\n"
+                  "You: Hallo Lena!\n\nLena: Mir geht es gut. Und dir?\n\n")
     # the browser learns where each message is
     recorded = [e for e in rec.events[start:] if e["type"] == "recorded"]
     assert {e["id"] for e in recorded} >= {engine.transcript[-1]["id"]}

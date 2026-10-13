@@ -10,9 +10,8 @@ import numpy as np
 import pytest
 
 from lantern_talk.recorder import (
-    SESSION_SAMPLE_RATE, CaptureBuffer, SessionItem, SessionRecorder, encode_mp3, estimate_duration,
-    format_offset, list_sessions, markdown_segments, mp3_duration, normalize_loudness, parse_offset,
-    parse_transcript, segments_markdown,
+    INDEX_DIR, SESSION_SAMPLE_RATE, CaptureBuffer, SessionItem, SessionRecorder, encode_mp3, estimate_duration,
+    list_sessions, load_session, markdown_segments, mp3_duration, normalize_loudness, parse_offset, spoken_text,
 )
 
 ROOT = Path(__file__).parents[1]
@@ -25,11 +24,9 @@ def tone(seconds: float, sr: int = SESSION_SAMPLE_RATE, amp: float = 0.3) -> np.
     return (amp * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
 
 
-def test_offsets_format_and_parse() -> None:
-    assert format_offset(0) == "00:00.0"
-    assert format_offset(83.25) == "01:23.2"
-    assert format_offset(4000) == "66:40.0"
+def test_parse_offset_of_old_transcripts() -> None:
     assert parse_offset("01:23.2") == pytest.approx(83.2)
+    assert parse_offset("66:40.0") == 4000
 
 
 def test_normalize_brings_quiet_and_loud_speech_together() -> None:
@@ -57,12 +54,12 @@ def test_recorder_writes_audio_and_transcript(tmp_path: Path) -> None:
     recorded: list[tuple[int, str, float, float | None]] = []
     rec = SessionRecorder(tmp_path, FFMPEG, lambda *a: recorded.append(a), gap_ms=lambda: 500)
     name = rec.new_name("lena")
-    rec.start(name, "Lena — test", ["Character: Lena (assistant)"])
+    rec.start(name, "Lena — test")
     rec.add(SessionItem(1, "assistant", "Lena", "Hallo! Was steht an?", ["greeting"]))
     rec.add(SessionItem(2, "user", "You", "Ein Ausflug.", ["spoken", "de"], tone(1.2, 48_000), 48_000))
-    rec.add(SessionItem(3, "assistant", "Lena", segments_markdown(
-        [{"kind": "action", "text": "lächelt"}, {"kind": "speech", "text": "Wie schön!"}], True),
-        ["German female"], tone(2.0)))
+    segs = [{"kind": "action", "text": "lächelt"}, {"kind": "speech", "text": "Wie schön!"},
+            {"kind": "thinking", "text": "geheim"}]
+    rec.add(SessionItem(3, "assistant", "Lena", spoken_text(segs), ["German female"], tone(2.0), segments=segs))
     rec.add(SessionItem(4, "user", "You", "Getippt.", ["typed"]))
     rec.wait_idle()
     rec.stop()
@@ -76,14 +73,20 @@ def test_recorder_writes_audio_and_transcript(tmp_path: Path) -> None:
     assert by_id[3][2] + by_id[3][3] == pytest.approx(total)
     assert by_id[4][2] == pytest.approx(total)                  # typed: offset = position at that time
 
-    parsed = parse_transcript((tmp_path / f"{name}.md").read_text(encoding="utf-8"))
+    # the transcript reads like a screenplay: only who said what
+    md = (tmp_path / f"{name}.md").read_text(encoding="utf-8")
+    assert md == ("# Lena — test\n\nLena: Hallo! Was steht an?\n\nYou: Ein Ausflug.\n\n"
+                  "Lena: Wie schön!\n\nYou: Getippt.\n\n")
+    # offsets and actions live in the hidden index, for replay
+    assert (tmp_path / INDEX_DIR / f"{name}.jsonl").exists()
+    parsed = load_session(tmp_path, name)
     assert parsed["title"] == "Lena — test"
     e = parsed["entries"]
     assert [x["role"] for x in e] == ["assistant", "user", "assistant", "user"]
     assert e[0]["greeting"] and e[0]["duration"] is None
     assert e[1]["source"] == "voice" and e[1]["text"] == "Ein Ausflug."
-    assert e[2]["offset"] == pytest.approx(by_id[3][2], abs=0.06)
-    assert e[2]["segments"] == [{"kind": "action", "text": "lächelt"}, {"kind": "speech", "text": "Wie schön!"}]
+    assert e[2]["offset"] == pytest.approx(by_id[3][2], abs=0.001)
+    assert e[2]["segments"] == segs[:2]  # model reasoning is never kept
     assert e[3]["source"] == "text" and e[3]["duration"] is None
 
     sessions = list_sessions(tmp_path)
@@ -96,7 +99,7 @@ def test_recorder_writes_audio_and_transcript(tmp_path: Path) -> None:
 def test_resume_appends_at_the_end(tmp_path: Path) -> None:
     rec = SessionRecorder(tmp_path, FFMPEG)
     name = rec.new_name("max")
-    rec.start(name, "Max", [])
+    rec.start(name, "Max")
     rec.add(SessionItem(1, "user", "You", "Eins", ["spoken"], tone(1.0)))
     rec.wait_idle()
     first = rec.duration
@@ -109,8 +112,8 @@ def test_resume_appends_at_the_end(tmp_path: Path) -> None:
     rec2.wait_idle()
     rec2.close()
     assert recorded[0][2] == pytest.approx(first + 0.5)
-    entries = parse_transcript((tmp_path / f"{name}.md").read_text(encoding="utf-8"))["entries"]
-    assert len(entries) == 2
+    assert len(load_session(tmp_path, name)["entries"]) == 2
+    assert (tmp_path / f"{name}.md").read_text(encoding="utf-8") == "# Max\n\nYou: Eins\n\nMax: Zwei\n\n"
 
 
 def test_new_names_never_collide(tmp_path: Path) -> None:
@@ -128,14 +131,25 @@ def test_new_names_never_collide(tmp_path: Path) -> None:
     assert not SessionRecorder.valid_name("a b")
 
 
-def test_actions_follow_the_display_setting() -> None:
-    segs = [{"kind": "speech", "text": "Hallo."}, {"kind": "action", "text": "winkt"},
-            {"kind": "ooc", "text": "brb"}, {"kind": "thinking", "text": "secret"}]
-    shown = segments_markdown(segs, True)
-    assert "_[not spoken: winkt]_" in shown and "_[OOC, not spoken: brb]_" in shown
-    assert "secret" not in shown
-    assert segments_markdown(segs, False) == "Hallo."
-    assert markdown_segments(shown) == segs[:3]
+def test_transcript_contains_only_what_was_said() -> None:
+    segs = [{"kind": "speech", "text": "Hallo. "}, {"kind": "action", "text": "winkt"},
+            {"kind": "speech", "text": " Wie geht's?"}, {"kind": "ooc", "text": "brb"},
+            {"kind": "thinking", "text": "secret"}]
+    assert spoken_text(segs) == "Hallo. Wie geht's?"
+    assert spoken_text([{"kind": "action", "text": "nickt"}]) == ""
+
+
+def test_old_format_transcripts_can_still_be_opened(tmp_path: Path) -> None:
+    (tmp_path / "2026-10-13_1200_lena.md").write_text(
+        "# Lena — 13 Oct 2026, 12:00\n\n- Character: Lena (assistant)\n\n"
+        "### [00:00.0] Lena · greeting · no audio\n\nHallo!\n\n"
+        "### [00:01.5] You · spoken · de · 1.2 s\n\nHi.\n\n"
+        "### [00:03.2] Lena · German female · 2.0 s\n\n_[not spoken: winkt]_ Schön!\n\n", encoding="utf-8")
+    e = load_session(tmp_path, "2026-10-13_1200_lena")["entries"]
+    assert [x["role"] for x in e] == ["assistant", "user", "assistant"]
+    assert e[1]["offset"] == pytest.approx(1.5) and e[1]["duration"] == 1.2
+    assert e[2]["segments"] == [{"kind": "action", "text": "winkt"}, {"kind": "speech", "text": "Schön!"}]
+    assert markdown_segments("Nur Text.") == [{"kind": "speech", "text": "Nur Text."}]
 
 
 def test_capture_buffer_cuts_full_quality_audio() -> None:
@@ -157,5 +171,8 @@ def test_list_sessions_sorted_by_last_change(tmp_path: Path) -> None:
         (tmp_path / f"{name}.md").write_text(f"# {name}\n", encoding="utf-8")
         os.utime(tmp_path / f"{name}.md", (time.time() + i, time.time() + (1 - i) * 10))
     (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
+    (tmp_path / INDEX_DIR).mkdir()
+    (tmp_path / INDEX_DIR / "2026-09-01_1000_gone.jsonl").write_text("{}\n", encoding="utf-8")
     names = [s["name"] for s in list_sessions(tmp_path)]
     assert names == ["2026-10-01_1000_max", "2026-10-02_1000_lena"]
+    assert not (tmp_path / INDEX_DIR / "2026-09-01_1000_gone.jsonl").exists()  # deleted session
