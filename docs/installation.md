@@ -27,7 +27,9 @@ the folder removes the app completely.
 1. Put the program folder where you want it, e.g. `D:\Local Lantern Talk`.
    Spaces in the path are fine. Avoid non-ASCII characters (umlauts) and very long
    paths; the installer warns about both.
-2. Double-click **`install.bat`**.
+2. Double-click **`install.bat`**. (In a PowerShell terminal type `.\install.bat` —
+   PowerShell does not run programs from the current folder without the `.\` prefix.
+   The same applies to `.\start.bat`.)
 3. The installer checks the GPU, driver, free space and file system, then shows
    what it will download and asks before it starts.
 4. When it asks about the **starter language model**, answer *Y* unless you want

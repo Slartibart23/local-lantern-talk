@@ -38,7 +38,7 @@ driver update, re-run `install.bat` to switch to the CUDA 13 build.
    (about 9 GB, plus 7–8 GB for the optional starter language model) and asks before
    starting. At the end a self-test checks the GPU, speech output and microphone.
    Details and expected Windows warnings: [docs/installation.md](docs/installation.md).
-2. Run `start.bat`. It starts the app and opens `http://127.0.0.1:7865` in your browser.
+2. Run `start.bat` (double-click it, or type `.\start.bat` in a PowerShell terminal). It starts the app and opens `http://127.0.0.1:7865` in your browser.
    Keep the console window open while you use the app; closing it quits the app.
 3. Click **Start** and allow the microphone. When the status shows **Listening**,
    just talk — or type in the message box at any time.
