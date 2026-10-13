@@ -134,12 +134,17 @@
       <section>
         <h2>Language model</h2>
         <div class="model-card">
-          <div id="model-name" class="model-name">—</div>
-          <div class="badges"><span class="badge" id="model-quant">?</span><span class="badge" id="model-size">—</span></div>
+          <div id="model-name" class="model-label">—</div>
+          <div class="badges">
+            <span class="badge" id="model-variant">—</span>
+            <span class="badge" id="model-quant">?</span>
+            <span class="badge" id="model-size">—</span>
+          </div>
+          <p id="model-notice" class="notice" hidden></p>
         </div>
-        <label class="field-label" for="model-select">Change model</label>
-        <select id="model-select"></select>
-        <p class="hint">Models are the GGUF files in <code>models\llm</code>.</p>
+        <div class="row">
+          <button type="button" id="open-catalog" class="secondary">Change model…</button>
+        </div>
       </section>
 
       <section>
@@ -152,8 +157,9 @@
       <section>
         <h2>GPU</h2>
         <div id="gpu-name" class="muted">—</div>
-        <div class="vram" role="img" aria-labelledby="vram-text"><span id="vram-fill"></span></div>
+        <div class="vram" id="vram-bar" role="img" aria-labelledby="vram-text"></div>
         <div id="vram-text" class="mono small">—</div>
+        <ul id="vram-legend" class="vram-legend"></ul>
         <ul id="components" class="components"></ul>
       </section>
 
@@ -163,6 +169,66 @@
         <button type="button" id="new-conv" class="secondary">New conversation</button>
       </section>
     </aside>
+  </div>
+
+  <div id="catalog" class="catalog" role="dialog" aria-modal="true" aria-labelledby="catalog-title" hidden>
+    <div class="catalog-panel">
+      <header class="catalog-head">
+        <div>
+          <h1 id="catalog-title">Language models</h1>
+          <p id="catalog-gpu" class="muted small">—</p>
+        </div>
+        <button type="button" id="close-catalog" class="icon-btn" aria-label="Close the model catalog">✕</button>
+      </header>
+
+      <div class="chips" role="group" aria-label="Filter models">
+        <button type="button" class="chip" data-filter="all" aria-pressed="true">All</button>
+        <button type="button" class="chip" data-filter="censored" aria-pressed="false">Censored</button>
+        <button type="button" class="chip" data-filter="uncensored" aria-pressed="false">Uncensored</button>
+        <button type="button" class="chip" data-filter="downloaded" aria-pressed="false">Downloaded</button>
+      </div>
+
+      <div id="download-bar" class="download-bar" hidden>
+        <div class="download-text"><span id="download-name"></span> <span id="download-detail" class="mono small"></span></div>
+        <div class="progress"><span id="download-fill"></span></div>
+        <button type="button" id="cancel-download" class="secondary small-btn">Cancel</button>
+      </div>
+
+      <div id="model-list" class="model-list"></div>
+
+      <section class="custom-model" aria-labelledby="custom-title">
+        <h2 id="custom-title">Add your own model</h2>
+        <p class="hint">A Hugging Face repo id (<code>owner/name</code>), a Hugging Face link, or a direct link to a
+          <code>.gguf</code> file. Only the one matching GGUF file is downloaded. GGUF files you copy into
+          <code>models\llm</code> appear here automatically.</p>
+        <form id="custom-form" class="custom-form">
+          <label class="field-label" for="custom-source">Repository or link</label>
+          <input id="custom-source" type="text" placeholder="e.g. TheDrummer/Cydonia-24B-v4.3-GGUF" autocomplete="off" required>
+          <div class="custom-row">
+            <div>
+              <label class="field-label" for="custom-quant">Quantization</label>
+              <select id="custom-quant">
+                <option value="">Auto (recommended)</option>
+                <option>Q4_K_M</option><option>Q5_K_M</option><option>Q6_K</option><option>Q8_0</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label" for="custom-variant">Label</label>
+              <select id="custom-variant">
+                <option value="unknown">Unknown</option>
+                <option value="censored">Censored</option>
+                <option value="uncensored">Uncensored</option>
+              </select>
+            </div>
+          </div>
+          <button type="submit" class="primary custom-submit">Add &amp; download</button>
+        </form>
+      </section>
+
+      <p class="hint catalog-note">Uncensored "abliterated" / "heretic" models can be slightly less precise than the
+        originals; you are responsible for how you use them. Roleplay finetunes are strongest in English. Each model
+        has its own license, shown with the model.</p>
+    </div>
   </div>
 
   <div id="toast" class="toast" role="alert" hidden></div>

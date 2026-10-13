@@ -242,8 +242,8 @@ $haveLlm = @(Get-ChildItem -LiteralPath (Join-Path $Models 'llm') -Filter '*.ggu
 $WantStarter = $false
 if (-not $haveLlm -and -not $NoStarterModel) {
     Write-Host ''
-    Write-Note (Format-Invariant 'No language model is installed yet. The starter model is Gemma 3 12B ({0}, {1:N1} GB).' @($StarterQuant, ($starter.download_mb / 1000)))
-    Write-Note 'Without a language model the app cannot answer. (Gemma has its own terms of use.)'
+    Write-Note (Format-Invariant 'No language model is installed yet. The starter model is {0} ({1}, {2:N1} GB, Apache-2.0).' @($Pins.starter_llm.display_name, $StarterQuant, ($starter.download_mb / 1000)))
+    Write-Note 'Without a language model the app cannot answer. More models can be downloaded later in the app.'
     $WantStarter = Confirm-Choice 'Download the starter language model?' $true
 }
 if ($WantStarter) { Add-Plan "Starter language model: $($starter.file)" $starter.download_mb $true }

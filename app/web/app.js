@@ -30,6 +30,12 @@ const app = {
   playback: { scheduled: 0, ended: 0, nextTime: 0, turnDone: false },
   currentAi: null,      // { el, bubble, lastSpeech }
   voiceInfo: null,      // reference text etc. of the selected voice
+  modelStatus: null,    // GPU layers of the loaded language model
+  gpu: null,            // detected GPU, profile and recommended quantization
+  download: null,       // current model download
+  components: null,
+  catalogFilter: "all",
+  chosenQuant: {},      // quantization picked per model in the catalog
 };
 
 // ---------------------------------------------------------------- WebSocket
@@ -62,6 +68,9 @@ function handleEvent(msg) {
       app.settings = msg.settings;
       app.voices = msg.voices;
       app.models = msg.models;
+      app.modelStatus = msg.model_status;
+      app.gpu = msg.gpu;
+      app.download = msg.download;
       renderVoices();
       renderModels();
       applySettings();
@@ -97,6 +106,17 @@ function handleEvent(msg) {
       break;
     case "components":
       renderComponents(msg.components);
+      break;
+    case "models":
+      app.models = msg.models;
+      renderModels();
+      break;
+    case "model_status":
+      app.modelStatus = msg;
+      renderCurrentModel();
+      break;
+    case "download":
+      handleDownloadEvent(msg);
       break;
     case "voice_info":
       renderVoiceInfo(msg);
@@ -377,11 +397,165 @@ function renderVoices() {
   }
 }
 
+// ---------------------------------------------------------------- language models (spec §13 / §14.2)
+
+const VARIANT_LABEL = { censored: "censored", uncensored: "uncensored", unknown: "unlabeled" };
+const FIT_LABEL = { fits: "fits on the GPU", partial: "partly on the CPU (slower)", too_big: "too big for this GPU" };
+
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v;
+    else if (k.startsWith("on")) node[k] = v;
+    else if (v !== undefined && v !== null) node.setAttribute(k, v);
+  }
+  for (const c of children) if (c !== null && c !== undefined) node.append(c);
+  return node;
+}
+
 function renderModels() {
-  const sel = $("model-select");
-  sel.innerHTML = "";
-  if (!app.models.length) sel.append(new Option("No models in models\\llm", ""));
-  for (const m of app.models) sel.append(new Option(`${m.file} (${m.size_gb} GB)`, m.file));
+  renderCurrentModel();
+  renderCatalog();
+}
+
+function renderCurrentModel() {
+  const file = app.settings.model;
+  const entry = app.models.find((m) => m.downloaded_files.includes(file));
+  const quant = entry && entry.quants.find((q) => q.file === file);
+  $("model-name").textContent = entry ? entry.name : (file || "No model yet");
+  const variant = $("model-variant");
+  variant.className = "badge " + (entry ? entry.variant : "");
+  variant.textContent = entry ? VARIANT_LABEL[entry.variant] : "—";
+  $("model-quant").textContent = quant ? quant.quant : "?";
+  $("model-size").textContent = quant ? `${quant.size_gb} GB` : "—";
+  const st = app.modelStatus || {};
+  const notice = $("model-notice");
+  notice.hidden = !(st.partial && st.file === file);
+  notice.textContent = st.notice || "";
+}
+
+function filteredModels() {
+  const f = app.catalogFilter;
+  return app.models.filter((m) => f === "all" || (f === "downloaded" ? m.downloaded_files.length > 0 : m.variant === f));
+}
+
+function renderCatalog() {
+  const g = app.gpu || {};
+  $("catalog-gpu").textContent = g.name
+    ? `${g.name} · ${(g.vram_mib / 1024).toFixed(1)} GB VRAM · profile ${g.profile} · recommended quantization ${g.recommended_quant}` +
+      ` · about ${g.available_gb} GB free for a language model`
+    : "GPU not detected";
+  const list = $("model-list");
+  list.innerHTML = "";
+  const models = filteredModels();
+  if (!models.length) list.append(el("p", { class: "muted" }, "No models in this view."));
+  for (const m of models) list.append(modelRow(m));
+  renderDownload();
+}
+
+function modelRow(m) {
+  const chosen = app.chosenQuant[m.id] || m.recommended.quant;
+  const q = m.quants.find((x) => x.quant === chosen) || m.quants[0];
+  const loaded = m.state === "loaded" && q.file === app.settings.model;
+  const row = el("div", { class: `model-row ${q.fit}${loaded ? " loaded" : ""}` });
+
+  const meta = [m.family, m.languages_note, m.license_note].filter(Boolean).join(" · ");
+  row.append(el("div", {},
+    el("div", { class: "model-title" }, m.name,
+      el("span", { class: `badge ${m.variant}` }, VARIANT_LABEL[m.variant])),
+    el("div", { class: "model-purpose" }, m.purpose + (m.note ? ` — ${m.note}` : "")),
+    meta ? el("div", { class: "model-meta" }, meta) : null));
+
+  const select = el("select", { "aria-label": `Quantization for ${m.name}` });
+  for (const x of m.quants) {
+    const opt = new Option(`${x.quant} · ${x.size_gb} GB${x.downloaded ? " · downloaded" : ""}`, x.quant);
+    select.append(opt);
+  }
+  select.value = q.quant;
+  select.onchange = () => { app.chosenQuant[m.id] = select.value; renderCatalog(); };
+  row.append(el("div", { class: "model-quant" }, select,
+    el("div", { class: `fit badge ${q.fit}` }, FIT_LABEL[q.fit])));
+
+  const actions = el("div", { class: "model-actions" });
+  const downloading = app.download && app.download.key === m.id && ["queued", "running"].includes(app.download.state);
+  if (loaded) {
+    actions.append(el("span", { class: "loaded-label" }, "Loaded"));
+  } else if (q.downloaded) {
+    actions.append(el("button", { type: "button", class: "primary", onclick: () => loadModel(q.file) }, "Load"));
+  } else if (downloading) {
+    actions.append(el("span", { class: "muted small" }, "Downloading…"));
+  } else {
+    const btn = el("button", {
+      type: "button", class: "primary",
+      onclick: () => send({ type: "download_model", id: m.id, quant: q.quant }),
+    }, "Download & load");
+    if (q.fit === "too_big") {
+      btn.disabled = true;
+      btn.title = "Needs more GPU memory than is available. Choose a smaller quantization.";
+    } else if (app.download && ["queued", "running"].includes(app.download.state)) {
+      btn.disabled = true;
+      btn.title = "Another download is running.";
+    }
+    actions.append(btn);
+  }
+  if (q.downloaded && !loaded) {
+    actions.append(el("button", {
+      type: "button", class: "secondary", "aria-label": `Delete ${q.file}`,
+      onclick: () => { if (confirm(`Delete ${q.file} (${q.size_gb} GB) from models\\llm?`)) send({ type: "delete_model", file: q.file }); },
+    }, "Delete"));
+  }
+  if (m.source !== "catalog") {
+    const label = el("select", { "aria-label": `Label for ${m.name}` });
+    for (const v of ["unknown", "censored", "uncensored"]) label.append(new Option(VARIANT_LABEL[v], v));
+    label.value = m.variant;
+    label.onchange = () => send({ type: "set_model_label", file: q.file, variant: label.value });
+    actions.append(label);
+  }
+  if (m.source === "custom" && !q.downloaded) {
+    actions.append(el("button", { type: "button", class: "secondary", onclick: () => send({ type: "remove_custom_model", id: m.id }) }, "Remove"));
+  }
+  row.append(actions);
+  return row;
+}
+
+function loadModel(file) {
+  changeSetting("model", file);
+  closeCatalog();
+}
+
+function renderDownload() {
+  const d = app.download;
+  const bar = $("download-bar");
+  const active = d && ["queued", "running"].includes(d.state);
+  bar.hidden = !active;
+  if (!active) return;
+  const pct = d.total ? (100 * d.done / d.total) : 0;
+  $("download-name").textContent = d.file_name;
+  const eta = d.speed > 0 && d.total ? Math.round((d.total - d.done) / d.speed) : null;
+  $("download-detail").textContent =
+    `${(d.done / 1e9).toFixed(2)} / ${(d.total / 1e9).toFixed(2)} GB · ${(d.speed / 1e6).toFixed(0)} MB/s` +
+    (eta !== null ? ` · ${eta >= 60 ? Math.round(eta / 60) + " min" : eta + " s"} left` : "");
+  $("download-fill").style.width = `${pct.toFixed(1)}%`;
+}
+
+function handleDownloadEvent(d) {
+  const wasActive = app.download && ["queued", "running"].includes(app.download.state);
+  app.download = d;
+  renderDownload();
+  if (wasActive && d.state === "done") toast(`${d.file_name} downloaded; loading it now.`, "info");
+  if (d.state === "cancelled") toast("Download cancelled. It continues where it stopped if you start it again.", "info");
+  if (!["queued", "running"].includes(d.state)) renderCatalog();
+}
+
+function openCatalog() {
+  $("catalog").hidden = false;
+  send({ type: "refresh" });
+  $("close-catalog").focus();
+}
+
+function closeCatalog() {
+  $("catalog").hidden = true;
+  $("open-catalog").focus();
 }
 
 function applySettings() {
@@ -392,17 +566,13 @@ function applySettings() {
   $("show-actions").checked = !!s.show_actions;
   $("voice-select").value = s.voice;
   $("voice-select").disabled = false;
-  $("model-select").value = s.model;
   $("end-silence").value = s.end_silence_ms;
   setSelect($("tts-steps"), String(s.num_step), `${s.num_step} steps`);
   $("tts-precision").value = s.tts_precision;
   $("end-silence-out").textContent = `${s.end_silence_ms} ms`;
   $("messages").classList.toggle("hide-actions", !s.show_actions);
   $("header-voice").textContent = s.voice_output ? `Voice: ${voiceName(s.voice)}` : "Text replies";
-  const model = app.models.find((m) => m.file === s.model);
-  $("model-name").textContent = s.model || "—";
-  $("model-quant").textContent = model ? model.quant : "?";
-  $("model-size").textContent = model ? `${model.size_gb} GB` : "—";
+  renderCurrentModel();
   if (app.started) {
     if (s.mic_enabled) startMic(); else stopMic();
   }
@@ -441,6 +611,7 @@ function changeSetting(key, value) {
 
 function renderComponents(c) {
   if (!c) return;
+  app.components = c;
   const list = $("components");
   list.innerHTML = "";
   const rows = [
@@ -467,7 +638,24 @@ async function refreshGpu() {
     const g = await r.json();
     if (!g.total_mb) return;
     $("gpu-name").textContent = g.name;
-    $("vram-fill").style.width = `${(100 * g.used_mb / g.total_mb).toFixed(1)}%`;
+    // Per-component VRAM (spec §5): measured when each component was loaded.
+    const v = (app.components && app.components.vram_mb) || {};
+    const parts = [
+      ["llm", "Language model", v.llm || 0],
+      ["whisper", "Whisper + VAD", v.whisper || 0],
+      ["omnivoice", "OmniVoice", v.omnivoice || 0],
+    ];
+    const known = parts.reduce((sum, p) => sum + p[2], 0);
+    parts.push(["other", "Other programs / Windows", Math.max(0, g.used_mb - known)]);
+    const bar = $("vram-bar");
+    const legend = $("vram-legend");
+    bar.innerHTML = "";
+    legend.innerHTML = "";
+    for (const [key, label, mb] of parts) {
+      if (mb <= 0) continue;
+      bar.append(el("span", { class: `seg-${key}`, style: `width:${(100 * mb / g.total_mb).toFixed(1)}%` }));
+      legend.append(el("li", {}, el("i", { class: `seg-${key}` }), `${label}: ${(mb / 1024).toFixed(1)} GB`));
+    }
     $("vram-text").textContent = `VRAM ${(g.used_mb / 1024).toFixed(1)} / ${(g.total_mb / 1024).toFixed(1)} GB in use`;
   } catch { /* the app may be restarting */ }
 }
@@ -570,7 +758,24 @@ function init() {
   $("mic-enabled").onchange = (e) => changeSetting("mic_enabled", e.target.checked);
   $("show-actions").onchange = (e) => changeSetting("show_actions", e.target.checked);
   $("voice-select").onchange = (e) => { e.target.disabled = true; changeSetting("voice", e.target.value); };
-  $("model-select").onchange = (e) => { if (e.target.value) changeSetting("model", e.target.value); };
+  $("open-catalog").onclick = openCatalog;
+  $("close-catalog").onclick = closeCatalog;
+  $("catalog").onclick = (e) => { if (e.target === $("catalog")) closeCatalog(); };
+  $("cancel-download").onclick = () => send({ type: "cancel_download" });
+  document.querySelectorAll(".chip").forEach((chip) => {
+    chip.onclick = () => {
+      app.catalogFilter = chip.dataset.filter;
+      document.querySelectorAll(".chip").forEach((c) => c.setAttribute("aria-pressed", String(c === chip)));
+      renderCatalog();
+    };
+  });
+  $("custom-form").onsubmit = (ev) => {
+    ev.preventDefault();
+    send({ type: "add_custom_model", source: $("custom-source").value.trim(),
+           quant: $("custom-quant").value, variant: $("custom-variant").value });
+    toast("Looking up the model on Hugging Face…", "info");
+    $("custom-source").value = "";
+  };
   $("end-silence").oninput = (e) => { $("end-silence-out").textContent = `${e.target.value} ms`; };
   $("end-silence").onchange = (e) => changeSetting("end_silence_ms", Number(e.target.value));
   $("new-conv").onclick = () => send({ type: "new_conversation" });
@@ -583,7 +788,10 @@ function init() {
   $("toggle-left").onclick = () => togglePanel("left");
   $("toggle-right").onclick = () => togglePanel("right");
   document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape") $("app").classList.remove("show-left", "show-right");
+    if (ev.key === "Escape") {
+      if (!$("catalog").hidden) closeCatalog();
+      $("app").classList.remove("show-left", "show-right");
+    }
   });
 
   connect();

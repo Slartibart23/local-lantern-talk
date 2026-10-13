@@ -62,7 +62,7 @@ Options (for advanced users), e.g. `install.bat -Yes`:
 | Whisper large-v3-turbo | ~1.6 GB | `models\whisper` |
 | OmniVoice | ~3.2 GB | `models\omnivoice` |
 | Silero VAD, fonts | < 5 MB | `models\vad`, `runtime\fonts` |
-| Starter model Gemma 3 12B (optional) | 7.3–8.4 GB | `models\llm` |
+| Starter model Gemma 4 12B (optional) | 7.1–8.4 GB | `models\llm` |
 
 Every runtime download (uv, llama.cpp, ffmpeg) is verified with a pinned SHA-256
 checksum. The 8 built-in voices are not downloaded: they are generated on your GPU
