@@ -105,6 +105,7 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
 
     app = FastAPI(title="Local Lantern Talk", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.hub = hub
+    app.state.request_quit = lambda: None  # set by main(): stops the server (and with it the engine)
 
     @app.middleware("http")
     async def check_host(request: Request, call_next):  # noqa: ANN001, ANN202
@@ -230,6 +231,11 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
                     engine.reset_memory()
                 elif kind == "refresh":
                     await ws.send_json(engine.snapshot())
+                elif kind == "quit":
+                    # "Quit app" in the UI: stop everything and free the GPU memory.
+                    log.info("Quit requested from the browser")
+                    await ws.send_json({"type": "bye"})
+                    app.state.request_quit()
         except WebSocketDisconnect:
             pass
         finally:
@@ -302,8 +308,9 @@ def main(argv: list[str] | None = None) -> int:
     print("Keep this window open while you use the app; close it to quit.")
     print(f"Log file: {log_file}")
     config = uvicorn.Config(create_app(paths, port), host=HOST, port=port, log_level="warning",
-                            access_log=False, ws_max_size=8 * 2**20)
+                            access_log=False, ws_max_size=8 * 2**20, timeout_graceful_shutdown=5)
     server = uvicorn.Server(config)
+    config.app.state.request_quit = lambda: setattr(server, "should_exit", True)
 
     if not args.no_browser:
         def open_when_ready() -> None:
@@ -317,6 +324,7 @@ def main(argv: list[str] | None = None) -> int:
         server.run()
     except KeyboardInterrupt:
         pass
+    print("Local Lantern Talk has stopped.")
     return 0
 
 

@@ -149,6 +149,16 @@ def test_character_and_memory_commands(client: TestClient) -> None:
     ]
 
 
+def test_quit_says_bye_and_stops_the_server(client: TestClient) -> None:
+    quits: list[bool] = []
+    client.app.state.request_quit = lambda: quits.append(True)
+    with client.websocket_connect(WS_URL, headers=GOOD_ORIGIN) as ws:
+        ws.receive_json()
+        ws.send_json({"type": "quit"})
+        assert ws.receive_json() == {"type": "bye"}
+    assert quits == [True]
+
+
 def test_second_tab_takes_over(client: TestClient) -> None:
     with client.websocket_connect(WS_URL, headers=GOOD_ORIGIN) as first:
         first.receive_json()

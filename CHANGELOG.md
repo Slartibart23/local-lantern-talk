@@ -69,6 +69,8 @@ project uses [Semantic Versioning](https://semver.org/).
   4 replies, "New conversation" folds the old talk into the summary; facts can be added,
   edited and deleted, and a character's memory reset, in the right panel.
 - `docs/characters.md` and `docs/memory.md`.
+- "Quit app" button: closes the app from the browser, unloads all models and frees the
+  GPU memory; conversations are saved.
 
 ### Changed
 - The installer's starter model is Gemma 4 12B (Apache-2.0) instead of Gemma 3 12B.

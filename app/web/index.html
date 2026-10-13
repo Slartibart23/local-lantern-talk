@@ -16,6 +16,7 @@
     <symbol id="i-send" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 12l16-8-6 16-2.5-6.5z"/></symbol>
     <symbol id="i-menu" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 7h16M4 12h16M4 17h16"/></symbol>
     <symbol id="i-edit" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></symbol>
+    <symbol id="i-power" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 3v8M7.5 6.2a7 7 0 1 0 9 0"/></symbol>
     <symbol id="i-sliders" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 7h10M18 7h2M4 17h4M12 17h8M16 5v4M10 15v4"/></symbol>
   </svg>
 
@@ -43,6 +44,12 @@
         <h2>Recent sessions</h2>
         <p class="muted">No recorded sessions yet.</p>
       </section>
+      <div class="quit-area">
+        <button type="button" id="quit-app" class="secondary quit-btn">
+          <svg aria-hidden="true"><use href="#i-power"/></svg><span>Quit app</span>
+        </button>
+        <p class="hint">Ends the app and frees the GPU memory. Conversations are saved.</p>
+      </div>
     </aside>
 
     <main class="center" aria-label="Conversation">

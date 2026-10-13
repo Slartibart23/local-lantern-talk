@@ -56,7 +56,7 @@ function connect() {
     else handleAudio(ev.data);
   };
   ws.onclose = () => {
-    if (app.replaced) return;
+    if (app.replaced || app.closed) return;
     setState("error", "Connection to the app lost — reconnecting…");
     setTimeout(connect, 1500);
   };
@@ -160,6 +160,9 @@ function handleEvent(msg) {
       break;
     case "error":
       toast(msg.message);
+      break;
+    case "bye":
+      appClosed();
       break;
     case "replaced":
       app.replaced = true;
@@ -930,6 +933,25 @@ function toast(text, kind = "error") {
   toastTimer = setTimeout(() => { el.hidden = true; }, 7000);
 }
 
+function quitApp() {
+  if (!confirm("Quit Local Lantern Talk?\n\nThe language model and the voices are unloaded and the GPU memory is freed. " +
+               "Your conversations are saved. Start the app again with start.bat.")) return;
+  app.closed = true;
+  send({ type: "quit" });
+  setTimeout(appClosed, 1500);  // in case the goodbye message gets lost
+}
+
+function appClosed() {
+  if (app.closedShown) return;
+  app.closed = true;
+  app.closedShown = true;
+  stopMic();
+  resetPlayback();
+  showOverlay("Local Lantern Talk has been closed and the GPU memory is free again. Your conversations are saved. " +
+              "You can close this tab now; start the app again with start.bat.", "", null);
+  document.querySelector("#start-overlay .overlay-card").classList.add("closed");
+}
+
 function showOverlay(text, button, onClick) {
   $("start-text").textContent = text;
   const btn = $("start-btn");
@@ -1036,6 +1058,7 @@ function init() {
   $("tts-precision").onchange = (e) => changeSetting("tts_precision", e.target.value);
   $("voice-file").onchange = (e) => uploadVoice(e.target);
   $("new-char").onclick = () => openEditor(null);
+  $("quit-app").onclick = quitApp;
   $("edit-active-char").onclick = () => app.character && openEditor(app.character.id);
   $("char-form").onsubmit = saveEditor;
   $("close-editor").onclick = closeEditor;

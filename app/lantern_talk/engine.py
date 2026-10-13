@@ -177,6 +177,7 @@ class Engine:
         for t in self._threads:
             t.join(timeout=10)
         self.c.server.stop()
+        self.memory.close()
 
     def submit_text(self, text: str) -> None:
         text = text.strip()

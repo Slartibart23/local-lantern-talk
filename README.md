@@ -76,6 +76,11 @@ One browser tab is active at a time; opening a second tab takes over.
   See [docs/models.md](docs/models.md).
 - **Microphone off / voice output off** unload Whisper + VAD / OmniVoice from VRAM;
   with both off the app is a pure text chat.
+- **Ending**: *New conversation* (right panel, Session) ends the current conversation;
+  the character keeps it in its memory and starts over with its greeting. *Quit app*
+  (bottom of the left panel) closes the whole app and frees the GPU memory. Closing
+  only the browser tab keeps the app running in the background; closing the
+  `start.bat` window quits it too.
 - Actions like `*smiles*` are never spoken; they are shown dimmed with a
   "not spoken" label, or hidden (*Session → Show actions as text*).
 

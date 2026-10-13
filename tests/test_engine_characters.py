@@ -68,7 +68,6 @@ def setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
     yield start
     for engine in started:
         engine.shutdown()
-        engine.memory.close()
 
 
 def _turn(engine: Engine, rec: Recorder, text: str) -> None:
@@ -140,7 +139,6 @@ def test_history_survives_a_restart(setup) -> None:  # noqa: ANN001
     engine, comps, rec = setup()
     _turn(engine, rec, "Ich heiße Tom.")
     engine.shutdown()
-    engine.memory.close()
     engine2, _, _ = setup()
     roles = [t["role"] for t in engine2.snapshot()["transcript"]]
     assert roles == ["assistant", "user", "assistant"]
