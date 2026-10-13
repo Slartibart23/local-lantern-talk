@@ -36,3 +36,6 @@ desktop.ini
 
 # Local tool configuration
 /.claude/
+
+# The project brief stays local (kept out of the public repository)
+/SPEC.md
