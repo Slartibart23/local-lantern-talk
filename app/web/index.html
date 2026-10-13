@@ -16,6 +16,7 @@
     <symbol id="i-send" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 12l16-8-6 16-2.5-6.5z"/></symbol>
     <symbol id="i-menu" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 7h16M4 12h16M4 17h16"/></symbol>
     <symbol id="i-edit" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></symbol>
+    <symbol id="i-end" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 5h16v11H9l-5 4zM9.5 8.5l5 5M14.5 8.5l-5 5"/></symbol>
     <symbol id="i-power" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 3v8M7.5 6.2a7 7 0 1 0 9 0"/></symbol>
     <symbol id="i-sliders" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 7h10M18 7h2M4 17h4M12 17h8M16 5v4M10 15v4"/></symbol>
   </svg>
@@ -62,6 +63,9 @@
           <div class="chat-name" id="header-name">Lantern</div>
           <div class="chat-sub"><span id="header-role">Assistant</span> · <span id="header-voice">—</span></div>
         </div>
+        <button type="button" class="icon-btn labeled end-chat" id="end-chat" title="End this chat and start a new one">
+          <svg aria-hidden="true"><use href="#i-end"/></svg><span>End chat</span>
+        </button>
         <button type="button" class="icon-btn" id="edit-active-char" aria-label="Edit this character" title="Edit this character">
           <svg aria-hidden="true"><use href="#i-edit"/></svg>
         </button>
@@ -69,6 +73,14 @@
           <svg aria-hidden="true"><use href="#i-sliders"/></svg>
         </button>
       </header>
+
+      <div id="resume-banner" class="resume-banner" role="status" hidden>
+        <span id="resume-text"></span>
+        <span class="resume-actions">
+          <button type="button" id="resume-continue" class="secondary">Continue</button>
+          <button type="button" id="resume-new" class="primary">Start new chat</button>
+        </span>
+      </div>
 
       <div id="messages" class="messages" role="log" aria-live="polite" aria-label="Messages">
         <div class="empty" id="empty-hint">Say hello, or type a message below.</div>
@@ -199,7 +211,6 @@
       <section>
         <h2>Session</h2>
         <label class="switch"><input type="checkbox" id="show-actions"><span>Show actions as text (never spoken)</span></label>
-        <button type="button" id="new-conv" class="secondary">New conversation</button>
       </section>
     </aside>
   </div>

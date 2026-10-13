@@ -37,6 +37,8 @@ const app = {
   catalogFilter: "all",
   chosenQuant: {},      // quantization picked per model in the catalog
   characters: [],
+  resume: null,         // unfinished chat loaded from memory: { messages, last }
+  endingChat: false,
   character: null,      // the active character
   memory: null,         // facts and summary of the active character
   editingId: null,      // character open in the editor (null = new)
@@ -99,6 +101,7 @@ function handleEvent(msg) {
       setState(msg.state, msg.detail);
       break;
     case "user_message":
+      hideResume();
       addUserMessage(msg);
       break;
     case "assistant_start":
@@ -157,6 +160,11 @@ function handleEvent(msg) {
       break;
     case "cleared":
       renderTranscript([]);
+      if (app.endingChat) {
+        app.endingChat = false;
+        const name = app.character ? app.character.name : "the assistant";
+        toast(`New chat with ${name}. Pick another character on the left to talk to someone else.`, "info");
+      }
       break;
     case "error":
       toast(msg.message);
@@ -903,7 +911,7 @@ function renderMemory() {
       el("button", { type: "button", "aria-label": `Delete fact: ${f.text}`, title: "Delete",
                      onclick: () => send({ type: "delete_fact", id: f.id }) }, "✕")));
   }
-  $("memory-summary").textContent = m.summary || "Nothing summarized yet. Long conversations and finished ones (New conversation) end up here.";
+  $("memory-summary").textContent = m.summary || "Nothing summarized yet. Long chats and ended chats (End chat) end up here.";
 }
 
 function editFact(f) {
@@ -917,8 +925,48 @@ function applyCharacterState(msg) {
   if (msg.characters) app.characters = msg.characters;
   if ("character" in msg) app.character = msg.character;
   if (msg.memory) app.memory = msg.memory;
+  if ("resume" in msg) app.resume = msg.resume;
   renderCharacters();
   renderMemory();
+  renderResume();
+}
+
+// ---------------------------------------------------------------- end chat / continue last chat
+
+function chatHasUserMessages() {
+  return !!document.querySelector("#messages .msg.user");
+}
+
+function endChat() {
+  const name = app.character ? app.character.name : "the assistant";
+  if (!chatHasUserMessages()) {
+    toast(`This is already a new chat with ${name}. Pick another character on the left to talk to someone else.`, "info");
+    return;
+  }
+  const keeps = app.character && app.character.memory_enabled
+    ? `${name} keeps it in memory (summary and facts).`
+    : `Memory is off for ${name}, so this chat is forgotten.`;
+  if (!confirm(`End this chat with ${name} and start a new one?\n\n${keeps}`)) return;
+  app.endingChat = true;
+  send({ type: "new_conversation" });
+}
+
+function renderResume() {
+  const r = app.resume;
+  const banner = $("resume-banner");
+  banner.hidden = !r;
+  if (!r) return;
+  const name = app.character ? app.character.name : "the assistant";
+  const when = new Date(r.last * 1000);
+  const sameDay = when.toDateString() === new Date().toDateString();
+  const time = when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const date = sameDay ? `today at ${time}` : `on ${when.toLocaleDateString()} at ${time}`;
+  $("resume-text").textContent = `Your last chat with ${name} (${r.messages} messages, ${date}) is loaded. Continue it or start a new chat?`;
+}
+
+function hideResume() {
+  app.resume = null;
+  renderResume();
 }
 
 // ---------------------------------------------------------------- misc UI
@@ -1031,7 +1079,9 @@ function init() {
   };
   $("end-silence").oninput = (e) => { $("end-silence-out").textContent = `${e.target.value} ms`; };
   $("end-silence").onchange = (e) => changeSetting("end_silence_ms", Number(e.target.value));
-  $("new-conv").onclick = () => send({ type: "new_conversation" });
+  $("end-chat").onclick = endChat;
+  $("resume-continue").onclick = () => { hideResume(); $("text-input").focus(); };
+  $("resume-new").onclick = () => { hideResume(); app.endingChat = true; send({ type: "new_conversation" }); };
   $("add-voice").onclick = () => $("voice-file").click();
   $("preview-voice").onclick = () => send({ type: "preview_voice", voice: $("voice-select").value });
   $("rename-voice").onclick = () => {

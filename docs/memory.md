@@ -17,9 +17,12 @@ Everything is stored locally in `user_data\memory\memory.db` (SQLite).
   durable facts the conversation revealed: names, preferences, relationships and
   important events. Facts that turned out to be wrong are removed. Up to 30 facts are
   kept per character.
-- **New conversation** starts over with the character's greeting. The previous
-  conversation is first folded into the summary and the facts, so the character still
-  knows what happened.
+- **End chat** (top right of the conversation) starts over with the character's
+  greeting. The previous chat is first folded into the summary and the facts, so the
+  character still knows what happened.
+- **Continue or start new**: after a restart, or when you switch back to a character,
+  its last chat is loaded and a bar offers *Continue* or *Start new chat*. Simply
+  talking on also continues it.
 
 Facts and the summary are added to the character's instructions in every request. The
 character therefore "knows" them without reading the whole old conversation.
@@ -41,7 +44,7 @@ In the right panel under **Memory**:
 ## Turning memory off
 
 Switch off *Remember conversations* in the character editor. The character then
-forgets everything when you start a new conversation or restart the app, and no new
+forgets everything when you end the chat or restart the app, and no new
 messages are stored. Memory that was stored earlier is kept, not used, and comes back
 when you switch memory on again. To remove it, use *Reset this character's memory…*.
 

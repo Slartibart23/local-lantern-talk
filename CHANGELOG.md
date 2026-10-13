@@ -66,9 +66,11 @@ project uses [Semantic Versioning](https://semver.org/).
   voice output and show-actions settings.
 - Memory (M6): per-character history in SQLite (`user_data\memory`), a rolling summary
   when the history outgrows the model's context, a facts list updated by the model every
-  4 replies, "New conversation" folds the old talk into the summary; facts can be added,
+  4 replies, "End chat" folds the old talk into the summary; facts can be added,
   edited and deleted, and a character's memory reset, in the right panel.
 - `docs/characters.md` and `docs/memory.md`.
+- "End chat" button in the conversation header, and a "Continue / Start new chat" bar
+  when a character's last chat is loaded after a restart or a switch.
 - "Quit app" button: closes the app from the browser, unloads all models and frees the
   GPU memory; conversations are saved.
 

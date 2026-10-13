@@ -140,8 +140,10 @@ def test_history_survives_a_restart(setup) -> None:  # noqa: ANN001
     _turn(engine, rec, "Ich heiße Tom.")
     engine.shutdown()
     engine2, _, _ = setup()
-    roles = [t["role"] for t in engine2.snapshot()["transcript"]]
+    snap = engine2.snapshot()
+    roles = [t["role"] for t in snap["transcript"]]
     assert roles == ["assistant", "user", "assistant"]
+    assert snap["resume"]["messages"] == 3 and snap["resume"]["last"] > 0  # UI offers Continue / New chat
     assert [m.role for m in engine2.conversation.history] == ["assistant", "user", "assistant"]
 
 
@@ -179,6 +181,7 @@ def test_new_conversation_moves_the_talk_into_memory(setup) -> None:  # noqa: AN
     engine.new_conversation()
     ev = _wait(rec, "character", start)
     assert [t["role"] for t in ev["transcript"]] == ["assistant"]  # fresh greeting
+    assert ev["resume"] is None
     assert ev["memory"]["summary"] == MemoryLLM.summary_reply
     assert engine.memory.summary("lena") in engine.conversation.config.memory
 
@@ -281,3 +284,14 @@ def test_character_without_voice_output_replies_as_text(setup) -> None:  # noqa:
     engine.submit_text("Hallo!")
     ev = _wait(rec, "turn_done", start)
     assert ev["audio_chunks"] == 0
+
+
+def test_a_new_turn_continues_the_resumed_chat(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup()
+    _turn(engine, rec, "Hallo!")
+    engine.shutdown()
+    engine2, _, rec2 = setup()
+    assert engine2.resume is not None
+    _turn(engine2, rec2, "Weiter geht's.")
+    assert engine2.resume is None
+    assert engine2.snapshot()["resume"] is None

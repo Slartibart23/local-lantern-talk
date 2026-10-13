@@ -148,6 +148,7 @@ class Engine:
         self.characters.load()
         self.memory = MemoryStore(paths.memory / "memory.db")
         self.character: Character | None = None
+        self.resume: dict[str, Any] | None = None  # an unfinished chat that was loaded from memory
         if self.characters.list():
             self._activate_character(s.character)
         self.segmenter = UtteranceSegmenter(
@@ -248,6 +249,7 @@ class Engine:
             "character": self.character.to_dict() if self.character else None,
             "characters": self.list_characters(),
             "memory": self.memory_view(),
+            "resume": self.resume,
         }
 
     # ------------------------------------------------------------------ voices
@@ -678,6 +680,7 @@ class Engine:
         if self.fatal_error or not self.c.server.running:
             raise UserError(self.fatal_error or "The language model is not loaded.")
         self._set_state(State.THINKING, "")
+        self.resume = None  # talking on continues the chat
         user = {"role": "user", "text": text, "language": language, "source": source}
         self.transcript.append(user)
         self._emit({"type": "user_message", **user, "stt_ms": stt_ms})
@@ -837,8 +840,13 @@ class Engine:
         assert c is not None
         self.conversation.history = []
         self.transcript = []
+        self.resume = None
         if c.memory_enabled:
-            for m in self.memory.active_messages(c.id):
+            stored = self.memory.active_messages(c.id)
+            if any(m.role == "user" for m in stored):
+                # Offer "Continue" / "Start new chat" in the UI (the chat is loaded either way).
+                self.resume = {"messages": len(stored), "last": stored[-1].created}
+            for m in stored:
                 self.conversation.history.append(ChatMessage(m.role, m.content))
                 if m.role == "user":
                     self.transcript.append({"role": "user", "text": m.content, "language": m.language,
@@ -865,7 +873,7 @@ class Engine:
     def _emit_character_state(self) -> None:
         self._emit({"type": "character", "character": self.character.to_dict() if self.character else None,
                     "characters": self.list_characters(), "transcript": self.transcript,
-                    "memory": self.memory_view()})
+                    "memory": self.memory_view(), "resume": self.resume})
         self._emit({"type": "settings", "settings": asdict(self.store.settings)})
         self._emit({"type": "voice_info", **self.voice_info()})
 

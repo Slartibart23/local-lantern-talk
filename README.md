@@ -76,8 +76,11 @@ One browser tab is active at a time; opening a second tab takes over.
   See [docs/models.md](docs/models.md).
 - **Microphone off / voice output off** unload Whisper + VAD / OmniVoice from VRAM;
   with both off the app is a pure text chat.
-- **Ending**: *New conversation* (right panel, Session) ends the current conversation;
-  the character keeps it in its memory and starts over with its greeting. *Quit app*
+- **Ending a chat**: *End chat* (top right of the conversation) ends the current chat;
+  the character keeps it in its memory and a new chat starts with its greeting. Pick
+  another character on the left to talk to someone else. After a restart (or when you
+  switch back to a character), the last chat is loaded and you can *Continue* it or
+  *Start new chat*. *Quit app*
   (bottom of the left panel) closes the whole app and frees the GPU memory. Closing
   only the browser tab keeps the app running in the background; closing the
   `start.bat` window quits it too.
