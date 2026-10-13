@@ -126,7 +126,7 @@ function setState(state, detail) {
   if (!hint) {
     if (state === "listening") hint = "Speak now — click to pause";
     else if (state === "paused") hint = "Click to resume listening";
-    else if (state === "mic_off") hint = "Type a message below";
+    else if (state === "mic_off") hint = "Click to turn the microphone on, or type below";
   }
   $("status-detail").textContent = hint;
   const paused = state === "paused";
@@ -138,7 +138,10 @@ function setState(state, detail) {
 }
 
 function togglePause() {
-  if (!app.settings.mic_enabled) return;
+  if (!app.settings.mic_enabled) {
+    if (app.state === "mic_off") changeSetting("mic_enabled", true);
+    return;
+  }
   if (app.state === "listening") send({ type: "pause", paused: true });
   else if (app.state === "paused") send({ type: "pause", paused: false });
 }
