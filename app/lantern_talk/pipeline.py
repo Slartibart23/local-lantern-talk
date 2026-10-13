@@ -106,8 +106,10 @@ MAX_TTS_CHARS = 300
 class ConversationConfig:
     persona: str
     voice: str | None             # voice id for VoiceLibrary; None = text-only replies
-    max_history_messages: int = 24
+    max_history_messages: int = 200  # the memory module keeps the history within the context
     match_language: bool = True   # swap built-in voices to the spoken language (spec §7.3)
+    roleplay: bool = False        # add the roleplay rules to the system prompt
+    memory: str = ""              # remembered facts and summary of earlier conversations
 
 
 class Conversation:
@@ -135,9 +137,23 @@ class Conversation:
         return self.config.voice
 
     def build_messages(self, user_text: str, language: str | None) -> list[ChatMessage]:
-        system = ChatMessage("system", build_system_prompt(self.config.persona, language))
-        recent = self.history[-self.config.max_history_messages:]
-        return [system, *recent, ChatMessage("user", user_text)]
+        prompt = build_system_prompt(
+            self.config.persona, language, roleplay=self.config.roleplay, memory=self.config.memory)
+        recent = list(self.history[-self.config.max_history_messages:])
+        # Many chat templates (Mistral, Gemma) require user / assistant turns to alternate,
+        # starting with the user: an opening greeting goes into the system prompt instead.
+        opening: list[str] = []
+        while recent and recent[0].role != "user":
+            opening.append(recent.pop(0).content)
+        if opening:
+            prompt += "\n\nYou opened the conversation by saying: " + " ".join(opening)
+        messages = [ChatMessage("system", prompt)]
+        for m in [*recent, ChatMessage("user", user_text)]:
+            if messages[-1].role == m.role and m.role != "system":
+                messages[-1] = ChatMessage(m.role, messages[-1].content + "\n\n" + m.content)
+            else:
+                messages.append(m)
+        return messages
 
     def run_turn(self, user_text: str, language: str | None = None) -> Iterator[TurnEvent]:
         """Run one turn and yield events until :class:`TurnDone` or :class:`TurnError`."""

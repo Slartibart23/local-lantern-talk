@@ -36,6 +36,10 @@ const app = {
   components: null,
   catalogFilter: "all",
   chosenQuant: {},      // quantization picked per model in the catalog
+  characters: [],
+  character: null,      // the active character
+  memory: null,         // facts and summary of the active character
+  editingId: null,      // character open in the editor (null = new)
 };
 
 // ---------------------------------------------------------------- WebSocket
@@ -77,7 +81,19 @@ function handleEvent(msg) {
       renderComponents(msg.components);
       renderTranscript(msg.transcript);
       renderVoiceInfo(msg.voice_info);
+      applyCharacterState(msg);
       setState(msg.state, msg.detail);
+      break;
+    case "character":
+      applyCharacterState(msg);
+      renderTranscript(msg.transcript);
+      break;
+    case "characters":
+      applyCharacterState(msg);
+      break;
+    case "memory":
+      app.memory = msg;
+      renderMemory();
       break;
     case "state":
       setState(msg.state, msg.detail);
@@ -306,6 +322,7 @@ function renderTranscript(items) {
     if (item.role === "user") addUserMessage(item);
     else {
       startAssistantMessage(item.voice);
+      if (item.greeting) app.currentAi.meta.textContent = "greeting";
       for (const seg of item.segments) renderSegment(app.currentAi, seg.kind, seg.text);
       finishAssistantMessage(null);
     }
@@ -365,9 +382,10 @@ async function startMic() {
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
   } catch (err) {
+    const firstTime = !app.micError;  // settings updates retry; tell the user only once
     app.micError = true;
     setState(app.state, app.detail);
-    toast("Microphone access was not allowed. You can still type, or allow the microphone in the browser and reload.");
+    if (firstTime) toast("Microphone access was not allowed. You can still type, or allow the microphone in the browser and reload.");
     return;
   }
   app.micError = false;
@@ -603,7 +621,7 @@ function applySettings() {
   $("tts-precision").value = s.tts_precision;
   $("end-silence-out").textContent = `${s.end_silence_ms} ms`;
   $("messages").classList.toggle("hide-actions", !s.show_actions);
-  $("header-voice").textContent = s.voice_output ? `Voice: ${voiceName(s.voice)}` : "Text replies";
+  renderHeader();
   renderCurrentModel();
   if (app.started) {
     if (s.mic_enabled) startMic(); else stopMic();
@@ -728,6 +746,178 @@ async function uploadVoice(input) {
   }
 }
 
+// ---------------------------------------------------------------- characters (spec §10)
+
+const KIND_LABEL = { assistant: "Assistant", roleplay: "Roleplay" };
+
+function renderCharacters() {
+  const list = $("char-list");
+  list.innerHTML = "";
+  const activeId = app.character && app.character.id;
+  for (const c of app.characters) {
+    const active = c.id === activeId;
+    const btn = el("button", { type: "button", class: "char" + (active ? " active" : ""),
+                               title: c.persona || c.name, onclick: () => selectCharacter(c.id) },
+      el("span", { class: "avatar", "aria-hidden": "true" }, c.avatar_initials),
+      el("span", { class: "char-text" },
+        el("span", { class: "char-name" }, c.name),
+        el("span", { class: "char-role" }, KIND_LABEL[c.kind] || c.kind)));
+    if (active) btn.setAttribute("aria-current", "true");
+    const edit = el("button", { type: "button", class: "char-edit", "aria-label": `Edit ${c.name}`,
+                                title: `Edit ${c.name}`, onclick: () => openEditor(c.id) });
+    edit.innerHTML = '<svg aria-hidden="true"><use href="#i-edit"/></svg>';
+    list.append(el("li", {}, btn, edit));
+  }
+  renderHeader();
+}
+
+function renderHeader() {
+  const c = app.character;
+  $("header-avatar").textContent = c ? c.avatar_initials : "LA";
+  $("header-name").textContent = c ? c.name : "Lantern";
+  $("header-role").textContent = c ? (KIND_LABEL[c.kind] || c.kind) : "Assistant";
+  $("edit-active-char").hidden = !c;
+  const s = app.settings;
+  const speaking = s.voice_output && (!c || c.voice_output);
+  $("header-voice").textContent = speaking ? `Voice: ${voiceName(s.voice)}` : "Text replies";
+  document.title = c ? `${c.name} · Local Lantern Talk` : "Local Lantern Talk";
+}
+
+function selectCharacter(id) {
+  if (app.character && app.character.id === id) return;
+  send({ type: "select_character", id });
+  $("app").classList.remove("show-left");
+}
+
+function fillVoiceOptions(sel, value) {
+  sel.innerHTML = "";
+  const groups = [["Built-in voices", app.voices.builtin], ["Your voices", app.voices.custom]];
+  for (const [label, list] of groups) {
+    if (!list.length) continue;
+    const og = document.createElement("optgroup");
+    og.label = label;
+    for (const v of list) og.append(new Option(v.name, v.id));
+    sel.append(og);
+  }
+  if (value && ![...sel.options].some((o) => o.value === value)) sel.append(new Option(`${value} (missing)`, value));
+  sel.value = value;
+}
+
+function fillModelOptions(sel, value) {
+  sel.innerHTML = "";
+  sel.append(new Option("Use the selected model", ""));
+  for (const m of app.models) {
+    for (const file of m.downloaded_files) {
+      const q = m.quants.find((x) => x.file === file);
+      sel.append(new Option(q ? `${m.name} · ${q.quant}` : `${m.name} · ${file}`, file));
+    }
+  }
+  if (value && ![...sel.options].some((o) => o.value === value)) sel.append(new Option(`${value} (not downloaded)`, value));
+  sel.value = value || "";
+}
+
+function openEditor(id) {
+  const c = id ? app.characters.find((x) => x.id === id) : null;
+  app.editingId = c ? c.id : null;
+  const d = c || { name: "", avatar_initials: "", kind: "roleplay", persona: "", system_prompt: "", greeting: "",
+                   voice: app.settings.voice, model: "", voice_output: true, show_actions_as_text: true,
+                   memory_enabled: true, recording_enabled: true };
+  $("char-editor-title").textContent = c ? `Edit ${c.name}` : "New character";
+  $("ce-name").value = d.name;
+  $("ce-initials").value = c ? d.avatar_initials : "";
+  $("ce-kind").value = d.kind;
+  $("ce-persona").value = d.persona;
+  $("ce-prompt").value = d.system_prompt;
+  $("ce-greeting").value = d.greeting;
+  fillVoiceOptions($("ce-voice"), d.voice);
+  fillModelOptions($("ce-model"), d.model);
+  $("ce-voice-output").checked = d.voice_output;
+  $("ce-actions").checked = d.show_actions_as_text;
+  $("ce-memory").checked = d.memory_enabled;
+  $("ce-recording").checked = d.recording_enabled;
+  $("ce-delete").hidden = !c;
+  $("ce-duplicate").hidden = !c;
+  $("app").classList.remove("show-left");
+  $("char-editor").hidden = false;
+  $("ce-name").focus();
+}
+
+function closeEditor() {
+  $("char-editor").hidden = true;
+}
+
+function saveEditor(ev) {
+  ev.preventDefault();
+  const name = $("ce-name").value.trim();
+  if (!name) { $("ce-name").focus(); return; }
+  const character = {
+    name,
+    avatar_initials: $("ce-initials").value.trim().toUpperCase(),
+    kind: $("ce-kind").value,
+    persona: $("ce-persona").value.trim(),
+    system_prompt: $("ce-prompt").value.trim(),
+    greeting: $("ce-greeting").value.trim(),
+    voice: $("ce-voice").value,
+    model: $("ce-model").value,
+    voice_output: $("ce-voice-output").checked,
+    show_actions_as_text: $("ce-actions").checked,
+    memory_enabled: $("ce-memory").checked,
+    recording_enabled: $("ce-recording").checked,
+  };
+  send({ type: "save_character", id: app.editingId, character });
+  closeEditor();
+}
+
+function duplicateEdited() {
+  if (!app.editingId) return;
+  send({ type: "duplicate_character", id: app.editingId });
+  closeEditor();
+}
+
+function deleteEdited() {
+  const c = app.characters.find((x) => x.id === app.editingId);
+  if (!c) return;
+  if (app.characters.length <= 1) { toast("The last character cannot be deleted."); return; }
+  if (confirm(`Delete ${c.name}? The character file and everything ${c.name} remembers are removed.`)) {
+    send({ type: "delete_character", id: c.id });
+    closeEditor();
+  }
+}
+
+// ---------------------------------------------------------------- memory (spec §11)
+
+function renderMemory() {
+  const m = app.memory || { enabled: false, facts: [], summary: "" };
+  $("memory-off").hidden = m.enabled || !m.character;
+  $("memory-on").hidden = !m.enabled;
+  const list = $("fact-list");
+  list.innerHTML = "";
+  if (!m.facts.length) list.append(el("li", { class: "empty-facts" }, "No facts yet."));
+  for (const f of m.facts) {
+    list.append(el("li", { title: f.source === "user" ? "Added by you" : "Learned from the conversation" },
+      el("span", {}, f.text),
+      el("button", { type: "button", "aria-label": `Edit fact: ${f.text}`, title: "Edit", onclick: () => editFact(f) }, "✎"),
+      el("button", { type: "button", "aria-label": `Delete fact: ${f.text}`, title: "Delete",
+                     onclick: () => send({ type: "delete_fact", id: f.id }) }, "✕")));
+  }
+  $("memory-summary").textContent = m.summary || "Nothing summarized yet. Long conversations and finished ones (New conversation) end up here.";
+}
+
+function editFact(f) {
+  const text = prompt("Edit this fact:", f.text);
+  if (text === null) return;
+  if (!text.trim()) send({ type: "delete_fact", id: f.id });
+  else if (text.trim() !== f.text) send({ type: "update_fact", id: f.id, text: text.trim() });
+}
+
+function applyCharacterState(msg) {
+  if (msg.characters) app.characters = msg.characters;
+  if ("character" in msg) app.character = msg.character;
+  if (msg.memory) app.memory = msg.memory;
+  renderCharacters();
+  renderMemory();
+}
+
 // ---------------------------------------------------------------- misc UI
 
 let toastTimer = null;
@@ -845,11 +1035,32 @@ function init() {
   $("tts-steps").onchange = (e) => changeSetting("num_step", Number(e.target.value));
   $("tts-precision").onchange = (e) => changeSetting("tts_precision", e.target.value);
   $("voice-file").onchange = (e) => uploadVoice(e.target);
+  $("new-char").onclick = () => openEditor(null);
+  $("edit-active-char").onclick = () => app.character && openEditor(app.character.id);
+  $("char-form").onsubmit = saveEditor;
+  $("close-editor").onclick = closeEditor;
+  $("ce-cancel").onclick = closeEditor;
+  $("ce-duplicate").onclick = duplicateEdited;
+  $("ce-delete").onclick = deleteEdited;
+  $("char-editor").onclick = (e) => { if (e.target === $("char-editor")) closeEditor(); };
+  $("fact-form").onsubmit = (ev) => {
+    ev.preventDefault();
+    const text = $("fact-input").value.trim();
+    if (text) send({ type: "add_fact", text });
+    $("fact-input").value = "";
+  };
+  $("reset-memory").onclick = () => {
+    const name = app.character ? app.character.name : "this character";
+    if (confirm(`Reset the memory of ${name}? The conversation history, the summary and all facts are deleted.`)) {
+      send({ type: "reset_memory" });
+    }
+  };
   $("toggle-left").onclick = () => togglePanel("left");
   $("toggle-right").onclick = () => togglePanel("right");
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
-      if (!$("catalog").hidden) closeCatalog();
+      if (!$("char-editor").hidden) closeEditor();
+      else if (!$("catalog").hidden) closeCatalog();
       $("app").classList.remove("show-left", "show-right");
     }
   });

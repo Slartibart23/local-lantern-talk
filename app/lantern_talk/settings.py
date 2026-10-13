@@ -16,6 +16,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class Settings:
     voice: str = "builtin:en_female"
+    character: str = ""             # id of the active character in user_data\characters
     model: str = ""                 # file name in models\llm; "" = first file found
     mic_enabled: bool = True
     voice_output: bool = True

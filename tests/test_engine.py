@@ -149,9 +149,18 @@ class FakeServer:
 class FakeLLM:
     reply = "*lächelt* Mir geht es gut. Und dir?"
 
-    def stream_chat(self, messages: list[Any]):  # noqa: ANN201
+    def __init__(self) -> None:
+        self.requests: list[list[Any]] = []
+        self.side_replies: list[str] = []  # answers for memory upkeep requests (complete)
+
+    def stream_chat(self, messages: list[Any], sampling: Any = None):  # noqa: ANN201
+        self.requests.append(messages)
         for i in range(0, len(self.reply), 4):
             yield self.reply[i: i + 4]
+
+    def complete(self, messages: list[Any], sampling: Any = None) -> str:
+        self.requests.append(messages)
+        return self.side_replies.pop(0) if self.side_replies else ""
 
 
 class Recorder:

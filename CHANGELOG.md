@@ -27,7 +27,7 @@ project uses [Semantic Versioning](https://semver.org/).
 - Web UI (`start.bat`): conversation screen with status button, level meter, pause,
   text input, actions shown as "not spoken", voice / model selection, microphone and
   voice-output toggles (unloading Whisper / VAD / OmniVoice), GPU memory display.
-- "Add voice…" uploads an MP3 / WAV / FLAC / OGG reference clip into `user_dataoices`,
+- "Add voice…" uploads an MP3 / WAV / FLAC / OGG reference clip into `user_data\voices`,
   with a warning for clips outside the recommended 3–10 s.
 - Reference text for custom voices: the Whisper transcript is shown and can be corrected
   in the UI (saved as `clip.txt` next to `clip.mp3`); the voice is rebuilt with it.
@@ -59,6 +59,16 @@ project uses [Semantic Versioning](https://semver.org/).
   normalized, 24 kHz mono) and cached; quality hints for length, background noise and
   clipping; more formats (OPUS, M4A, AAC, WEBM); preview, rename and delete voices;
   "Regenerate built-in voices"; custom voices use the language of their transcript.
+- Characters (M6): four example characters (Lena, Max, Elara, Captain Vargas) copied to
+  `user_data\characters` on first start; create, edit, duplicate and delete characters
+  in the UI; switching a character switches persona, voice, model (if set), memory and
+  history in one click; roleplay characters get stay-in-character rules; per-character
+  voice output and show-actions settings.
+- Memory (M6): per-character history in SQLite (`user_data\memory`), a rolling summary
+  when the history outgrows the model's context, a facts list updated by the model every
+  4 replies, "New conversation" folds the old talk into the summary; facts can be added,
+  edited and deleted, and a character's memory reset, in the right panel.
+- `docs/characters.md` and `docs/memory.md`.
 
 ### Changed
 - The installer's starter model is Gemma 4 12B (Apache-2.0) instead of Gemma 3 12B.
@@ -66,6 +76,8 @@ project uses [Semantic Versioning](https://semver.org/).
   starter model instead (spec §4).
 
 ### Fixed
+- The greeting no longer starts the chat history sent to the model: strict chat templates
+  (Mistral, Gemma) require the conversation to start with the user.
 - Model reasoning is never spoken: thinking is disabled in the chat template and
   `<think>` / `[THINK]` blocks are filtered by the sanitizer (Qwen3 spoke its reasoning).
 - `llama-server.exe` kept running (holding ~9 GB VRAM) after the console window was

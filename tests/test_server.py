@@ -52,6 +52,11 @@ class FakeEngine:
     def new_conversation(self) -> None:
         self.calls.append(("new", None))
 
+    def __getattr__(self, name: str):  # noqa: ANN204 - character / memory commands are only recorded
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return lambda *args: self.calls.append((name, args))
+
     def add_voice(self, filename: str, data: bytes) -> dict[str, Any]:
         from lantern_talk.engine import UserError
 
@@ -113,6 +118,35 @@ def test_websocket_protocol(client: TestClient) -> None:
     assert ("audio", (3528, 44100)) in engine.calls
     assert names[:6] == ["audio", "text", "settings", "pause", "playback_ended", "new"]
     assert names[-1] == "playback_ended"  # disconnect releases a waiting turn
+
+
+def test_character_and_memory_commands(client: TestClient) -> None:
+    engine: FakeEngine = client.engine  # type: ignore[attr-defined]
+    with client.websocket_connect(WS_URL, headers=GOOD_ORIGIN) as ws:
+        ws.receive_json()
+        ws.send_json({"type": "select_character", "id": "max"})
+        ws.send_json({"type": "save_character", "character": {"name": "Hilde"}})
+        ws.send_json({"type": "save_character", "id": "max", "character": {"name": "Max"}})
+        ws.send_json({"type": "save_character", "character": "not a dict"})
+        ws.send_json({"type": "duplicate_character", "id": "max"})
+        ws.send_json({"type": "delete_character", "id": "max"})
+        ws.send_json({"type": "add_fact", "text": "x" * 900})
+        ws.send_json({"type": "update_fact", "id": "3", "text": "y"})
+        ws.send_json({"type": "delete_fact", "id": 3})
+        ws.send_json({"type": "reset_memory"})
+        ws.send_json({"type": "refresh"})
+        ws.receive_json()
+    assert engine.calls[:9] == [
+        ("select_character", ("max",)),
+        ("save_character", ({"name": "Hilde"}, None)),
+        ("save_character", ({"name": "Max"}, "max")),
+        ("duplicate_character", ("max",)),
+        ("delete_character", ("max",)),
+        ("add_fact", ("x" * 500,)),
+        ("update_fact", (3, "y")),
+        ("delete_fact", (3,)),
+        ("reset_memory", ()),
+    ]
 
 
 def test_second_tab_takes_over(client: TestClient) -> None:

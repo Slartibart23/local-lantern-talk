@@ -154,14 +154,15 @@ class LLMClient:
         self.server = server
         self.sampling = sampling or SamplingConfig()
 
-    def stream_chat(self, messages: list[ChatMessage]) -> Iterator[str]:
-        """Yield content deltas as they arrive."""
+    def stream_chat(self, messages: list[ChatMessage], sampling: SamplingConfig | None = None) -> Iterator[str]:
+        """Yield content deltas as they arrive (``sampling`` overrides the defaults for one request)."""
+        sp = sampling or self.sampling
         payload = {
             "messages": [m.to_dict() for m in messages],
             "stream": True,
-            "temperature": self.sampling.temperature,
-            "top_p": self.sampling.top_p,
-            "max_tokens": self.sampling.max_tokens,
+            "temperature": sp.temperature,
+            "top_p": sp.top_p,
+            "max_tokens": sp.max_tokens,
         }
         url = f"{self.server.base_url}/v1/chat/completions"
         with httpx.stream("POST", url, json=payload, timeout=httpx.Timeout(300.0, connect=5.0)) as r:
@@ -180,5 +181,5 @@ class LLMClient:
                 if delta:
                     yield delta
 
-    def complete(self, messages: list[ChatMessage]) -> str:
-        return "".join(self.stream_chat(messages))
+    def complete(self, messages: list[ChatMessage], sampling: SamplingConfig | None = None) -> str:
+        return "".join(self.stream_chat(messages, sampling))

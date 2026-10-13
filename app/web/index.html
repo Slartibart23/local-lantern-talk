@@ -15,6 +15,7 @@
     <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5l11 7-11 7z"/></symbol>
     <symbol id="i-send" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 12l16-8-6 16-2.5-6.5z"/></symbol>
     <symbol id="i-menu" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></symbol>
     <symbol id="i-sliders" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 7h10M18 7h2M4 17h4M12 17h8M16 5v4M10 15v4"/></symbol>
   </svg>
 
@@ -35,12 +36,8 @@
       </div>
       <section>
         <h2>Characters</h2>
-        <ul class="char-list">
-          <li><button type="button" class="char active" aria-current="true">
-            <span class="avatar">LA</span>
-            <span class="char-text"><span class="char-name">Lantern</span><span class="char-role">Assistant</span></span>
-          </button></li>
-        </ul>
+        <ul class="char-list" id="char-list"></ul>
+        <button type="button" id="new-char" class="secondary new-char">+ New character</button>
       </section>
       <section>
         <h2>Recent sessions</h2>
@@ -53,11 +50,14 @@
         <button type="button" class="icon-btn narrow-only" id="toggle-left" aria-label="Show characters" aria-controls="left-panel" aria-expanded="false">
           <svg aria-hidden="true"><use href="#i-menu"/></svg>
         </button>
-        <span class="avatar">LA</span>
+        <span class="avatar" id="header-avatar">LA</span>
         <div class="chat-title">
-          <div class="chat-name">Lantern</div>
-          <div class="chat-sub"><span>Assistant</span> · <span id="header-voice">—</span></div>
+          <div class="chat-name" id="header-name">Lantern</div>
+          <div class="chat-sub"><span id="header-role">Assistant</span> · <span id="header-voice">—</span></div>
         </div>
+        <button type="button" class="icon-btn" id="edit-active-char" aria-label="Edit this character" title="Edit this character">
+          <svg aria-hidden="true"><use href="#i-edit"/></svg>
+        </button>
         <button type="button" class="icon-btn narrow-only" id="toggle-right" aria-label="Show settings panel" aria-controls="right-panel" aria-expanded="false">
           <svg aria-hidden="true"><use href="#i-sliders"/></svg>
         </button>
@@ -170,6 +170,25 @@
         <ul id="components" class="components"></ul>
       </section>
 
+      <section aria-labelledby="memory-title">
+        <h2 id="memory-title">Memory</h2>
+        <p id="memory-off" class="muted small" hidden>Memory is off for this character: nothing is kept after a conversation. Turn it on in the character editor.</p>
+        <div id="memory-on">
+          <ul id="fact-list" class="facts" aria-label="Remembered facts"></ul>
+          <form id="fact-form" class="fact-form">
+            <label for="fact-input" class="sr-only">New fact</label>
+            <input id="fact-input" type="text" maxlength="200" placeholder="Add a fact, e.g. My name is Tom" autocomplete="off">
+            <button type="submit" class="secondary">Add</button>
+          </form>
+          <details class="memory-summary">
+            <summary>Summary of earlier conversations</summary>
+            <p id="memory-summary" class="small"></p>
+          </details>
+          <p class="hint">The character updates its facts every few replies and summarizes older parts of long conversations. Everything stays in <code>user_data\memory</code>.</p>
+          <button type="button" id="reset-memory" class="link-btn">Reset this character's memory…</button>
+        </div>
+      </section>
+
       <section>
         <h2>Session</h2>
         <label class="switch"><input type="checkbox" id="show-actions"><span>Show actions as text (never spoken)</span></label>
@@ -240,6 +259,62 @@
         originals; you are responsible for how you use them. Roleplay finetunes are strongest in English. Each model
         has its own license, shown with the model.</p>
     </div>
+  </div>
+
+  <div id="char-editor" class="catalog" role="dialog" aria-modal="true" aria-labelledby="char-editor-title" hidden>
+    <form id="char-form" class="catalog-panel editor-panel">
+      <header class="catalog-head">
+        <h1 id="char-editor-title">Edit character</h1>
+        <button type="button" id="close-editor" class="icon-btn" aria-label="Close the character editor">✕</button>
+      </header>
+      <div class="editor-grid">
+        <div>
+          <label class="field-label" for="ce-name">Name</label>
+          <input id="ce-name" type="text" maxlength="60" required autocomplete="off">
+        </div>
+        <div>
+          <label class="field-label" for="ce-initials">Initials</label>
+          <input id="ce-initials" type="text" maxlength="3" placeholder="auto" autocomplete="off">
+        </div>
+        <div>
+          <label class="field-label" for="ce-kind">Type</label>
+          <select id="ce-kind">
+            <option value="assistant">Assistant</option>
+            <option value="roleplay">Roleplay</option>
+          </select>
+        </div>
+      </div>
+      <label class="field-label" for="ce-persona">Short description <span class="muted">(shown in the list)</span></label>
+      <input id="ce-persona" type="text" maxlength="200" autocomplete="off">
+      <label class="field-label" for="ce-prompt">Personality and instructions</label>
+      <textarea id="ce-prompt" rows="9" maxlength="8000" placeholder="You are Hilde, a 70-year-old baker from a village in the Black Forest. You are warm, a little stubborn and love telling stories…"></textarea>
+      <p class="hint">Describe who the character is, how they talk, what they know and where the conversation takes place. The model follows this in every conversation with this character. English works best with most models, but German is fine too. Rules for speech (no markdown, no stage directions read aloud) are added automatically.</p>
+      <label class="field-label" for="ce-greeting">Greeting <span class="muted">(first message of a new conversation)</span></label>
+      <textarea id="ce-greeting" rows="2" maxlength="2000"></textarea>
+      <div class="editor-grid two">
+        <div>
+          <label class="field-label" for="ce-voice">Voice</label>
+          <select id="ce-voice"></select>
+        </div>
+        <div>
+          <label class="field-label" for="ce-model">Language model</label>
+          <select id="ce-model"></select>
+        </div>
+      </div>
+      <div class="editor-switches">
+        <label class="switch"><input type="checkbox" id="ce-voice-output"><span>Voice output</span></label>
+        <label class="switch"><input type="checkbox" id="ce-actions"><span>Show actions as text</span></label>
+        <label class="switch"><input type="checkbox" id="ce-memory"><span>Remember conversations</span></label>
+        <label class="switch"><input type="checkbox" id="ce-recording"><span>Record sessions</span></label>
+      </div>
+      <div class="editor-actions">
+        <button type="button" id="ce-delete" class="secondary danger">Delete</button>
+        <button type="button" id="ce-duplicate" class="secondary">Duplicate</button>
+        <span class="spacer"></span>
+        <button type="button" id="ce-cancel" class="secondary">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
   </div>
 
   <div id="toast" class="toast" role="alert" hidden></div>

@@ -26,9 +26,23 @@ def language_name(code: str | None) -> str | None:
     return LANGUAGE_NAMES.get(code, code)
 
 
-def build_system_prompt(persona: str, reply_language: str | None = None) -> str:
-    """Combine the character persona with the voice-friendly output rules."""
-    parts = [persona.strip(), VOICE_RULES]
+ROLEPLAY_RULES = """\
+This is an interactive roleplay with the user.
+- Stay in character at all times. Do not mention being an AI or a language model unless the \
+user explicitly asks out of character (OOC).
+- Speak only as yourself: never write the user's lines, thoughts or decisions.
+- Keep each reply to a few spoken sentences and leave the user something to react to."""
+
+
+def build_system_prompt(persona: str, reply_language: str | None = None, *,
+                        roleplay: bool = False, memory: str = "") -> str:
+    """Combine the character persona, roleplay rules, memory and the voice-friendly output rules."""
+    parts = [persona.strip()]
+    if roleplay:
+        parts.append(ROLEPLAY_RULES)
+    if memory:
+        parts.append(memory.strip())
+    parts.append(VOICE_RULES)
     name = language_name(reply_language)
     if name:
         parts.append(f"The user is speaking {name}. Reply in {name}.")

@@ -29,16 +29,22 @@ from typing import Any
 
 import numpy as np
 
+from .audio_prep import VOICE_EXTENSIONS
+from .characters import Character, CharacterError, CharacterStore
 from .downloads import DownloadJob
 from .gpu import query_gpu
-from .llm import NO_THINKING_ARGS, LlamaServer, LLMClient, ServerConfig
+from .hardware import effective_profile
+from .llm import NO_THINKING_ARGS, ChatMessage, LlamaServer, LLMClient, SamplingConfig, ServerConfig
+from .memory import (
+    FACT_UPDATE_EVERY, FACTS_PROMPT, FACTS_SYSTEM, SUMMARY_PROMPT, SUMMARY_SYSTEM, MemoryStore, estimate_tokens,
+    history_budget, memory_context, messages_to_summarize, parse_fact_update, transcript_text,
+)
 from .models import ModelError, ModelManager, NoGGUFError
 from .paths import Paths
 from .pipeline import Conversation, ConversationConfig, SegmentEvent, SpeechAudio, TurnDone, TurnError
 from .prompts import DEFAULT_ASSISTANT_PERSONA
 from .resample import StreamingResampler
-from .audio_prep import VOICE_EXTENSIONS
-from .hardware import effective_profile
+from .sanitizer import split_segments
 from .settings import Settings, SettingsStore
 from .stt import WhisperSTT
 from .textlang import guess_language
@@ -138,6 +144,12 @@ class Engine:
             self.c.llm, self.c.tts if s.voice_output else None, self.c.voices,
             ConversationConfig(persona=persona, voice=None, match_language=s.match_language),
         )
+        self.characters = CharacterStore(paths.characters, paths.config / "default_characters")
+        self.characters.load()
+        self.memory = MemoryStore(paths.memory / "memory.db")
+        self.character: Character | None = None
+        if self.characters.list():
+            self._activate_character(s.character)
         self.segmenter = UtteranceSegmenter(
             self.c.vad, SegmenterConfig(threshold=s.vad_threshold, end_silence_ms=s.end_silence_ms))
         self._resampler: StreamingResampler | None = None
@@ -232,6 +244,9 @@ class Engine:
             "transcript": self.transcript,
             "components": self.components_status(),
             "voice_info": self.voice_info(),
+            "character": self.character.to_dict() if self.character else None,
+            "characters": self.list_characters(),
+            "memory": self.memory_view(),
         }
 
     # ------------------------------------------------------------------ voices
@@ -435,6 +450,14 @@ class Engine:
             "delete_voice": self._handle_delete_voice,
             "preview_voice": self._handle_preview_voice,
             "regenerate_builtins": self._handle_regenerate_builtins,
+            "select_character": self._handle_select_character,
+            "save_character": lambda arg: self._handle_save_character(*arg),
+            "duplicate_character": self._handle_duplicate_character,
+            "delete_character": self._handle_delete_character,
+            "add_fact": self._handle_add_fact,
+            "update_fact": lambda arg: self._handle_update_fact(*arg),
+            "delete_fact": self._handle_delete_fact,
+            "reset_memory": self._handle_reset_memory,
         }
         while True:
             name, arg = self._commands.get()
@@ -538,7 +561,7 @@ class Engine:
     def _load_voice_output(self) -> None:
         self._set_state(State.LOADING, "Loading voice synthesis…")
         self._measured("omnivoice", self.c.tts.load)
-        self.conversation.tts = self.c.tts
+        self._sync_tts()
         self._prepare_voice()
 
     def _prepare_voice(self) -> None:
@@ -667,6 +690,7 @@ class Engine:
         self._playback_done.clear()
         chunks = 0
         audio_seconds = 0.0
+        reply_text = ""
         for event in self.conversation.run_turn(text, language):
             if isinstance(event, SegmentEvent):
                 seg = event.segment
@@ -683,6 +707,7 @@ class Engine:
             elif isinstance(event, TurnError):
                 self._emit({"type": "error", "message": event.message})
             elif isinstance(event, TurnDone):
+                reply_text = event.reply
                 m = event.metrics
                 self._emit({"type": "turn_done", "audio_chunks": chunks, "metrics": m.summary(),
                             "first_audio_ms": None if m.first_audio is None else round(m.first_audio * 1000)})
@@ -691,7 +716,10 @@ class Engine:
             if not self._playback_done.wait(timeout=audio_seconds + PLAYBACK_WAIT_MARGIN_S):
                 log.warning("Browser did not report the end of playback; continuing.")
             time.sleep(POST_PLAYBACK_MUTE_S)
+        self._remember_turn(text, language, source, reply_text, reply["voice"])
         self._enter_idle()
+        if reply_text:
+            self._maintain_memory()  # between turns; a new utterance waits in the queue
 
     def _display_voice(self, ref: str | None) -> str | None:
         if ref is None:
@@ -701,9 +729,286 @@ class Engine:
         return f"custom:{Path(ref).name}"
 
     def _clear_conversation(self) -> None:
-        self.conversation.history.clear()
-        self.transcript.clear()
+        """Start over with the active character; with memory on, the old talk goes into the summary."""
+        c = self.character
+        if c is not None and c.memory_enabled:
+            old = self.memory.active_messages(c.id)
+            if any(m.role == "user" for m in old):
+                if self.c.server.running:
+                    self._set_state(State.THINKING, "Saving the conversation to memory…")
+                    try:
+                        self._summarize(c, old)
+                        self._update_facts(c)
+                    except Exception:  # noqa: BLE001 - never block a new conversation
+                        log.exception("Could not summarize the conversation")
+                self.memory.mark_summarized(c.id, old[-1].id)
+            elif old:
+                self.memory.mark_summarized(c.id, old[-1].id)  # only the greeting
+            self._refresh_memory_context()
+        if c is not None:
+            self._load_history()
+        else:
+            self.conversation.history.clear()
+            self.transcript.clear()
         self._emit({"type": "cleared"})
+        self._emit_character_state()
+        self._enter_idle()
+
+    # -- characters (spec §10) -----------------------------------------------------------
+    def list_characters(self) -> list[dict[str, Any]]:
+        return [c.to_dict() for c in self.characters.list()]
+
+    def memory_view(self) -> dict[str, Any]:
+        c = self.character
+        if c is None:
+            return {"character": None, "enabled": False, "facts": [], "summary": ""}
+        return {
+            "character": c.id, "enabled": c.memory_enabled, "summary": self.memory.summary(c.id),
+            "facts": [{"id": f.id, "text": f.text, "source": f.source} for f in self.memory.facts(c.id)],
+        }
+
+    def select_character(self, char_id: str) -> None:
+        self._commands.put(("select_character", char_id))
+
+    def save_character(self, data: dict[str, Any], char_id: str | None = None) -> None:
+        self._commands.put(("save_character", (data, char_id)))
+
+    def duplicate_character(self, char_id: str) -> None:
+        self._commands.put(("duplicate_character", char_id))
+
+    def delete_character(self, char_id: str) -> None:
+        self._commands.put(("delete_character", char_id))
+
+    def add_fact(self, text: str) -> None:
+        self._commands.put(("add_fact", text))
+
+    def update_fact(self, fact_id: int, text: str) -> None:
+        self._commands.put(("update_fact", (fact_id, text)))
+
+    def delete_fact(self, fact_id: int) -> None:
+        self._commands.put(("delete_fact", fact_id))
+
+    def reset_memory(self) -> None:
+        self._commands.put(("reset_memory", None))
+
+    def _voice_output_on(self) -> bool:
+        """Voice output is on globally and for the active character (spec §7.4)."""
+        c = self.character
+        return bool(self.store.settings.voice_output and (c is None or c.voice_output))
+
+    def _sync_tts(self) -> None:
+        self.conversation.tts = self.c.tts if (self._voice_output_on() and self.c.tts.loaded) else None
+
+    def _activate_character(self, char_id: str | None) -> None:
+        """Switch persona, voice, model, memory and history in one step (spec §10)."""
+        char = self.characters.get(char_id or "") or self.characters.first()
+        if char is None:
+            raise UserError("No characters found. Create one with + New character.")
+        self.character = char
+        s = self.store.settings
+        s.character = char.id
+        if char.voice:
+            try:
+                self._voice_ref(char.voice)
+                s.voice = char.voice
+            except UserError:
+                log.warning("Voice %s of %s is missing; keeping %s", char.voice, char.id, s.voice)
+        s.show_actions = char.show_actions_as_text
+        if char.model and (self.paths.llm_models / char.model).exists():
+            s.model = char.model
+        self.store.save()
+        cfg = self.conversation.config
+        cfg.persona = char.system_prompt or char.persona or DEFAULT_ASSISTANT_PERSONA
+        cfg.roleplay = char.kind == "roleplay"
+        self._refresh_memory_context()
+        self._load_history()
+        self._sync_tts()
+
+    def _refresh_memory_context(self) -> None:
+        c = self.character
+        enabled = c is not None and c.memory_enabled
+        self.conversation.config.memory = (
+            memory_context(self.memory.summary(c.id), self.memory.facts(c.id)) if enabled and c else "")
+
+    def _load_history(self) -> None:
+        """LLM history and visible transcript of the active character (from its memory)."""
+        c = self.character
+        assert c is not None
+        self.conversation.history = []
+        self.transcript = []
+        if c.memory_enabled:
+            for m in self.memory.active_messages(c.id):
+                self.conversation.history.append(ChatMessage(m.role, m.content))
+                if m.role == "user":
+                    self.transcript.append({"role": "user", "text": m.content, "language": m.language,
+                                            "source": m.source or "text"})
+                else:
+                    self.transcript.append({"role": "assistant", "voice": m.voice,
+                                            "greeting": m.voice is None and m.content == c.greeting,
+                                            "segments": [{"kind": seg.kind, "text": seg.text}
+                                                         for seg in split_segments(m.content)]})
+        if not self.conversation.history and c.greeting:
+            self.conversation.history.append(ChatMessage("assistant", c.greeting))
+            self.transcript.append({"role": "assistant", "voice": None, "greeting": True,
+                                    "segments": [{"kind": seg.kind, "text": seg.text}
+                                                 for seg in split_segments(c.greeting)]})
+            if c.memory_enabled:
+                self.memory.add_message(c.id, "assistant", c.greeting)
+
+    def _reload_llm_history(self) -> None:
+        """After summarizing: the LLM sees only the unsummarized messages (the transcript stays)."""
+        c = self.character
+        if c is not None and c.memory_enabled:
+            self.conversation.history = [ChatMessage(m.role, m.content) for m in self.memory.active_messages(c.id)]
+
+    def _emit_character_state(self) -> None:
+        self._emit({"type": "character", "character": self.character.to_dict() if self.character else None,
+                    "characters": self.list_characters(), "transcript": self.transcript,
+                    "memory": self.memory_view()})
+        self._emit({"type": "settings", "settings": asdict(self.store.settings)})
+        self._emit({"type": "voice_info", **self.voice_info()})
+
+    def _handle_select_character(self, char_id: str) -> None:
+        if self.character is not None and self.character.id == char_id:
+            return
+        if self.characters.get(char_id) is None:
+            raise UserError("This character no longer exists.")
+        self._activate_character(char_id)
+        self._prepare_voice()
+        self._ensure_llm()
+        self._emit_character_state()
+        self._emit({"type": "components", "components": self.components_status()})
+        self._enter_idle()
+
+    def _handle_save_character(self, data: dict[str, Any], char_id: str | None) -> None:
+        voice = str(data.get("voice") or "")
+        if voice:
+            self._voice_ref(voice)  # raises a clear error for unknown voices
+        try:
+            char = self.characters.save(data, char_id)
+        except CharacterError as exc:
+            raise UserError(str(exc)) from exc
+        if char_id is None or (self.character and self.character.id == char.id):
+            self._activate_character(char.id)  # a new or edited active character takes effect now
+            self._prepare_voice()
+            self._ensure_llm()
+        self._emit_character_state()
+        self._enter_idle()
+
+    def _handle_duplicate_character(self, char_id: str) -> None:
+        try:
+            self.characters.duplicate(char_id)
+        except CharacterError as exc:
+            raise UserError(str(exc)) from exc
+        self._emit_character_state()
+
+    def _handle_delete_character(self, char_id: str) -> None:
+        try:
+            self.characters.delete(char_id)
+        except CharacterError as exc:
+            raise UserError(str(exc)) from exc
+        self.memory.reset(char_id)  # its history and facts go with it
+        if self.character is not None and self.character.id == char_id:
+            self._activate_character(None)
+            self._prepare_voice()
+            self._ensure_llm()
+        self._emit_character_state()
+        self._enter_idle()
+
+    # -- memory (spec §11) -----------------------------------------------------------------
+    def _remember_turn(self, user_text: str, language: str | None, source: str,
+                       reply_text: str, voice: str | None) -> None:
+        c = self.character
+        if c is None or not c.memory_enabled or not reply_text:
+            self._trim_history()
+            return
+        self.memory.add_message(c.id, "user", user_text, language, source)
+        self.memory.add_message(c.id, "assistant", reply_text, language, None, voice)
+
+    def _trim_history(self) -> None:
+        """Without memory the oldest exchanges drop out once the history outgrows its context share."""
+        history = self.conversation.history
+        budget = history_budget(self.store.settings.context)
+        while len(history) > 2 and sum(estimate_tokens(m.content) for m in history) > budget:
+            del history[:2]
+
+    def _llm_text(self, system: str, prompt: str, max_tokens: int = 400) -> str:
+        """One quick, low-temperature request used to maintain the memory."""
+        messages = [ChatMessage("system", system), ChatMessage("user", prompt)]
+        text = self.c.llm.complete(messages, SamplingConfig(temperature=0.3, max_tokens=max_tokens))
+        return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE).strip()
+
+    def _maintain_memory(self) -> None:
+        """Between turns: summarize old history when it gets long; update the facts every few turns."""
+        c = self.character
+        if c is None or not c.memory_enabled or not self.c.server.running:
+            return
+        try:
+            old = messages_to_summarize(self.memory.active_messages(c.id), self.store.settings.context)
+            if old:
+                self._summarize(c, old)
+            turns = int(self.memory.get_meta(c.id, "turns_since_facts", "0") or 0) + 1
+            if turns >= FACT_UPDATE_EVERY:
+                self._update_facts(c)
+                turns = 0
+            self.memory.set_meta(c.id, "turns_since_facts", str(turns))
+        except Exception:  # noqa: BLE001 - memory upkeep must never break the conversation
+            log.exception("Memory maintenance failed")
+        self._refresh_memory_context()
+        self._emit({"type": "memory", **self.memory_view()})
+
+    def _summarize(self, c: Character, old: list[Any]) -> None:
+        summary = self._llm_text(
+            SUMMARY_SYSTEM.format(name=c.name),
+            SUMMARY_PROMPT.format(summary=self.memory.summary(c.id) or "(none)",
+                                  transcript=transcript_text(old, c.name)))
+        if summary:
+            self.memory.set_summary(c.id, summary)
+            self.memory.mark_summarized(c.id, old[-1].id)
+            self._reload_llm_history()
+            log.info("Summarized %d messages of %s", len(old), c.id)
+
+    def _update_facts(self, c: Character) -> None:
+        recent = self.memory.active_messages(c.id)[-8:]
+        facts = self.memory.facts(c.id)
+        reply = self._llm_text(
+            FACTS_SYSTEM.format(name=c.name),
+            FACTS_PROMPT.format(facts="\n".join(f"- {f.text}" for f in facts) or "(none)",
+                                transcript=transcript_text(recent, c.name)), max_tokens=300)
+        add, remove = parse_fact_update(reply)
+        self.memory.remove_facts_by_text(c.id, remove)
+        for text in add:
+            self.memory.add_fact(c.id, text, source="llm")
+
+    def _handle_add_fact(self, text: str) -> None:
+        c = self._memory_character()
+        self.memory.add_fact(c.id, text, source="user")
+        self._refresh_memory_context()
+        self._emit({"type": "memory", **self.memory_view()})
+
+    def _handle_update_fact(self, fact_id: int, text: str) -> None:
+        c = self._memory_character()
+        self.memory.update_fact(c.id, int(fact_id), text)
+        self._refresh_memory_context()
+        self._emit({"type": "memory", **self.memory_view()})
+
+    def _handle_delete_fact(self, fact_id: int) -> None:
+        c = self._memory_character()
+        self.memory.delete_fact(c.id, int(fact_id))
+        self._refresh_memory_context()
+        self._emit({"type": "memory", **self.memory_view()})
+
+    def _handle_reset_memory(self, _: Any = None) -> None:
+        c = self._memory_character()
+        self.memory.reset(c.id)
+        self._refresh_memory_context()
+        self._load_history()
+        self._emit_character_state()
+
+    def _memory_character(self) -> Character:
+        if self.character is None:
+            raise UserError("No character is active.")
+        return self.character
 
     # -- custom voice reference text -----------------------------------------------------
     def voice_info(self) -> dict[str, Any]:
@@ -861,8 +1166,27 @@ class Engine:
         if "model" in changed or "context" in changed:
             self._ensure_llm()
             self.fatal_error = None
+        if self.character is not None and changed.keys() & {"voice", "show_actions", "voice_output"}:
+            self._save_character_from_settings(changed)
         if changed.keys() - {"show_actions"}:
             self._enter_idle()
+
+    def _save_character_from_settings(self, changed: dict[str, Any]) -> None:
+        """Voice and show-actions picked in the side panel belong to the active character (spec §10)."""
+        c = self.character
+        assert c is not None
+        data = c.to_dict()
+        if "voice" in changed:
+            data["voice"] = self.store.settings.voice
+        if "show_actions" in changed:
+            data["show_actions_as_text"] = self.store.settings.show_actions
+        if "voice_output" in changed and self.store.settings.voice_output and not c.voice_output:
+            data["voice_output"] = True  # turning voice on in the panel also turns it on for this character
+        if data != c.to_dict():
+            self.character = self.characters.save(data, c.id)
+            self._sync_tts()
+            self._emit({"type": "characters", "characters": self.list_characters(),
+                        "character": self.character.to_dict()})
 
 
 def _append_segment(segments: list[dict[str, str]], kind: str, text: str) -> None:

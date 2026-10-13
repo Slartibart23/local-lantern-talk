@@ -52,6 +52,9 @@ from .settings import SettingsStore
 
 log = logging.getLogger(__name__)
 
+# WebSocket messages with personal content (chat text, characters, facts) never go to the log.
+PRIVATE_MESSAGES = {"text", "save_character", "add_fact", "update_fact"}
+
 HOST = "127.0.0.1"
 DEFAULT_PORT = 7865
 APP_ID = "local-lantern-talk"
@@ -170,7 +173,7 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
                     continue
                 data = json.loads(message.get("text") or "{}")
                 kind = data.get("type")
-                if kind != "text":  # message text is personal; never log it
+                if kind not in PRIVATE_MESSAGES:  # personal content is never logged
                     log.debug("ws <- %s", data)
                 if kind == "mic_format":
                     sample_rate = int(data["sample_rate"])
@@ -207,6 +210,24 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
                     engine.regenerate_builtin_voices()
                 elif kind == "reference_text":
                     engine.set_reference_text(str(data.get("voice", "")), str(data.get("text", "")))
+                elif kind == "select_character":
+                    engine.select_character(str(data.get("id", "")))
+                elif kind == "save_character":
+                    values = data.get("character")
+                    if isinstance(values, dict):
+                        engine.save_character(values, str(data["id"]) if data.get("id") else None)
+                elif kind == "duplicate_character":
+                    engine.duplicate_character(str(data.get("id", "")))
+                elif kind == "delete_character":
+                    engine.delete_character(str(data.get("id", "")))
+                elif kind == "add_fact":
+                    engine.add_fact(str(data.get("text", ""))[:500])
+                elif kind == "update_fact":
+                    engine.update_fact(int(data.get("id", 0)), str(data.get("text", ""))[:500])
+                elif kind == "delete_fact":
+                    engine.delete_fact(int(data.get("id", 0)))
+                elif kind == "reset_memory":
+                    engine.reset_memory()
                 elif kind == "refresh":
                     await ws.send_json(engine.snapshot())
         except WebSocketDisconnect:

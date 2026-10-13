@@ -48,6 +48,13 @@ One browser tab is active at a time; opening a second tab takes over.
 
 ## Using the app
 
+- **Characters** (left panel): talk to an assistant like Lena or Max, or to a roleplay
+  character like Elara. *+ New character* creates your own: describe its personality
+  once, and it behaves that way in every conversation, with its own voice and optionally
+  its own model. See [docs/characters.md](docs/characters.md).
+- **Memory** (right panel): each character remembers your conversations across sessions
+  with a short summary and a list of facts you can view, edit and reset.
+  See [docs/memory.md](docs/memory.md).
 - **Status button**: Listening / Thinking / Speaking. Click it to pause listening;
   in *Mic off* it turns the microphone back on. The mic is muted while the
   assistant speaks, so it never hears itself.
