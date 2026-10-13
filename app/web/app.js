@@ -118,6 +118,9 @@ function handleEvent(msg) {
     case "download":
       handleDownloadEvent(msg);
       break;
+    case "custom_suggestions":
+      showSuggestions(msg);
+      break;
     case "voice_info":
       renderVoiceInfo(msg);
       break;
@@ -548,6 +551,24 @@ function handleDownloadEvent(d) {
   if (!["queued", "running"].includes(d.state)) renderCatalog();
 }
 
+function showSuggestions(msg) {
+  $("toast").hidden = true;  // replaces the "Looking up the model" note
+  $("custom-suggestions-text").textContent = msg.message;
+  const list = $("custom-suggestions-list");
+  list.innerHTML = "";
+  for (const repo of msg.suggestions) {
+    list.append(el("button", {
+      type: "button", class: "secondary",
+      onclick: () => {
+        $("custom-suggestions").hidden = true;
+        send({ type: "add_custom_model", source: repo, quant: msg.quant, variant: msg.variant });
+        toast(`Adding ${repo}…`, "info");
+      },
+    }, `Use ${repo}`));
+  }
+  $("custom-suggestions").hidden = false;
+}
+
 function openCatalog() {
   $("catalog").hidden = false;
   send({ type: "refresh" });
@@ -774,6 +795,7 @@ function init() {
     ev.preventDefault();
     send({ type: "add_custom_model", source: $("custom-source").value.trim(),
            quant: $("custom-quant").value, variant: $("custom-variant").value });
+    $("custom-suggestions").hidden = true;
     toast("Looking up the model on Hugging Face…", "info");
     $("custom-source").value = "";
   };

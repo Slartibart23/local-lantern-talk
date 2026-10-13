@@ -175,6 +175,26 @@ def test_parse_fit_output() -> None:
     assert parse_fit_output("-c 8192 -ngl 0\n", 40).nothing_fits
 
 
+def test_repo_without_gguf_suggests_gguf_versions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from lantern_talk import models as models_module
+    from lantern_talk.models import ModelManager, NoGGUFError
+    from lantern_talk.paths import Paths
+
+    root = tmp_path / "root"
+    (root / "config").mkdir(parents=True)
+    (root / "config" / "model_catalog.yaml").write_text((ROOT / "config" / "model_catalog.yaml").read_text())
+    mm = ModelManager(Paths(root), lambda job: None)
+    monkeypatch.setattr(models_module, "list_repo_files", lambda repo: {
+        "model-00001-of-00005.safetensors": 4_000_000_000, "config.json": 900})
+    monkeypatch.setattr(models_module, "search_gguf_repos", lambda name: [
+        {"id": "bartowski/Llama-3.1-SauerkrautLM-8b-Instruct-GGUF", "downloads": 3669},
+        {"id": "QuantFactory/Llama-3.1-SauerkrautLM-8b-Instruct-GGUF", "downloads": 832}])
+    with pytest.raises(NoGGUFError) as info:
+        mm.add_custom("https://huggingface.co/VAGOsolutions/Llama-3.1-SauerkrautLM-8b-Instruct", None, "unknown", "Q5_K_M")
+    assert "original model weights (safetensors)" in str(info.value)
+    assert info.value.suggestions[0] == "bartowski/Llama-3.1-SauerkrautLM-8b-Instruct-GGUF"
+
+
 def test_fit_corrects_cuda_free_memory_on_windows(tmp_path: Path) -> None:
     """llama.cpp over-estimates free VRAM on Windows; the margin is raised by the difference."""
     from lantern_talk.models import ModelManager

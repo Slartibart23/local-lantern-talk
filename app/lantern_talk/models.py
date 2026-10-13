@@ -15,7 +15,9 @@ from .catalog import (
     VARIANTS, CatalogEntry, CustomModels, choose_quant, classify, custom_entry, load_catalog,
     local_gguf_files, local_only_entries, parse_custom_source, pick_repo_file,
 )
-from .downloads import DownloadError, Downloader, DownloadJob, hf_file_url, list_repo_files, remote_size
+from .downloads import (
+    DownloadError, Downloader, DownloadJob, hf_file_url, list_repo_files, remote_size, search_gguf_repos,
+)
 from .gguf_meta import GGUFError, model_info
 from .paths import Paths
 
@@ -24,6 +26,14 @@ log = logging.getLogger(__name__)
 
 class ModelError(Exception):
     """A model problem with a message meant for the user."""
+
+
+class NoGGUFError(ModelError):
+    """The repository has no usable GGUF file; ``suggestions`` are GGUF repos of the same model."""
+
+    def __init__(self, message: str, suggestions: list[str]) -> None:
+        super().__init__(message)
+        self.suggestions = suggestions
 
 
 @dataclass(frozen=True)
@@ -166,6 +176,8 @@ class ModelManager:
                     if source.file not in files:
                         raise ModelError(f"{source.file} is not in {source.repo}.")
                     file, size = source.file, files[source.file]
+                elif not any(p.lower().endswith(".gguf") for p in files):
+                    raise self._no_gguf(source.repo, files)
                 else:
                     file, size = pick_repo_file(files, quant, preferred_quant)
             else:
@@ -179,6 +191,18 @@ class ModelManager:
         entry = custom_entry(source, file, size, variant)
         self.custom.add(entry)
         return self.entry(entry["id"])
+
+    @staticmethod
+    def _no_gguf(repo: str, files: dict[str, int]) -> NoGGUFError:
+        """Explain why a repository cannot be used and suggest GGUF versions of the same model."""
+        name = repo.split("/", 1)[1]
+        suggestions = [s["id"] for s in search_gguf_repos(name) if s["id"] != repo]
+        original = any(p.endswith((".safetensors", ".bin", ".pt")) for p in files)
+        why = ("contains the original model weights (safetensors), not GGUF" if original
+               else "contains no GGUF file")
+        hint = ("GGUF versions of this model: " + ", ".join(suggestions) + "." if suggestions
+                else "Search Hugging Face for a GGUF version of this model (often named …-GGUF).")
+        return NoGGUFError(f"{repo} {why}. The app needs a GGUF file. {hint}", suggestions)
 
     def remove_custom(self, entry_id: str) -> None:
         self.custom.remove(entry_id)

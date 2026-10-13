@@ -261,3 +261,8 @@ input[type="range"] { width: 100%; accent-color: var(--amber); }
 .download-bar[hidden] { display: none; }
 .model-quant .fit { display: inline-block; border-radius: 8px; line-height: 1.3; padding: 2px 8px; }
 .primary:disabled, .secondary:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+.suggestions { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--amber); border-radius: 12px; background: var(--amber-soft); font-size: 13px; }
+.suggestions[hidden] { display: none; }
+.suggestions p { margin: 0 0 10px; }
+.suggestion-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.suggestion-list button { font-family: var(--mono); font-size: 12px; }

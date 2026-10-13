@@ -32,7 +32,7 @@ import numpy as np
 from .downloads import DownloadJob
 from .gpu import query_gpu
 from .llm import NO_THINKING_ARGS, LlamaServer, LLMClient, ServerConfig
-from .models import ModelError, ModelManager
+from .models import ModelError, ModelManager, NoGGUFError
 from .paths import Paths
 from .pipeline import Conversation, ConversationConfig, SegmentEvent, SpeechAudio, TurnDone, TurnError
 from .prompts import DEFAULT_ASSISTANT_PERSONA
@@ -469,7 +469,13 @@ class Engine:
         self._emit_models()
 
     def _handle_add_custom(self, text: str, quant: str | None, variant: str, download: bool) -> None:
-        entry = self.models.add_custom(text, quant, variant, self.preferred_quant())
+        try:
+            entry = self.models.add_custom(text, quant, variant, self.preferred_quant())
+        except NoGGUFError as exc:
+            # Not an error the user caused: offer the GGUF versions of the same model instead.
+            self._emit({"type": "custom_suggestions", "message": str(exc), "suggestions": exc.suggestions,
+                        "quant": quant or "", "variant": variant})
+            return
         self._emit_models()
         if download:
             self._handle_download(entry.id, next(iter(entry.files)), True)

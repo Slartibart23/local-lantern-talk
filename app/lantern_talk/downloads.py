@@ -63,6 +63,17 @@ def list_repo_files(repo: str, timeout: float = 20.0) -> dict[str, int]:
             for f in r.json() if f.get("type") == "file"}
 
 
+def search_gguf_repos(query: str, limit: int = 3, timeout: float = 20.0) -> list[dict[str, object]]:
+    """Most downloaded Hugging Face repositories with GGUF files matching ``query``."""
+    try:
+        r = httpx.get(f"{HF}/api/models", params={"search": query, "filter": "gguf", "sort": "downloads",
+                                                   "limit": limit}, timeout=timeout)
+        r.raise_for_status()
+        return [{"id": m["id"], "downloads": int(m.get("downloads") or 0)} for m in r.json()]
+    except (httpx.HTTPError, ValueError, KeyError):
+        return []  # suggestions are a convenience; never fail because of them
+
+
 def remote_size(url: str, timeout: float = 20.0) -> int:
     """Size of a remote file in bytes (0 if the server does not say)."""
     try:
