@@ -84,7 +84,7 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
             hub.engine = engine_factory(hub.emit)
         else:
             store = SettingsStore(paths.settings_file)
-            components = build_components(paths, store.settings.num_step, store.settings.tts_precision)
+            components = build_components(paths, store.settings)
             hub.engine = Engine(paths, store, components, hub.emit)
         hub.engine.start()
         sender = asyncio.create_task(_sender(hub))

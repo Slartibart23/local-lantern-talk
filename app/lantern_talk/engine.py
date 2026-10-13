@@ -34,7 +34,8 @@ from .paths import Paths
 from .pipeline import Conversation, ConversationConfig, SegmentEvent, SpeechAudio, TurnDone, TurnError
 from .prompts import DEFAULT_ASSISTANT_PERSONA
 from .resample import StreamingResampler
-from .settings import SettingsStore
+from .hardware import effective_profile
+from .settings import Settings, SettingsStore
 from .stt import WhisperSTT
 from .textlang import guess_language
 from .tts import PRECISIONS, OmniVoiceTTS, VoiceLibrary
@@ -77,9 +78,11 @@ class Components:
     llm: Any
 
 
-def build_components(paths: Paths, num_step: int, precision: str = "fp16") -> Components:
-    stt = WhisperSTT(paths.whisper_models / "large-v3-turbo")
-    tts = OmniVoiceTTS(paths.omnivoice_model, num_step=num_step, precision=precision)
+def build_components(paths: Paths, settings: Settings) -> Components:
+    profile = effective_profile(asdict(settings))
+    stt = WhisperSTT(paths.whisper_models / "large-v3-turbo",
+                     device=profile.whisper_device, compute_type=profile.whisper_compute)
+    tts = OmniVoiceTTS(paths.omnivoice_model, num_step=settings.num_step, precision=settings.tts_precision)
     voices = VoiceLibrary(
         tts, paths.config / "builtin_voices.yaml", paths.builtin_voices, paths.voice_cache,
         transcribe=lambda audio, sr, lang: stt.transcribe_at(audio, sr, lang).text,

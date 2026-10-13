@@ -26,6 +26,10 @@ class Settings:
     num_step: int = 32              # OmniVoice diffusion steps (16 fast ... 64 best)
     tts_precision: str = "fp16"     # OmniVoice precision: fp16 | bf16 | fp32
     context: int = 8192
+    hardware_profile: str = ""          # detected by the installer (high | mid | low | unsupported)
+    hardware_profile_override: str = "" # user's choice; "" = use the detected profile
+    gpu_name: str = ""
+    gpu_vram_mib: int = 0
 
     def update(self, values: dict[str, Any]) -> dict[str, Any]:
         """Apply known keys with type coercion; returns the keys that changed."""

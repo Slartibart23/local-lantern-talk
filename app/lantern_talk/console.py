@@ -15,22 +15,24 @@ You can also type a message and press Enter at any time while in voice mode.
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
 import queue
 import sys
 import threading
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
 
+from .hardware import effective_profile
 from .llm import LlamaServer, LLMClient, ServerConfig
 from .logging_setup import setup_logging
 from .paths import Paths, apply_portable_env, get_paths, path_warnings
 from .pipeline import Conversation, ConversationConfig, SegmentEvent, SpeechAudio, TurnDone, TurnError
 from .prompts import DEFAULT_ASSISTANT_PERSONA, language_name
+from .settings import Settings, SettingsStore
 from .stt import WhisperSTT
 from .textlang import guess_language
 from .tts import OUTPUT_SAMPLE_RATE, OmniVoiceTTS, VoiceLibrary
@@ -216,9 +218,14 @@ def _device(value: str | None) -> int | str | None:
     return int(value) if value.isdigit() else value
 
 
-def default_model(paths: Paths) -> Path:
-    pins = json.loads((paths.config / "runtime_pins.json").read_text(encoding="utf-8"))
-    return paths.llm_models / pins["m1_llm"]["file"]
+def default_model(paths: Paths, settings: Settings) -> Path:
+    """The model selected in the web app, else the first GGUF file in models\\llm."""
+    if settings.model and (paths.llm_models / settings.model).exists():
+        return paths.llm_models / settings.model
+    models = sorted(paths.llm_models.glob("*.gguf"))
+    if not models:
+        raise FileNotFoundError("No language model found. Put a GGUF file into models\\llm.")
+    return models[0]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -244,7 +251,10 @@ def main(argv: list[str] | None = None) -> int:
     player: Player | None = None
     try:
         say("Local Lantern Talk — M1 console")
-        stt = WhisperSTT(paths.whisper_models / "large-v3-turbo")
+        settings = SettingsStore(paths.settings_file).settings
+        profile = effective_profile(asdict(settings))
+        stt = WhisperSTT(paths.whisper_models / "large-v3-turbo",
+                         device=profile.whisper_device, compute_type=profile.whisper_compute)
         if use_mic:  # otherwise loaded lazily if a voice reference needs transcribing
             status("Loading Whisper")
             stt.load()
@@ -263,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
             voices.prompt_for(voice_id)
             args.voice = voice_id
 
-        model = Path(args.model) if args.model else default_model(paths)
+        model = Path(args.model) if args.model else default_model(paths, settings)
         status(f"Loading model {model.name}")
         server.start(ServerConfig(model=model, context=args.context, gpu_layers=args.gpu_layers))
 

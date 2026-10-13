@@ -2,9 +2,12 @@
   "_comment": "Pinned versions of everything the installer downloads. Update deliberately and test.",
   "uv": {
     "version": "0.13.0",
-    "url": "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-x86_64-pc-windows-msvc.zip"
+    "url": "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-x86_64-pc-windows-msvc.zip",
+    "sha256": "088962f9e7b7bd9ea740c04c650b2a21c8928c345bd99ac24350dc924dba656c",
+    "download_mb": 16
   },
   "python": "3.12",
+  "python_packages_download_mb": 3600,
   "nvidia": {
     "_comment": "Minimum NVIDIA driver for the whole app: PyTorch cu128 needs CUDA 12.8 (Windows driver 570.65, CUDA 12.8 GA).",
     "min_driver": "570.65",
@@ -27,7 +30,10 @@
           "cublas64_13.dll",
           "cublasLt64_13.dll",
           "ggml-cuda.dll"
-        ]
+        ],
+        "zip_sha256": "1fda09466d0c917dddac2e0a882d8eb99fac2d57353ab15ffd3f07acafd56ac7",
+        "cudart_sha256": "738f8c251ac22b70c3ae6f83a10cf222725df0395246a2cf58f32bdb85fbe668",
+        "download_mb": 549
       },
       {
         "name": "cuda-12.4",
@@ -40,23 +46,37 @@
           "cublas64_12.dll",
           "cublasLt64_12.dll",
           "ggml-cuda.dll"
-        ]
+        ],
+        "zip_sha256": "845e0338b66ddf5cfceb8e32af5003be227089217d8eb647aa9eb1d14689dd4f",
+        "cudart_sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
+        "download_mb": 625
       }
     ]
+  },
+  "ffmpeg": {
+    "_comment": "Portable ffmpeg (GyanD essentials build, GPL) used to preprocess voice clips.",
+    "version": "9.0.2",
+    "url": "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip",
+    "sha256": "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba",
+    "folder": "ffmpeg-9.0.2-essentials_build",
+    "download_mb": 109
   },
   "models": {
     "whisper": {
       "large-v3-turbo": {
         "repo": "dropbox-dash/faster-whisper-large-v3-turbo",
-        "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf"
+        "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+        "download_mb": 1620
       }
     },
     "omnivoice": {
-      "repo": "k2-fsa/OmniVoice"
+      "repo": "k2-fsa/OmniVoice",
+      "download_mb": 3170
     },
     "vad": {
       "url": "https://raw.githubusercontent.com/snakers4/silero-vad/v6.2.3/src/silero_vad/data/silero_vad.jit",
-      "file": "silero_vad.jit"
+      "file": "silero_vad.jit",
+      "download_mb": 3
     }
   },
   "fonts": {
@@ -104,10 +124,21 @@
         "file": "ibm-plex-mono-latin-ext-400-normal.woff2"
       }
     ],
-    "license_url": "https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans@5.3.0/LICENSE"
+    "license_url": "https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans@5.3.0/LICENSE",
+    "download_mb": 1
   },
-  "m1_llm": {
+  "starter_llm": {
+    "_comment": "Optional starter model offered by install.bat until the model catalog (M4) exists. Quant by hardware profile.",
     "repo": "bartowski/google_gemma-3-12b-it-GGUF",
-    "file": "google_gemma-3-12b-it-Q5_K_M.gguf"
+    "files": {
+      "Q5_K_M": {
+        "file": "google_gemma-3-12b-it-Q5_K_M.gguf",
+        "download_mb": 8440
+      },
+      "Q4_K_M": {
+        "file": "google_gemma-3-12b-it-Q4_K_M.gguf",
+        "download_mb": 7300
+      }
+    }
   }
 }

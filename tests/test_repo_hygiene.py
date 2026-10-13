@@ -38,3 +38,14 @@ def test_pre_commit_hook_blocks_the_same_paths() -> None:
     hook = (ROOT / "scripts" / "git-hooks" / "pre-commit").read_text(encoding="utf-8")
     for token in ("user_data", "tmp", "logs", "models", "runtime", "mp3", "wav", "gguf"):
         assert token in hook
+
+
+def test_python_sources_compile_without_warnings() -> None:
+    """Catches invalid escape sequences, e.g. a Windows path written with single backslashes."""
+    import warnings
+
+    sources = [f for f in tracked_files() if f.endswith(".py")]
+    for name in sources:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            compile((ROOT / name).read_text(encoding="utf-8"), name, "exec")
