@@ -158,3 +158,44 @@ def test_broken_custom_file_is_ignored(tmp_path: Path) -> None:
     f = tmp_path / "custom_models.json"
     f.write_text("{broken")
     assert CustomModels(f).entries() == []
+
+
+def test_parse_fit_output() -> None:
+    from lantern_talk.models import parse_fit_output
+
+    full = parse_fit_output("I llama_fit_params: ...\n-c 8192 -ngl -1\n", 48)
+    assert (full.gpu_layers, full.partial, full.args) == (48, False, ["-ngl", "-1"])
+    layers = parse_fit_output("-c 8192 -ngl 30\n", 48)
+    assert layers.partial and layers.gpu_layers == 30
+    moe_line = (r'-c 8192 -ngl 31 -ot "blk\.24\.ffn_(gate|gate_up|down).*=CPU,'
+                r'blk\.25\.ffn_(up|down)_(ch|)exps=CPU,blk\.26\.ffn_(up)_(ch|)exps=CPU"')
+    moe = parse_fit_output(moe_line + "\n", 30)
+    assert moe.gpu_layers == 30 and moe.cpu_blocks == 3 and moe.partial
+    assert moe.args[2] == "-ot" and moe.args[3].startswith(r"blk\.24\.")
+    assert parse_fit_output("-c 8192 -ngl 0\n", 40).nothing_fits
+
+
+def test_fit_corrects_cuda_free_memory_on_windows(tmp_path: Path) -> None:
+    """llama.cpp over-estimates free VRAM on Windows; the margin is raised by the difference."""
+    from lantern_talk.models import ModelManager
+    from lantern_talk.paths import Paths
+
+    root = tmp_path / "root"
+    (root / "config").mkdir(parents=True)
+    (root / "config" / "model_catalog.yaml").write_text((ROOT / "config" / "model_catalog.yaml").read_text())
+    mm = ModelManager(Paths(root), lambda job: None)
+    calls: list[int] = []
+
+    def fake_run(path: Path, context: int, margin: int) -> tuple[str, str]:
+        calls.append(margin)
+        err = "projected to use 17006 MiB of device memory vs. 20000 MiB of free device memory"
+        return ("-c 8192 -ngl -1\n" if len(calls) == 1 else '-c 8192 -ngl 31 -ot "blk\\.29\\.x=CPU"\n'), err
+
+    mm._run_fit = fake_run  # type: ignore[method-assign]
+    result = mm.fit("model.gguf", 8192, 3584, true_free_mib=14000)
+    assert calls == [3584, 3584 + 6000]
+    assert result.cpu_blocks == 1
+    calls.clear()
+    mm.fit("model.gguf", 8192, 3584, true_free_mib=19900)  # views agree: no second run
+    assert calls == [3584]
+

@@ -430,8 +430,10 @@ def test_llm_runs_without_thinking_and_keeps_room_for_voice(setup) -> None:  # n
     engine, comps, rec = setup
     args = comps.server.last_config.extra_args
     assert args[args.index("--reasoning-budget") + 1] == "0"
-    assert args[args.index("--fit-target") + 1] == str(1024 + 2560)  # voice output on
+    # llama-fit-params is unavailable in the test: llama.cpp fits itself, keeping room for voice
+    assert args[args.index("--fit-target") + 1] == str(1024 + 2560)
     assert comps.server.last_config.gpu_layers == "auto"
+
 
 
 def test_download_then_load(setup) -> None:  # noqa: ANN001
@@ -467,16 +469,38 @@ def test_delete_other_model(setup) -> None:  # noqa: ANN001
 def test_model_too_big_is_refused(setup) -> None:  # noqa: ANN001
     engine, comps, rec = setup
     (engine.paths.llm_models / "huge-Q8_0.gguf").write_bytes(b"x")
-    engine.models.gpu_layers = lambda name, ctx, margin: (0, 64)
+    from lantern_talk.models import FitResult
+
+    engine.models.fit = lambda name, ctx, margin, free=None: FitResult(["-ngl", "0"], 0, 64, 0)
     start = len(rec.events)
     engine.update_settings({"model": "huge-Q8_0.gguf"})
     rec.wait_for(lambda ev: any(e["type"] == "error" and "too big" in e["message"] for e in ev[start:]))
 
 
+def test_fitted_split_is_applied_exactly(setup) -> None:  # noqa: ANN001
+    from lantern_talk.models import parse_fit_output
+
+    engine, comps, rec = setup
+    ot = r"blk\.24\.ffn_(gate|down).*=CPU,blk\.25\.ffn_(up)_(ch|)exps=CPU"
+    out = f'noise\n-c 8192 -ngl 31 -ot "{ot}"\n'
+    engine.models.fit = lambda name, ctx, margin, free=None: parse_fit_output(out, 30)
+    (engine.paths.llm_models / "moe-Q4_K_M.gguf").write_bytes(b"x")
+    start = len(rec.events)
+    engine.update_settings({"model": "moe-Q4_K_M.gguf"})
+    rec.wait_for(lambda ev: any(e["type"] == "model_status" for e in ev[start:]))
+    cfg = comps.server.last_config
+    assert cfg.gpu_layers == "31" and cfg.extra_args[:2] == ["-ot", ot]
+    assert cfg.extra_args[cfg.extra_args.index("--fit") + 1] == "off"
+    status = [e for e in rec.events[start:] if e["type"] == "model_status"][-1]
+    assert status["partial"] and status["cpu_blocks"] == 2 and "experts of 2 of 30" in status["notice"]
+
+
 def test_partial_offload_notice(setup) -> None:  # noqa: ANN001
     engine, comps, rec = setup
     (engine.paths.llm_models / "big-Q4_K_M.gguf").write_bytes(b"x")
-    engine.models.gpu_layers = lambda name, ctx, margin: (30, 48)
+    from lantern_talk.models import FitResult
+
+    engine.models.fit = lambda name, ctx, margin, free=None: FitResult(["-ngl", "30"], 30, 48, 0)
     start = len(rec.events)
     engine.update_settings({"model": "big-Q4_K_M.gguf"})
     rec.wait_for(lambda ev: any(e["type"] == "model_status" for e in ev[start:]))

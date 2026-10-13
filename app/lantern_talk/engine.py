@@ -326,6 +326,12 @@ class Engine:
         gpu = query_gpu()
         return int(gpu["used_mb"]) if gpu else 0
 
+    def _wait_for_vram_release(self, below_mb: int, timeout_s: float = 5.0) -> None:
+        """After stopping llama-server, wait until the driver has actually freed its memory."""
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline and self._gpu_used_mb() > below_mb:
+            time.sleep(0.25)
+
     def _measured(self, name: str, load: Callable[[], None]) -> None:
         """Run ``load`` and remember how much VRAM it took (nvidia-smi delta)."""
         before = self._gpu_used_mb()
@@ -553,28 +559,49 @@ class Engine:
         label = entry.display_name if entry else path.name
         self._set_state(State.LOADING, f"Loading model {label}…")
         # Stop the old model first so the fit check sees the memory it frees.
+        was_running = self.c.server.running
+        before_stop = self._gpu_used_mb()
         self.c.server.stop()
         self._loaded_model = None
-        self.vram_mb.pop("llm", None)
+        freed = self.vram_mb.pop("llm", 0)
+        if was_running and before_stop:
+            self._wait_for_vram_release(before_stop - freed // 2)
         margin = self.llm_margin_mib()
-        on_gpu, total = self.models.gpu_layers(path.name, ctx, margin)
-        if total and on_gpu == 0:
+        gpu = query_gpu()
+        true_free = int(gpu["total_mb"]) - int(gpu["used_mb"]) if gpu else None
+        fit = self.models.fit(path.name, ctx, margin, true_free)
+        if fit.nothing_fits:
             raise UserError(f"{label} is too big for the free GPU memory. Pick a smaller model or "
                             "quantization, or turn voice output off to free memory.")
-        config = ServerConfig(model=path, context=ctx, gpu_layers="auto",
-                              extra_args=["--fit-target", str(margin),
-                                          # no hidden "thinking" before answering: it costs seconds
-                                          "--reasoning-budget", "0"])
+        # no hidden "thinking" before answering: it costs seconds per reply
+        no_thinking = ["--reasoning-budget", "0"]
+        if fit.known:
+            # Apply llama-fit-params' split exactly (incl. MoE expert offload), keeping
+            # room for OmniVoice; llama-server's own --fit would ignore an explicit -ngl.
+            ngl = fit.args[fit.args.index("-ngl") + 1]
+            extra = [a for i, a in enumerate(fit.args) if a != "-ngl" and (i == 0 or fit.args[i - 1] != "-ngl")]
+            config = ServerConfig(model=path, context=ctx, gpu_layers="all" if ngl == "-1" else ngl,
+                                  extra_args=[*extra, "--fit", "off", *no_thinking])
+        else:
+            config = ServerConfig(model=path, context=ctx, gpu_layers="auto",
+                                  extra_args=["--fit-target", str(margin), *no_thinking])
         try:
             self._measured("llm", lambda: self.c.server.start(config))
         except Exception as exc:
             raise UserError(f"Could not load {label}: {exc}") from exc
         self._loaded_model, self._loaded_context = path.name, ctx
-        partial = bool(total and on_gpu < total)
+        if fit.cpu_blocks:
+            notice = (f"Part of the model (the experts of {fit.cpu_blocks} of {fit.total_layers} blocks) runs on "
+                      "the CPU to leave room for speech, so replies are a little slower. Mixture-of-experts "
+                      "models handle this well; a smaller quantization would be faster.")
+        elif fit.partial:
+            notice = (f"{fit.gpu_layers} of {fit.total_layers} layers fit on the GPU; the rest runs on the CPU, "
+                      "so replies are slower. A smaller quantization or model would be faster.")
+        else:
+            notice = ""
         self.model_status = {
-            "file": path.name, "name": label, "gpu_layers": on_gpu, "total_layers": total, "partial": partial,
-            "notice": (f"{on_gpu} of {total} layers fit on the GPU; the rest runs on the CPU, so replies are "
-                       "slower. A smaller quantization or model would be faster.") if partial else "",
+            "file": path.name, "name": label, "gpu_layers": fit.gpu_layers, "total_layers": fit.total_layers,
+            "cpu_blocks": fit.cpu_blocks, "partial": fit.partial, "notice": notice,
         }
         self._emit({"type": "model_status", **self.model_status})
         self._emit({"type": "models", "models": self.list_models()})
