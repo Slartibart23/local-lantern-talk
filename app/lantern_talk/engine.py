@@ -43,6 +43,7 @@ from .models import ModelError, ModelManager, NoGGUFError
 from .paths import Paths
 from .pipeline import Conversation, ConversationConfig, SegmentEvent, SpeechAudio, TurnDone, TurnError
 from .prompts import DEFAULT_ASSISTANT_PERSONA
+from .recorder import CaptureBuffer, SessionItem, SessionRecorder, list_sessions, segments_markdown, session_title
 from .resample import StreamingResampler
 from .sanitizer import split_segments
 from .settings import Settings, SettingsStore
@@ -149,6 +150,14 @@ class Engine:
         self.memory = MemoryStore(paths.memory / "memory.db")
         self.character: Character | None = None
         self.resume: dict[str, Any] | None = None  # an unfinished chat that was loaded from memory
+        self.replaying = False                     # a recorded message is playing in the browser
+        self._msg_seq = 0                          # ids of transcript items (for replay buttons)
+        self._replay_lock = threading.Lock()
+        self.capture = CaptureBuffer()             # full-quality microphone audio (spec §12.1)
+        self.recorder = SessionRecorder(
+            paths.sessions, paths.ffmpeg, self._on_recorded,
+            gap_ms=lambda: self.store.settings.session_gap_ms,
+            bitrate_kbps=lambda: self.store.settings.session_bitrate_kbps)
         if self.characters.list():
             self._activate_character(s.character)
         self.segmenter = UtteranceSegmenter(
@@ -178,6 +187,7 @@ class Engine:
         for t in self._threads:
             t.join(timeout=10)
         self.c.server.stop()
+        self.recorder.close()  # writes what is still queued
         self.memory.close()
 
     def submit_text(self, text: str) -> None:
@@ -200,6 +210,14 @@ class Engine:
 
     def set_paused(self, paused: bool) -> None:
         self._commands.put(("pause", paused))
+
+    def set_replaying(self, playing: bool) -> None:
+        """A recorded message plays in the browser: keep the microphone muted meanwhile."""
+        self._commands.put(("replay", playing))
+
+    def open_sessions_folder(self) -> None:
+        self.paths.sessions.mkdir(parents=True, exist_ok=True)
+        os.startfile(self.paths.sessions)  # type: ignore[attr-defined]  # Windows only
 
     def update_settings(self, values: dict[str, Any]) -> None:
         self._commands.put(("settings", values))
@@ -250,6 +268,8 @@ class Engine:
             "characters": self.list_characters(),
             "memory": self.memory_view(),
             "resume": self.resume,
+            "sessions": list_sessions(self.paths.sessions),
+            "recording": self.recorder.files(),
         }
 
     # ------------------------------------------------------------------ voices
@@ -390,12 +410,13 @@ class Engine:
             return State.ERROR
         if not self.store.settings.mic_enabled:
             return State.MIC_OFF
-        return State.PAUSED if self.paused else State.LISTENING
+        return State.PAUSED if (self.paused or self.replaying) else State.LISTENING
 
     def _enter_idle(self) -> None:
         self._reset_audio.set()  # the audio thread resets VAD state before listening again
         state = self._idle_state()
-        self._set_state(state, self.fatal_error or "")
+        detail = self.fatal_error or ("Replay is playing" if self.replaying and state is State.PAUSED else "")
+        self._set_state(state, detail)
 
     # ------------------------------------------------------------------ audio thread
     def _audio_loop(self) -> None:
@@ -406,6 +427,7 @@ class Engine:
             if self._reset_audio.is_set():
                 self._reset_audio.clear()
                 self.segmenter.reset()
+                self.capture.reset()
                 if self._resampler is not None:
                     self._resampler.reset()
                 self._drain_audio()
@@ -416,7 +438,12 @@ class Engine:
             try:
                 if self._resampler is None or self._resampler.orig_sr != sr:
                     self._resampler = StreamingResampler(sr, SAMPLE_RATE)
+                    self.segmenter.reset()
+                    self.capture.reset()
+                self.capture.feed(samples, sr)
                 for utt in self.segmenter.feed(self._resampler.feed(samples)):
+                    utt.raw = self.capture.slice_16k(utt.start, utt.end)
+                    utt.raw_sr = self.capture.sample_rate
                     # Stop listening right away; the worker transcribes the utterance.
                     self._set_state(State.THINKING, "Transcribing…")
                     self._commands.put(("utterance", utt))
@@ -461,6 +488,7 @@ class Engine:
             "update_fact": lambda arg: self._handle_update_fact(*arg),
             "delete_fact": self._handle_delete_fact,
             "reset_memory": self._handle_reset_memory,
+            "replay": self._handle_replay,
         }
         while True:
             name, arg = self._commands.get()
@@ -587,6 +615,14 @@ class Engine:
             raise UserError(f"Unknown voice {voice}.")
         return voice
 
+    def _voice_name(self, voice: str) -> str:
+        """Readable name of a UI voice id ("German female", or the clip name)."""
+        if voice.startswith("builtin:"):
+            spec = self.c.voices.builtins.get(voice.removeprefix("builtin:"))
+            if spec is not None:
+                return spec.name
+        return Path(voice.split(":", 1)[-1]).stem
+
     @staticmethod
     def _voice_label(voice: str) -> str:
         return voice.split(":", 1)[-1]
@@ -667,7 +703,9 @@ class Engine:
             return
         if tr.language_probability >= LANGUAGE_CONFIDENCE or self.last_language is None:
             self.last_language = tr.language
-        self._turn(text, self.last_language, "voice", stt_ms=round(tr.seconds * 1000))
+        raw = utt.raw if utt.raw is not None and len(utt.raw) else utt.audio
+        self._turn(text, self.last_language, "voice", stt_ms=round(tr.seconds * 1000),
+                   audio=raw, audio_sr=utt.raw_sr if raw is utt.raw else SAMPLE_RATE)
 
     def _handle_typed(self, text: str) -> None:
         # Typed text has no Whisper language; guess it so the reply voice matches.
@@ -676,20 +714,29 @@ class Engine:
             self.last_language = language
         self._turn(text, self.last_language, "text")
 
-    def _turn(self, text: str, language: str | None, source: str, stt_ms: int | None = None) -> None:
+    def _turn(self, text: str, language: str | None, source: str, stt_ms: int | None = None,
+              audio: np.ndarray | None = None, audio_sr: int = 0) -> None:
         if self.fatal_error or not self.c.server.running:
             raise UserError(self.fatal_error or "The language model is not loaded.")
         self._set_state(State.THINKING, "")
         self.resume = None  # talking on continues the chat
-        user = {"role": "user", "text": text, "language": language, "source": source}
+        recording = self._ensure_session()
+        user = {"id": self._new_id(), "role": "user", "text": text, "language": language, "source": source}
         self.transcript.append(user)
         self._emit({"type": "user_message", **user, "stt_ms": stt_ms})
+        if recording:  # encoded in the background while the model answers
+            tags = ["spoken", language] if source == "voice" and language else [
+                "spoken" if source == "voice" else "typed"]
+            self.recorder.add(SessionItem(user["id"], "user", "You", text, tags,
+                                          audio if source == "voice" else None, audio_sr or SAMPLE_RATE))
 
         voice = self.conversation.voice_for(language)
-        reply: dict[str, Any] = {"role": "assistant", "segments": [],
+        reply: dict[str, Any] = {"id": self._new_id(), "role": "assistant", "segments": [],
                                  "voice": self._display_voice(voice)}
         self.transcript.append(reply)
-        self._emit({"type": "assistant_start", "voice": reply["voice"]})
+        self._emit({"type": "assistant_start", "id": reply["id"], "voice": reply["voice"]})
+        spoken: list[np.ndarray] = []
+        spoken_sr = 24_000
 
         self._playback_done.clear()
         chunks = 0
@@ -706,6 +753,8 @@ class Engine:
                 pcm = (np.clip(event.audio, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
                 self._emit({"type": "audio", "index": event.index, "sample_rate": event.sample_rate,
                             "text": event.text}, pcm)
+                spoken.append(event.audio)
+                spoken_sr = event.sample_rate
                 chunks += 1
                 audio_seconds += len(event.audio) / event.sample_rate
             elif isinstance(event, TurnError):
@@ -720,7 +769,14 @@ class Engine:
             if not self._playback_done.wait(timeout=audio_seconds + PLAYBACK_WAIT_MARGIN_S):
                 log.warning("Browser did not report the end of playback; continuing.")
             time.sleep(POST_PLAYBACK_MUTE_S)
-        self._remember_turn(text, language, source, reply_text, reply["voice"])
+        if recording and reply_text:
+            c = self.character
+            show = c.show_actions_as_text if c else self.store.settings.show_actions
+            tags = [self._voice_name(reply["voice"])] if spoken and reply["voice"] else ["text only"]
+            self.recorder.add(SessionItem(
+                reply["id"], "assistant", c.name if c else "Assistant", segments_markdown(reply["segments"], show),
+                tags, np.concatenate(spoken) if spoken else None, spoken_sr))
+        self._remember_turn(user, reply, language, source, reply_text)
         self._enter_idle()
         if reply_text:
             self._maintain_memory()  # between turns; a new utterance waits in the queue
@@ -734,6 +790,7 @@ class Engine:
 
     def _clear_conversation(self) -> None:
         """Start over with the active character; with memory on, the old talk goes into the summary."""
+        self._end_session()
         c = self.character
         if c is not None and c.memory_enabled:
             old = self.memory.active_messages(c.id)
@@ -808,6 +865,8 @@ class Engine:
         char = self.characters.get(char_id or "") or self.characters.first()
         if char is None:
             raise UserError("No characters found. Create one with + New character.")
+        if self.character is not None and self.character.id != char.id:
+            self._end_session()
         self.character = char
         s = self.store.settings
         s.character = char.id
@@ -848,21 +907,27 @@ class Engine:
                 self.resume = {"messages": len(stored), "last": stored[-1].created}
             for m in stored:
                 self.conversation.history.append(ChatMessage(m.role, m.content))
+                item: dict[str, Any] = {"id": self._new_id(), "db_id": m.id, "session": m.replay_session,
+                                        "offset": m.replay_offset, "duration": m.replay_duration}
                 if m.role == "user":
-                    self.transcript.append({"role": "user", "text": m.content, "language": m.language,
-                                            "source": m.source or "text"})
+                    item.update({"role": "user", "text": m.content, "language": m.language,
+                                 "source": m.source or "text"})
                 else:
-                    self.transcript.append({"role": "assistant", "voice": m.voice,
-                                            "greeting": m.voice is None and m.content == c.greeting,
-                                            "segments": [{"kind": seg.kind, "text": seg.text}
-                                                         for seg in split_segments(m.content)]})
+                    item.update({"role": "assistant", "voice": m.voice,
+                                 "greeting": m.voice is None and m.content == c.greeting,
+                                 "segments": [{"kind": seg.kind, "text": seg.text}
+                                              for seg in split_segments(m.content)]})
+                self.transcript.append(item)
+        if self.resume is None:
+            self.memory.set_meta(c.id, "session", "")  # a fresh chat gets a new session recording
         if not self.conversation.history and c.greeting:
             self.conversation.history.append(ChatMessage("assistant", c.greeting))
-            self.transcript.append({"role": "assistant", "voice": None, "greeting": True,
-                                    "segments": [{"kind": seg.kind, "text": seg.text}
-                                                 for seg in split_segments(c.greeting)]})
+            greeting: dict[str, Any] = {"id": self._new_id(), "role": "assistant", "voice": None, "greeting": True,
+                                        "segments": [{"kind": seg.kind, "text": seg.text}
+                                                     for seg in split_segments(c.greeting)]}
+            self.transcript.append(greeting)
             if c.memory_enabled:
-                self.memory.add_message(c.id, "assistant", c.greeting)
+                greeting["db_id"] = self.memory.add_message(c.id, "assistant", c.greeting)
 
     def _reload_llm_history(self) -> None:
         """After summarizing: the LLM sees only the unsummarized messages (the transcript stays)."""
@@ -925,14 +990,19 @@ class Engine:
         self._enter_idle()
 
     # -- memory (spec §11) -----------------------------------------------------------------
-    def _remember_turn(self, user_text: str, language: str | None, source: str,
-                       reply_text: str, voice: str | None) -> None:
+    def _remember_turn(self, user: dict[str, Any], reply: dict[str, Any], language: str | None, source: str,
+                       reply_text: str) -> None:
         c = self.character
         if c is None or not c.memory_enabled or not reply_text:
             self._trim_history()
             return
-        self.memory.add_message(c.id, "user", user_text, language, source)
-        self.memory.add_message(c.id, "assistant", reply_text, language, None, voice)
+        user_db = self.memory.add_message(c.id, "user", user["text"], language, source)
+        reply_db = self.memory.add_message(c.id, "assistant", reply_text, language, None, reply["voice"])
+        for item, db_id in ((user, user_db), (reply, reply_db)):
+            with self._replay_lock:  # the recorder may already have finished this message
+                item["db_id"] = db_id
+                if item.get("session"):
+                    self.memory.set_replay(db_id, item["session"], item["offset"], item.get("duration"))
 
     def _trim_history(self) -> None:
         """Without memory the oldest exchanges drop out once the history outgrows its context share."""
@@ -1009,6 +1079,7 @@ class Engine:
 
     def _handle_reset_memory(self, _: Any = None) -> None:
         c = self._memory_character()
+        self._end_session()
         self.memory.reset(c.id)
         self._refresh_memory_context()
         self._load_history()
@@ -1018,6 +1089,67 @@ class Engine:
         if self.character is None:
             raise UserError("No character is active.")
         return self.character
+
+    # -- session recording (spec §12) -----------------------------------------------------
+    def _new_id(self) -> int:
+        self._msg_seq += 1
+        return self._msg_seq
+
+    def _recording_on(self) -> bool:
+        c = self.character
+        return bool(self.store.settings.record_sessions and (c is None or c.recording_enabled))
+
+    def _ensure_session(self) -> bool:
+        """Start (or continue) the session recording of the current chat; False when not recording."""
+        if not self._recording_on():
+            self._end_session()
+            return False
+        if self.recorder.name is not None:
+            return True
+        c = self.character
+        char_id = c.id if c else "chat"
+        name = self.memory.get_meta(char_id, "session", "")
+        if name and SessionRecorder.valid_name(name) and (self.paths.sessions / f"{name}.md").exists():
+            self.recorder.resume(name)  # a resumed chat continues its recording
+        else:
+            name = self.recorder.new_name(char_id)
+            entry = self.models.entry_for_file(self.store.settings.model)
+            header = [f"Character: {c.name} ({c.kind})" if c else "Character: Assistant",
+                      f"Model: {entry.display_name if entry else self.store.settings.model}",
+                      f"Audio: `{name}.mp3`",
+                      f"Started: {time.strftime('%Y-%m-%d %H:%M')}"]
+            self.recorder.start(name, session_title(c.name if c else "Assistant"), header)
+            self.memory.set_meta(char_id, "session", name)
+            for item in self.transcript:  # the greeting that opened this chat
+                if item.get("greeting"):
+                    self.recorder.add(SessionItem(item["id"], "assistant", c.name if c else "Assistant",
+                                                  segments_markdown(item["segments"], True), ["greeting"]))
+        self._emit_sessions()
+        return True
+
+    def _end_session(self) -> None:
+        if self.recorder.name is not None:
+            self.recorder.stop()
+            self._emit_sessions()
+
+    def _emit_sessions(self) -> None:
+        self._emit({"type": "sessions", "sessions": list_sessions(self.paths.sessions),
+                    "recording": self.recorder.files()})
+
+    def _on_recorded(self, msg_id: int, session: str, offset: float, duration: float | None) -> None:
+        """Called by the recorder thread once a message is in the session files."""
+        with self._replay_lock:
+            item = next((t for t in self.transcript if t.get("id") == msg_id), None)
+            if item is not None:
+                item.update(session=session, offset=offset, duration=duration)
+                if item.get("db_id"):
+                    self.memory.set_replay(item["db_id"], session, offset, duration)
+        self._emit({"type": "recorded", "id": msg_id, "session": session, "offset": offset, "duration": duration})
+
+    def _handle_replay(self, playing: bool) -> None:
+        self.replaying = bool(playing)
+        if self.state in IDLE_STATES:
+            self._enter_idle()
 
     # -- custom voice reference text -----------------------------------------------------
     def voice_info(self) -> dict[str, Any]:
@@ -1175,6 +1307,8 @@ class Engine:
         if "model" in changed or "context" in changed:
             self._ensure_llm()
             self.fatal_error = None
+        if "record_sessions" in changed and not s.record_sessions:
+            self._end_session()
         if self.character is not None and changed.keys() & {"voice", "show_actions", "voice_output"}:
             self._save_character_from_settings(changed)
         if changed.keys() - {"show_actions"}:

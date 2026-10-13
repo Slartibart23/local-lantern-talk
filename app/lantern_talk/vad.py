@@ -69,6 +69,10 @@ class SegmenterConfig:
 class Utterance:
     audio: np.ndarray                # 16 kHz mono float32
     duration_s: float
+    start: int = 0                   # position in the 16 kHz stream since the last reset
+    end: int = 0
+    raw: np.ndarray | None = None    # the same audio at the capture rate (for session recording)
+    raw_sr: int = 0
 
 
 @dataclass
@@ -87,6 +91,7 @@ class UtteranceSegmenter:
         self._speech_frames = 0
         self.level = 0.0  # last frame RMS, for a level meter
         self.probability = 0.0
+        self._pos = 0     # 16 kHz samples processed since the last reset
 
     @property
     def in_speech(self) -> bool:
@@ -99,6 +104,7 @@ class UtteranceSegmenter:
         self._in_speech = False
         self._silence_frames = 0
         self._speech_frames = 0
+        self._pos = 0
         self.vad.reset()
 
     def feed(self, samples: np.ndarray) -> list[Utterance]:
@@ -108,6 +114,7 @@ class UtteranceSegmenter:
         while len(self._pending) >= FRAME_SAMPLES:
             frame, self._pending = self._pending[:FRAME_SAMPLES], self._pending[FRAME_SAMPLES:]
             utt = self._process(frame)
+            self._pos += FRAME_SAMPLES
             if utt is not None:
                 out.append(utt)
         return out
@@ -152,4 +159,5 @@ class UtteranceSegmenter:
         self.vad.reset()
         if speech_ms < cfg.min_speech_ms:
             return None
-        return Utterance(audio=audio, duration_s=len(audio) / SAMPLE_RATE)
+        end = self._pos + FRAME_SAMPLES - keep_tail
+        return Utterance(audio=audio, duration_s=len(audio) / SAMPLE_RATE, start=end - len(audio), end=end)

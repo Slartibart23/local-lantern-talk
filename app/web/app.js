@@ -38,6 +38,10 @@ const app = {
   chosenQuant: {},      // quantization picked per model in the catalog
   characters: [],
   resume: null,         // unfinished chat loaded from memory: { messages, last }
+  sessions: [],         // recorded sessions (newest first)
+  recording: null,      // files of the session being recorded
+  viewing: null,        // a past session opened read-only
+  replay: null,         // the message being replayed
   endingChat: false,
   character: null,      // the active character
   memory: null,         // facts and summary of the active character
@@ -84,7 +88,18 @@ function handleEvent(msg) {
       renderTranscript(msg.transcript);
       renderVoiceInfo(msg.voice_info);
       applyCharacterState(msg);
+      app.sessions = msg.sessions || [];
+      app.recording = msg.recording || null;
+      renderSessions();
       setState(msg.state, msg.detail);
+      break;
+    case "sessions":
+      app.sessions = msg.sessions;
+      app.recording = msg.recording;
+      renderSessions();
+      break;
+    case "recorded":
+      markRecorded(msg);
       break;
     case "character":
       applyCharacterState(msg);
@@ -105,7 +120,8 @@ function handleEvent(msg) {
       addUserMessage(msg);
       break;
     case "assistant_start":
-      startAssistantMessage(msg.voice);
+      stopReplay();
+      startAssistantMessage(msg.voice, msg.id);
       resetPlayback();
       break;
     case "segment":
@@ -244,6 +260,7 @@ function addUserMessage(msg) {
   hideEmptyHint();
   const el = document.createElement("div");
   el.className = "msg user";
+  if (msg.id != null) el.dataset.id = msg.id;
   const bubble = document.createElement("div");
   bubble.className = "bubble";
   bubble.textContent = msg.text;
@@ -258,15 +275,17 @@ function addUserMessage(msg) {
     t.textContent = `STT ${msg.stt_ms} ms`;
     meta.append(t);
   }
+  addReplayButton(meta, msg);
   el.append(bubble, meta);
   $("messages").append(el);
   scrollToEnd(true);
 }
 
-function startAssistantMessage(voice) {
+function startAssistantMessage(voice, id) {
   hideEmptyHint();
   const el = document.createElement("div");
   el.className = "msg ai streaming";
+  if (id != null) el.dataset.id = id;
   const bubble = document.createElement("div");
   bubble.className = "bubble";
   const meta = document.createElement("div");
@@ -332,10 +351,12 @@ function renderTranscript(items) {
   for (const item of items) {
     if (item.role === "user") addUserMessage(item);
     else {
-      startAssistantMessage(item.voice);
-      if (item.greeting) app.currentAi.meta.textContent = "greeting";
+      startAssistantMessage(item.voice, item.id);
+      const meta = app.currentAi.meta;
+      if (item.greeting) meta.textContent = "greeting";
       for (const seg of item.segments) renderSegment(app.currentAi, seg.kind, seg.text);
       finishAssistantMessage(null);
+      addReplayButton(meta, item);
     }
   }
   scrollToEnd(true);
@@ -625,6 +646,7 @@ function applySettings() {
   $("match-language").checked = !!s.match_language;
   $("mic-enabled").checked = !!s.mic_enabled;
   $("show-actions").checked = !!s.show_actions;
+  $("record-sessions").checked = !!s.record_sessions;
   $("voice-select").value = s.voice;
   $("voice-select").disabled = false;
   $("end-silence").value = s.end_silence_ms;
@@ -929,6 +951,7 @@ function applyCharacterState(msg) {
   renderCharacters();
   renderMemory();
   renderResume();
+  renderRecording();
 }
 
 // ---------------------------------------------------------------- end chat / continue last chat
@@ -967,6 +990,160 @@ function renderResume() {
 function hideResume() {
   app.resume = null;
   renderResume();
+}
+
+// ---------------------------------------------------------------- session recording & replay (spec §12)
+
+function fmtOffset(seconds) {
+  const s = Math.max(0, seconds);
+  const m = Math.floor(s / 60);
+  return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+}
+
+function addReplayButton(meta, item) {
+  if (!meta || !item || !item.session || item.offset == null) return;
+  meta.querySelectorAll(".replay, .replay-time").forEach((n) => n.remove());
+  const label = fmtOffset(item.offset);
+  if (item.duration == null) {
+    meta.append(el("span", { class: "replay-time", title: "Position in the session recording (no audio)" }, label));
+    return;
+  }
+  const btn = el("button", { type: "button", class: "replay", title: `Play the recording from ${label}`,
+                             "aria-label": `Replay from ${label}` }, `▶ ${label}`);
+  btn.onclick = () => replay(btn, item.session, item.offset, item.duration, label);
+  meta.append(btn);
+}
+
+function markRecorded(msg) {
+  const node = document.querySelector(`#messages .msg[data-id="${msg.id}"]`);
+  if (node) addReplayButton(node.querySelector(".meta"), msg);
+  const s = app.sessions.find((x) => x.name === msg.session);
+  if (s && msg.duration != null) {  // keep the length shown in the session list current
+    s.duration = Math.max(s.duration, msg.offset + msg.duration);
+    renderSessions();
+  }
+}
+
+function replay(btn, session, offset, duration, label) {
+  const playingThis = app.replay && app.replay.btn === btn;
+  stopReplay();
+  if (playingThis) return;
+  const audio = $("replay-audio");
+  app.replay = { btn, label, end: duration != null ? offset + duration + 0.2 : null };
+  btn.classList.add("playing");
+  btn.textContent = `■ ${label}`;
+  send({ type: "replay", playing: true });  // keeps the microphone muted while it plays
+  // A fresh URL each time: the current session's file keeps growing.
+  audio.addEventListener("loadedmetadata", () => {
+    if (app.replay === null || app.replay.btn !== btn) return;
+    audio.currentTime = offset;
+    audio.play().catch(() => { toast("The recording could not be played."); stopReplay(); });
+  }, { once: true });
+  audio.src = `/api/sessions/${encodeURIComponent(session)}.mp3?t=${Date.now()}`;
+  audio.load();
+}
+
+function stopReplay() {
+  const r = app.replay;
+  if (!r) return;
+  app.replay = null;
+  const audio = $("replay-audio");
+  audio.pause();
+  r.btn.classList.remove("playing");
+  r.btn.textContent = `▶ ${r.label}`;
+  send({ type: "replay", playing: false });
+}
+
+function onReplayTime() {
+  const r = app.replay;
+  if (r && r.end != null && $("replay-audio").currentTime >= r.end) stopReplay();
+}
+
+function renderSessions() {
+  const list = $("session-list");
+  list.innerHTML = "";
+  const current = app.recording && app.recording.name;
+  $("no-sessions").hidden = app.sessions.length > 0;
+  for (const s of app.sessions.slice(0, 15)) {
+    const live = s.name === current;
+    const sub = [fmtOffset(s.duration)];
+    if (live) sub.push("● recording");
+    const btn = el("button", { type: "button", class: "session-item" + (app.viewing && app.viewing.name === s.name ? " active" : ""),
+                               title: `Open ${s.name}` },
+      el("span", { class: "session-name" }, s.title),
+      el("span", { class: "session-sub" + (live ? " live" : "") }, sub.join(" · ")));
+    btn.onclick = () => openSession(s.name);
+    list.append(el("li", {}, btn));
+  }
+  renderRecording();
+}
+
+function renderRecording() {
+  const r = app.recording;
+  const c = app.character;
+  const on = !!app.settings.record_sessions;
+  $("rec-indicator").hidden = !r;
+  if (r) $("rec-indicator").title = `Recording to user_data\\sessions\\${r.mp3}`;
+  let text;
+  if (r) text = `Recording to ${r.mp3} and ${r.md} in user_data\\sessions.`;
+  else if (!on) text = "Recording is off.";
+  else if (c && !c.recording_enabled) text = `${c.name} is not recorded (see the character settings).`;
+  else text = "Recording starts with your next message.";
+  $("recording-files").textContent = text;
+}
+
+async function openSession(name) {
+  let data;
+  try {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(name)}`);
+    if (!r.ok) throw new Error(r.statusText);
+    data = await r.json();
+  } catch {
+    toast("This session could not be opened.");
+    return;
+  }
+  stopReplay();
+  app.viewing = data;
+  $("app").classList.remove("show-left");
+  $("session-title").textContent = data.title || name;
+  const box = $("session-messages");
+  box.innerHTML = "";
+  for (const e of data.entries) box.append(sessionMessage(e, data.audio ? name : null));
+  if (!data.entries.length) box.append(el("div", { class: "empty" }, "This session has no messages."));
+  document.body.classList.add("viewing-session");
+  $("session-view").hidden = false;
+  box.scrollTop = 0;
+  renderSessions();
+  $("close-session").focus();
+}
+
+function sessionMessage(e, session) {
+  const node = el("div", { class: `msg ${e.role === "user" ? "user" : "ai"}` });
+  const bubble = el("div", { class: "bubble" });
+  const meta = el("div", { class: "meta" });
+  if (e.role === "user") {
+    bubble.textContent = e.text;
+    meta.textContent = e.source === "voice" ? "spoken" : "typed";
+  } else {
+    const target = { bubble, lastSpeech: null };
+    for (const seg of e.segments) renderSegment(target, seg.kind, seg.text);
+    if (!bubble.textContent.trim()) bubble.textContent = "…";
+    const tag = (e.tags || []).find((t) => !/^\d+(\.\d+)? s$/.test(t) && t !== "no audio");
+    meta.textContent = e.greeting ? "greeting" : (tag || "");
+  }
+  node.append(bubble, meta);
+  if (session) addReplayButton(meta, { ...e, session });
+  return node;
+}
+
+function closeSession() {
+  stopReplay();
+  app.viewing = null;
+  document.body.classList.remove("viewing-session");
+  $("session-view").hidden = true;
+  renderSessions();
+  scrollToEnd(true);
+  $("text-input").focus();
 }
 
 // ---------------------------------------------------------------- misc UI
@@ -1109,6 +1286,11 @@ function init() {
   $("voice-file").onchange = (e) => uploadVoice(e.target);
   $("new-char").onclick = () => openEditor(null);
   $("quit-app").onclick = quitApp;
+  $("close-session").onclick = closeSession;
+  $("open-sessions").onclick = () => send({ type: "open_sessions_folder" });
+  $("record-sessions").onchange = (e) => changeSetting("record_sessions", e.target.checked);
+  $("replay-audio").ontimeupdate = onReplayTime;
+  $("replay-audio").onended = stopReplay;
   $("edit-active-char").onclick = () => app.character && openEditor(app.character.id);
   $("char-form").onsubmit = saveEditor;
   $("close-editor").onclick = closeEditor;
@@ -1133,6 +1315,8 @@ function init() {
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
       if (!$("char-editor").hidden) closeEditor();
+      else if (app.replay) stopReplay();
+      else if (app.viewing) closeSession();
       else if (!$("catalog").hidden) closeCatalog();
       $("app").classList.remove("show-left", "show-right");
     }

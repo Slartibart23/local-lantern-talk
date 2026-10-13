@@ -27,6 +27,9 @@ class Settings:
     num_step: int = 32              # OmniVoice diffusion steps (16 fast ... 64 best)
     tts_precision: str = "fp16"     # OmniVoice precision: fp16 | bf16 | fp32
     context: int = 8192
+    record_sessions: bool = True        # session recording (spec §12); characters can opt out
+    session_gap_ms: int = 500           # pause between turns in the session MP3
+    session_bitrate_kbps: int = 64      # mono MP3, about 29 MB per hour
     hardware_profile: str = ""          # detected by the installer (high | mid | low | unsupported)
     hardware_profile_override: str = "" # user's choice; "" = use the detected profile
     gpu_name: str = ""

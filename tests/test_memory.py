@@ -109,3 +109,24 @@ def test_memory_context() -> None:
     text = memory_context("We met in the tavern.", [Fact(1, "The user is called Tom.", "llm")])
     assert "- The user is called Tom." in text and "We met in the tavern." in text
     assert memory_context("", []) == ""
+
+
+def test_replay_info_and_migration_of_old_databases(tmp_path: Path) -> None:
+    import sqlite3
+
+    db = tmp_path / "old.db"
+    con = sqlite3.connect(str(db))
+    con.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, character TEXT NOT NULL, "
+                "role TEXT NOT NULL, content TEXT NOT NULL, language TEXT, source TEXT, voice TEXT, "
+                "created REAL NOT NULL, summarized INTEGER NOT NULL DEFAULT 0)")
+    con.execute("INSERT INTO messages (character, role, content, created) VALUES ('lena', 'user', 'alt', 1)")
+    con.commit()
+    con.close()
+    mem = MemoryStore(db)
+    old = mem.active_messages("lena")[0]
+    assert old.content == "alt" and old.replay_session is None
+    mid = mem.add_message("lena", "assistant", "neu")
+    mem.set_replay(mid, "2026-10-13_1538_lena", 12.5, 3.25)
+    new = mem.active_messages("lena")[1]
+    assert (new.replay_session, new.replay_offset, new.replay_duration) == ("2026-10-13_1538_lena", 12.5, 3.25)
+    mem.close()

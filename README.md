@@ -76,6 +76,10 @@ One browser tab is active at a time; opening a second tab takes over.
   See [docs/models.md](docs/models.md).
 - **Microphone off / voice output off** unload Whisper + VAD / OmniVoice from VRAM;
   with both off the app is a pure text chat.
+- **Session recording**: each chat is saved as one MP3 of the whole dialogue plus a
+  Markdown transcript with timestamps in `user_data\sessions\`. Every message has a
+  replay button, and past sessions can be reopened from *Recent sessions*. Recording can
+  be turned off globally or per character. See [docs/sessions.md](docs/sessions.md).
 - **Ending a chat**: *End chat* (top right of the conversation) ends the current chat;
   the character keeps it in its memory and a new chat starts with its greeting. Pick
   another character on the left to talk to someone else. After a restart (or when you

@@ -56,6 +56,9 @@ class Message:
     source: str | None
     voice: str | None
     created: float
+    replay_session: str | None = None   # session recording that contains this message (spec §12.3)
+    replay_offset: float | None = None
+    replay_duration: float | None = None
 
 
 @dataclass(frozen=True)
@@ -73,6 +76,10 @@ class MemoryStore:
         self._lock = threading.Lock()
         self._db = sqlite3.connect(str(db_path), check_same_thread=False)
         self._db.executescript(_SCHEMA)
+        columns = {row[1] for row in self._db.execute("PRAGMA table_info(messages)")}
+        for name, kind in (("replay_session", "TEXT"), ("replay_offset", "REAL"), ("replay_duration", "REAL")):
+            if name not in columns:  # databases from before session recording
+                self._db.execute(f"ALTER TABLE messages ADD COLUMN {name} {kind}")
         self._db.commit()
 
     def close(self) -> None:
@@ -100,9 +107,13 @@ class MemoryStore:
     def active_messages(self, character: str) -> list[Message]:
         """Messages not yet folded into the summary, oldest first."""
         rows = self._query(
-            "SELECT id, role, content, language, source, voice, created FROM messages "
-            "WHERE character = ? AND summarized = 0 ORDER BY id", (character,))
+            "SELECT id, role, content, language, source, voice, created, replay_session, replay_offset, "
+            "replay_duration FROM messages WHERE character = ? AND summarized = 0 ORDER BY id", (character,))
         return [Message(*r) for r in rows]
+
+    def set_replay(self, message_id: int, session: str, offset: float, duration: float | None) -> None:
+        self._execute("UPDATE messages SET replay_session = ?, replay_offset = ?, replay_duration = ? WHERE id = ?",
+                      (session, offset, duration, message_id))
 
     def mark_summarized(self, character: str, up_to_id: int) -> None:
         self._execute("UPDATE messages SET summarized = 1 WHERE character = ? AND id <= ?", (character, up_to_id))

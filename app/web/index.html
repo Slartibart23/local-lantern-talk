@@ -43,7 +43,8 @@
       </section>
       <section>
         <h2>Recent sessions</h2>
-        <p class="muted">No recorded sessions yet.</p>
+        <ul class="session-list" id="session-list"></ul>
+        <p class="muted small" id="no-sessions">No recorded sessions yet.</p>
       </section>
       <div class="quit-area">
         <button type="button" id="quit-app" class="secondary quit-btn">
@@ -63,6 +64,7 @@
           <div class="chat-name" id="header-name">Lantern</div>
           <div class="chat-sub"><span id="header-role">Assistant</span> · <span id="header-voice">—</span></div>
         </div>
+        <span class="rec" id="rec-indicator" hidden><span aria-hidden="true">●</span> REC</span>
         <button type="button" class="icon-btn labeled end-chat" id="end-chat" title="End this chat and start a new one">
           <svg aria-hidden="true"><use href="#i-end"/></svg><span>End chat</span>
         </button>
@@ -80,6 +82,17 @@
           <button type="button" id="resume-continue" class="secondary">Continue</button>
           <button type="button" id="resume-new" class="primary">Start new chat</button>
         </span>
+      </div>
+
+      <div id="session-view" class="session-view" hidden>
+        <div class="session-bar">
+          <div>
+            <div class="session-title" id="session-title"></div>
+            <div class="small muted">Recorded session · read-only · ▶ plays the recording from that point</div>
+          </div>
+          <button type="button" id="close-session" class="secondary">Back to chat</button>
+        </div>
+        <div id="session-messages" class="messages" role="log" aria-label="Recorded messages"></div>
       </div>
 
       <div id="messages" class="messages" role="log" aria-live="polite" aria-label="Messages">
@@ -210,7 +223,10 @@
 
       <section>
         <h2>Session</h2>
+        <label class="switch"><input type="checkbox" id="record-sessions"><span>Record sessions (one MP3 + transcript per chat)</span></label>
+        <p id="recording-files" class="hint"></p>
         <label class="switch"><input type="checkbox" id="show-actions"><span>Show actions as text (never spoken)</span></label>
+        <button type="button" id="open-sessions" class="secondary">Open session folder</button>
       </section>
     </aside>
   </div>
@@ -335,6 +351,7 @@
     </form>
   </div>
 
+  <audio id="replay-audio" preload="none" hidden></audio>
   <div id="toast" class="toast" role="alert" hidden></div>
 </body>
 </html>

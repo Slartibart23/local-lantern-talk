@@ -182,3 +182,30 @@ def test_voice_upload_rejects_foreign_origin(client: TestClient, origin: str | N
     r = client.post("/api/voices", params={"filename": "me.wav"}, content=b"x", headers=headers)
     assert r.status_code == 403
     assert not any(c[0] == "add_voice" for c in client.engine.calls)  # type: ignore[attr-defined]
+
+
+def test_session_files_are_served_only_to_the_app(tmp_path: Path) -> None:
+    import shutil
+
+    root = tmp_path / "root"
+    shutil.copytree(ROOT / "app" / "web", root / "app" / "web")
+    paths = Paths(root)
+    paths.sessions.mkdir(parents=True)
+    (paths.sessions / "2026-10-13_1538_lena.md").write_text(
+        "# Lena — 13 Oct 2026, 15:38\n\n### [00:00.0] Lena · greeting · no audio\n\nHallo!\n\n"
+        "### [00:00.5] You · spoken · de · 1.2 s\n\nHi.\n", encoding="utf-8")
+    (paths.sessions / "2026-10-13_1538_lena.mp3").write_bytes(b"\xff\xf3" + b"\x00" * 200)
+    app = create_app(paths, PORT, engine_factory=lambda emit: FakeEngine(emit))
+    with TestClient(app, base_url=BASE) as c:
+        listed = c.get("/api/sessions").json()
+        assert listed[0]["name"] == "2026-10-13_1538_lena" and listed[0]["character"] == "lena"
+        data = c.get("/api/sessions/2026-10-13_1538_lena").json()
+        assert data["audio"] and [e["role"] for e in data["entries"]] == ["assistant", "user"]
+        assert data["entries"][1]["duration"] == 1.2
+        r = c.get("/api/sessions/2026-10-13_1538_lena.mp3", headers={"range": "bytes=0-9"})
+        assert r.status_code == 206 and len(r.content) == 10
+        assert c.get("/api/sessions/..%2Fsettings").status_code == 404
+        assert c.get("/api/sessions/missing.mp3").status_code == 404
+        foreign = {"sec-fetch-site": "cross-site"}
+        assert c.get("/api/sessions/2026-10-13_1538_lena.mp3", headers=foreign).status_code == 403
+        assert c.get("/api/sessions", headers=foreign).status_code == 403

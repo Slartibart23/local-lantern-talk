@@ -48,6 +48,7 @@ from .engine import MAX_VOICE_UPLOAD_BYTES, Engine, UserError, build_components
 from .gpu import query_gpu
 from .logging_setup import setup_logging
 from .paths import Paths, apply_portable_env, get_paths, path_warnings
+from .recorder import SessionRecorder, list_sessions, parse_transcript
 from .settings import SettingsStore
 
 log = logging.getLogger(__name__)
@@ -144,6 +145,42 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
             return JSONResponse({"error": str(exc)}, status_code=400)
         return JSONResponse(result)
 
+    def same_site(request: Request) -> bool:
+        # Recordings are personal: another web page must not even embed them (spec §12).
+        return request.headers.get("sec-fetch-site", "same-origin") in ("same-origin", "none")
+
+    def session_file(name: str, suffix: str) -> Any:
+        if not SessionRecorder.valid_name(name):
+            return None
+        path = paths.sessions / f"{name}{suffix}"
+        return path if path.is_file() else None
+
+    @app.get("/api/sessions")
+    async def sessions(request: Request) -> JSONResponse:
+        if not same_site(request):
+            return JSONResponse({"error": "Forbidden"}, status_code=403)
+        return JSONResponse(await asyncio.to_thread(list_sessions, paths.sessions))
+
+    @app.get("/api/sessions/{name}.mp3")
+    async def session_audio(name: str, request: Request) -> Any:
+        path = session_file(name, ".mp3")
+        if not same_site(request):
+            return JSONResponse({"error": "Forbidden"}, status_code=403)
+        if path is None:
+            return JSONResponse({"error": "Not found"}, status_code=404)
+        return FileResponse(path, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/sessions/{name}")
+    async def session_transcript(name: str, request: Request) -> JSONResponse:
+        path = session_file(name, ".md")
+        if not same_site(request):
+            return JSONResponse({"error": "Forbidden"}, status_code=403)
+        if path is None:
+            return JSONResponse({"error": "Not found"}, status_code=404)
+        data = await asyncio.to_thread(lambda: parse_transcript(path.read_text(encoding="utf-8")))
+        has_audio = (paths.sessions / f"{name}.mp3").is_file()
+        return JSONResponse({"name": name, "audio": has_audio, **data})
+
     app.mount("/static", StaticFiles(directory=paths.web), name="static")
     if paths.fonts.is_dir():
         app.mount("/fonts", StaticFiles(directory=paths.fonts), name="fonts")
@@ -229,6 +266,10 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
                     engine.delete_fact(int(data.get("id", 0)))
                 elif kind == "reset_memory":
                     engine.reset_memory()
+                elif kind == "replay":
+                    engine.set_replaying(bool(data.get("playing")))
+                elif kind == "open_sessions_folder":
+                    await asyncio.to_thread(engine.open_sessions_folder)
                 elif kind == "refresh":
                     await ws.send_json(engine.snapshot())
                 elif kind == "quit":
