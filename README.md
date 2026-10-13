@@ -4,8 +4,8 @@ Fully local, portable Windows app for spoken (or typed) conversations with a loc
 large language model that answers in a synthesized — optionally cloned — voice.
 Assistant use and character roleplay, with per-character memory and session recording.
 
-> **Status: M3 (portable installer).** The model catalog, characters, memory and session
-> recording follow in later milestones (see `SPEC.md` §17).
+> **Status: M4 (model catalog).** Characters, memory and session recording follow in
+> later milestones (see `SPEC.md` §17).
 
 ## Requirements
 
@@ -63,7 +63,10 @@ One browser tab is active at a time; opening a second tab takes over.
   recording and how to provide the transcript without Whisper: [docs/voices.md](docs/voices.md).
 - **Speech quality**: synthesis steps (16–64) and precision (fp16 / bf16 / fp32).
   Default: 32 steps, fp16. On an RTX 5090, 64 steps add about 1 s before each reply.
-- **Language model**: any GGUF file in `models\llm\` can be selected.
+- **Language model**: *Change model…* opens the catalog — German-focused assistant and
+  roleplay models (censored and uncensored) with one-click download, automatic choice of
+  the quantization that fits your GPU, and your own models from Hugging Face or a link.
+  See [docs/models.md](docs/models.md).
 - **Microphone off / voice output off** unload Whisper + VAD / OmniVoice from VRAM;
   with both off the app is a pure text chat.
 - Actions like `*smiles*` are never spoken; they are shown dimmed with a

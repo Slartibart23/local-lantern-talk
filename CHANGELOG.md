@@ -44,12 +44,26 @@ project uses [Semantic Versioning](https://semver.org/).
 - `docs/voices.md`: clip length limits, what makes a good reference recording, and how
   to provide the transcript yourself instead of using Whisper.
 - Git pre-commit hook and test that keep personal data and binaries out of the repository.
+- Model catalog (M4): 9 German-focused models (Gemma 4, Mistral Small 3.2 and roleplay
+  finetunes, censored and uncensored) in `config/model_catalog.yaml`; one-click download
+  of a single GGUF file with progress, cancel and resume, loaded automatically when done;
+  quantization chosen from the hardware profile and the free GPU memory; fits / partly on
+  CPU / too big badges; custom models from a Hugging Face repo id, page/file link or direct
+  URL; hand-copied GGUF files detected and labelable; delete downloaded models.
+- Exact GPU/CPU split from llama-fit-params (incl. mixture-of-experts expert offload),
+  with a notice when part of the model runs on the CPU; the free-memory estimate is
+  corrected for Windows, where CUDA over-reports free VRAM.
+- Per-component VRAM bar (language model, Whisper, OmniVoice, other).
+- `docs/models.md`.
 
 ### Changed
+- The installer's starter model is Gemma 4 12B (Apache-2.0) instead of Gemma 3 12B.
 - No language model is downloaded automatically any more; the installer offers the
   starter model instead (spec §4).
 
 ### Fixed
+- Model reasoning is never spoken: thinking is disabled in the chat template and
+  `<think>` / `[THINK]` blocks are filtered by the sanitizer (Qwen3 spoke its reasoning).
 - `llama-server.exe` kept running (holding ~9 GB VRAM) after the console window was
   closed; child processes are now tied to the app with a Windows job object.
 - First reply after start was ~1.3 s slower: OmniVoice is now warmed up while loading.
