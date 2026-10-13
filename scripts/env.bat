@@ -34,6 +34,9 @@ set "NUMBA_CACHE_DIR=%LLT_CACHE%\numba"
 set "MPLCONFIGDIR=%LLT_CACHE%\matplotlib"
 set "TRITON_CACHE_DIR=%LLT_CACHE%\triton"
 set "CUDA_CACHE_PATH=%LLT_CACHE%\nv_compute"
+rem Kernels JIT-compiled for newer GPUs (e.g. the CUDA 12 llama.cpp build on RTX 50)
+rem are cached here; the default 256 MB limit is too small to keep them all.
+set "CUDA_CACHE_MAXSIZE=4294967296"
 set "GRADIO_TEMP_DIR=%LLT_ROOT%\tmp\gradio"
 set "GRADIO_ANALYTICS_ENABLED=False"
 set "TMP=%LLT_ROOT%\tmp"

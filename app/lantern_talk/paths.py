@@ -149,6 +149,7 @@ class Paths:
             "MPLCONFIGDIR": str(c / "matplotlib"),
             "TRITON_CACHE_DIR": str(c / "triton"),
             "CUDA_CACHE_PATH": str(c / "nv_compute"),
+            "CUDA_CACHE_MAXSIZE": str(4 * 2**30),  # keep all JIT-compiled kernels (default 256 MB)
             "GRADIO_TEMP_DIR": str(self.tmp / "gradio"),
             "GRADIO_ANALYTICS_ENABLED": "False",
             "TMP": str(self.tmp),

@@ -43,6 +43,80 @@ function Expand-Zip([string]$Zip, [string]$Target) {
     Expand-Archive -LiteralPath $Zip -DestinationPath $Target -Force
 }
 
+function ConvertTo-Version([string]$Text) {
+    <# "616.92" -> [version]616.92; "13.0" -> [version]13.0; $null if unparsable. #>
+    $m = [regex]::Match("$Text", '\d+(\.\d+)+')
+    if ($m.Success) { return [version]$m.Value }
+    return $null
+}
+
+function Get-NvidiaDriver {
+    <# Returns @{ Name; Driver = [version]; Cuda = [version] or $null }, or $null without an NVIDIA driver. #>
+    $smi = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
+    if (-not $smi) { return $null }
+    # Collect all output first: piping a native command into Select-Object -First
+    # stops it early and leaves $LASTEXITCODE unreliable.
+    $lines = @(& $smi.Source --query-gpu=name,driver_version --format=csv,noheader 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $lines.Count -eq 0 -or -not $lines[0]) { return $null }
+    $name, $driverText = $lines[0] -split ',\s*', 2
+    # The nvidia-smi banner shows the highest CUDA version the driver supports
+    # ("CUDA Version: 12.8" on older drivers, "CUDA UMD Version: 13.4" on newer ones).
+    $banner = (& $smi.Source 2>$null) -join "`n"
+    $cuda = ConvertTo-Version ([regex]::Match($banner, 'CUDA (?:UMD )?Version:\s*([\d.]+)').Groups[1].Value)
+    return @{ Name = $name.Trim(); Driver = (ConvertTo-Version $driverText); Cuda = $cuda }
+}
+
+function Select-LlamaBuild($Gpu, $Builds) {
+    <# First build (in order of preference) whose minimum driver and CUDA version are met. #>
+    foreach ($b in $Builds) {
+        $driverOk = $Gpu.Driver -ge [version]$b.min_driver
+        $cudaOk = ($null -eq $Gpu.Cuda) -or ($Gpu.Cuda -ge [version]$b.min_cuda)
+        if ($driverOk -and $cudaOk) { return $b }
+    }
+    return $null
+}
+
+function Get-CleanEnvironmentPath {
+    <# PATH without any CUDA Toolkit, to prove the bundled DLLs are sufficient. #>
+    return "$env:SystemRoot\System32;$env:SystemRoot"
+}
+
+function Test-LlamaCuda([string]$LlamaDir) {
+    <# True if llama-server finds a CUDA device using only the DLLs in $LlamaDir (and the driver). #>
+    $saved = @{ PATH = $env:PATH; CUDA_PATH = $env:CUDA_PATH }
+    $savedVersioned = Get-ChildItem Env: | Where-Object Name -like 'CUDA_PATH_V*'
+    try {
+        $env:PATH = Get-CleanEnvironmentPath
+        Remove-Item Env:CUDA_PATH -ErrorAction SilentlyContinue
+        $savedVersioned | ForEach-Object { Remove-Item "Env:$($_.Name)" }
+        $out = (& (Join-Path $LlamaDir 'llama-server.exe') --list-devices 2>&1) -join "`n"
+    } finally {
+        $env:PATH = $saved.PATH
+        if ($saved.CUDA_PATH) { $env:CUDA_PATH = $saved.CUDA_PATH }
+        $savedVersioned | ForEach-Object { Set-Item "Env:$($_.Name)" $_.Value }
+    }
+    return $out -match 'CUDA\d+:'
+}
+
+# --- 0. NVIDIA driver -----------------------------------------------------------
+Write-Step 'NVIDIA GPU and driver'
+$MinDriver = [version]$Pins.nvidia.min_driver
+$Gpu = Get-NvidiaDriver
+if (-not $Gpu -or -not $Gpu.Driver) {
+    Write-Host '    No NVIDIA GPU / driver found (nvidia-smi is missing or failed).' -ForegroundColor Red
+    Write-Host '    Local Lantern Talk needs an NVIDIA RTX GPU with an up-to-date driver:'
+    Write-Host "    $($Pins.nvidia.driver_download_url)"
+    throw 'No NVIDIA driver found.'
+}
+$cudaText = if ($Gpu.Cuda) { "CUDA $($Gpu.Cuda)" } else { 'CUDA version unknown' }
+if ($Gpu.Driver -lt $MinDriver) {
+    Write-Host "    $($Gpu.Name): driver $($Gpu.Driver) ($cudaText) is too old." -ForegroundColor Red
+    Write-Host "    Driver $MinDriver or newer is required (CUDA $($Pins.nvidia.min_cuda)). Update it here:"
+    Write-Host "    $($Pins.nvidia.driver_download_url)"
+    throw "NVIDIA driver $($Gpu.Driver) is older than the required $MinDriver."
+}
+Write-Ok "$($Gpu.Name), driver $($Gpu.Driver) ($cudaText)"
+
 # --- 1. uv ------------------------------------------------------------------
 Write-Step 'uv (portable Python manager)'
 $UvDir = Join-Path $Runtime 'uv'
@@ -72,27 +146,38 @@ Write-Ok 'Python environment ready'
 
 # --- 3. llama.cpp -----------------------------------------------------------
 Write-Step "llama.cpp ($($Pins.llama_cpp.tag))"
-$driver = 0.0
-try {
-    $line = (& nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>$null | Select-Object -First 1)
-    $driver = [double]::Parse($line.Trim(), [Globalization.CultureInfo]::InvariantCulture)
-} catch { Write-Host '    Could not read the NVIDIA driver version; using the CUDA 12.4 build.' }
-$buildName = if ($driver -ge $Pins.llama_cpp.builds.'cuda-13.4'.min_driver) { 'cuda-13.4' } else { 'cuda-12.4' }
-$build = $Pins.llama_cpp.builds.$buildName
+$build = Select-LlamaBuild $Gpu $Pins.llama_cpp.builds
+if ($env:LLT_LLAMA_BUILD) {
+    # Troubleshooting / testing override, e.g. set LLT_LLAMA_BUILD=cuda-12.4
+    $build = $Pins.llama_cpp.builds | Where-Object { $_.name -eq $env:LLT_LLAMA_BUILD } | Select-Object -First 1
+    if (-not $build) { throw "LLT_LLAMA_BUILD=$env:LLT_LLAMA_BUILD is not a known build." }
+    Write-Host "    LLT_LLAMA_BUILD is set: using the $($build.name) build." -ForegroundColor Yellow
+}
+if (-not $build) { throw "No llama.cpp build supports driver $($Gpu.Driver) ($cudaText)." }
+if (-not $env:LLT_LLAMA_BUILD -and $build.name -ne $Pins.llama_cpp.builds[0].name) {
+    Write-Host "    Driver $($Gpu.Driver) is older than $($Pins.llama_cpp.builds[0].min_driver): using the $($build.name) build." -ForegroundColor Yellow
+    Write-Host "    Updating the NVIDIA driver and re-running install.bat switches to the faster $($Pins.llama_cpp.builds[0].name) build."
+}
 $LlamaDir = Join-Path $Runtime 'llama.cpp'
-$LlamaMarker = Join-Path $LlamaDir ".version-$($Pins.llama_cpp.tag)-$buildName"
+$LlamaMarker = Join-Path $LlamaDir ".version-$($Pins.llama_cpp.tag)-$($build.name)"
 if (-not (Test-Path -LiteralPath $LlamaMarker)) {
     $zip = Join-Path $Downloads $build.zip
     $cudart = Join-Path $Downloads "$($Pins.llama_cpp.tag)-$($build.cudart)"
     Get-File ($Pins.llama_cpp.base_url + $build.zip) $zip
+    # The CUDA runtime DLLs (cudart, cuBLAS) come as a separate zip; they go next to
+    # llama-server.exe so no CUDA Toolkit installation is needed.
     Get-File ($Pins.llama_cpp.base_url + $build.cudart) $cudart
     if (Test-Path -LiteralPath $LlamaDir) { Remove-Item -Recurse -Force -LiteralPath $LlamaDir }
     Expand-Zip $zip $LlamaDir
     Expand-Zip $cudart $LlamaDir
+    $missing = @('llama-server.exe') + $build.required_dlls | Where-Object { -not (Test-Path -LiteralPath (Join-Path $LlamaDir $_)) }
+    if ($missing) { throw "llama.cpp files missing after extraction: $($missing -join ', ')" }
+    if (-not (Test-LlamaCuda $LlamaDir)) {
+        throw "llama.cpp ($($build.name)) could not use the GPU. See logs or run runtime\llama.cpp\llama-server.exe --list-devices."
+    }
     New-Item -ItemType File -Path $LlamaMarker | Out-Null
 }
-if (-not (Test-Path -LiteralPath (Join-Path $LlamaDir 'llama-server.exe'))) { throw 'llama-server.exe missing after extraction.' }
-Write-Ok "llama.cpp $($Pins.llama_cpp.tag) ($buildName, driver $driver)"
+Write-Ok "llama.cpp $($Pins.llama_cpp.tag) ($($build.name)), CUDA runtime bundled"
 
 # --- 4. Models ----------------------------------------------------------------
 Write-Step 'Core models (Whisper, OmniVoice, Silero VAD) and the M1 test LLM'

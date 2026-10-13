@@ -10,8 +10,27 @@ Assistant use and character roleplay, with per-character memory and session reco
 ## Requirements
 
 - Windows 10 / 11, 64-bit
-- NVIDIA RTX GPU with 10 GB+ VRAM (24 GB+ recommended) and a driver supporting CUDA 12.8
+- NVIDIA RTX GPU with 10 GB+ VRAM (24 GB+ recommended)
+- **NVIDIA driver 570.65 or newer** (the first Windows driver with CUDA 12.8 support);
+  driver **581 or newer** is recommended
 - ~30 GB free disk space on an NTFS or exFAT drive
+
+You do **not** need to install the CUDA Toolkit: the installer downloads the CUDA
+runtime libraries into `runtime\` (PyTorch ships its own, and llama.cpp gets the
+matching cudart / cuBLAS DLLs next to `llama-server.exe`).
+
+The installer picks the llama.cpp build from your driver version:
+
+| Driver | llama.cpp build |
+|---|---|
+| 581 or newer | CUDA 13 (fastest) |
+| 570.65 – 580.x | CUDA 12 (fallback) |
+| older than 570.65 | not supported — the installer stops and links to the driver download |
+
+On RTX 50-series GPUs the CUDA 12 build compiles its GPU kernels once on first
+start (about 12 s extra on an RTX 5090) and caches them in `runtime\cache\`; it is
+also somewhat slower than the CUDA 13 build. After a
+driver update, re-run `install.bat` to switch to the CUDA 13 build.
 
 ## M1 quick start
 
