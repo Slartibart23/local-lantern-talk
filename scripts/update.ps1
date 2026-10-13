@@ -6,7 +6,9 @@
     Called by update.bat after scripts\env.bat has set up the portable environment.
 
     1. App code: "git pull" when the program folder is a git checkout, otherwise the
-       latest release is downloaded from GitHub and copied over the program files.
+       latest release (or, while there is none, the main branch) is downloaded from
+       GitHub and copied over the program files. A private repository needs a GitHub
+       login with the GitHub CLI (gh auth login).
     2. Dependencies: install.ps1 -UpdateOnly brings the Python packages, uv,
        llama.cpp and ffmpeg to the versions the new code pins.
 
@@ -107,26 +109,49 @@ if ((Test-Path -LiteralPath (Join-Path $Root '.git')) -and $git) {
     } finally { Pop-Location }
 } else {
     if (-not $Repository) { throw 'No repository is configured in config\runtime_pins.json (app.repository).' }
-    $api = "https://api.github.com/repos/$Repository/releases/latest"
-    Write-Note "Looking for the latest release of $Repository"
-    try {
-        $release = Invoke-RestMethod -Uri $api -Headers @{ 'User-Agent' = 'local-lantern-talk-updater' } -TimeoutSec 30
-    } catch {
-        Write-Host "    No release found at github.com/$Repository ($($_.Exception.Message))." -ForegroundColor Red
-        Write-Host '    If the repository is private, download the new version by hand and copy it over' -ForegroundColor Red
-        Write-Host '    this folder (keep runtime\, models\ and user_data\).' -ForegroundColor Red
-        exit 1
+    $headers = @{ 'User-Agent' = 'local-lantern-talk-updater' }
+    # A private repository is only visible with a GitHub login: use the one of the
+    # GitHub CLI (gh auth login) if it is installed. The token only goes to GitHub.
+    if (Get-Command gh -ErrorAction SilentlyContinue) {
+        $token = Invoke-Native { gh auth token } | Select-Object -First 1
+        if ($LASTEXITCODE -eq 0 -and $token -match '^[A-Za-z0-9_]+$') { $headers['Authorization'] = "Bearer $token" }
     }
-    $latest = $release.tag_name.TrimStart('v')
-    if ($latest -eq $before) {
-        Write-Ok "You already have the latest version ($before)."
-    } else {
-        Write-Note "Version $before -> $latest"
-        if (-not (Confirm-Choice "Install version $latest?" $true)) { throw 'Update cancelled.' }
+    $api = "https://api.github.com/repos/$Repository"
+    Write-Note "Looking for the latest version of $Repository"
+    $zipUrl = $null
+    $label = ''
+    try {
+        $release = Invoke-RestMethod -Uri "$api/releases/latest" -Headers $headers -TimeoutSec 30
+        $latest = $release.tag_name.TrimStart('v')
+        if ($latest -eq $before) {
+            Write-Ok "You already have the latest version ($before)."
+        } else {
+            $zipUrl = $release.zipball_url
+            $label = "version $latest (you have $before)"
+        }
+    } catch {
+        # No release yet: take the current code of the main branch.
+        try {
+            $repoInfo = Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 30
+            $zipUrl = "$api/zipball/$($repoInfo.default_branch)"
+            $label = "the latest code of the $($repoInfo.default_branch) branch"
+        } catch {
+            Write-Host "    github.com/$Repository could not be reached ($($_.Exception.Message))." -ForegroundColor Red
+            Write-Host '    If the repository is private, log in to GitHub once and run update.bat again:' -ForegroundColor Red
+            Write-Host '      winget install --id GitHub.cli -e      (then open a new window)' -ForegroundColor Red
+            Write-Host '      gh auth login --hostname github.com --git-protocol https --web' -ForegroundColor Red
+            Write-Host '    Or download the new version by hand and copy it over this folder' -ForegroundColor Red
+            Write-Host '    (keep runtime\, models\ and user_data\).' -ForegroundColor Red
+            exit 1
+        }
+    }
+    if ($zipUrl) {
+        Write-Note "Update to $label"
+        if (-not (Confirm-Choice 'Install it now?' $true)) { throw 'Update cancelled.' }
         $downloads = Join-Path $Root 'runtime\downloads'
         New-Item -ItemType Directory -Force -Path $downloads | Out-Null
-        $zip = Join-Path $downloads "local-lantern-talk-$latest.zip"
-        Invoke-WebRequest -Uri $release.zipball_url -OutFile $zip -UseBasicParsing -Headers @{ 'User-Agent' = 'local-lantern-talk-updater' }
+        $zip = Join-Path $downloads 'local-lantern-talk-update.zip'
+        Invoke-WebRequest -Uri $zipUrl -OutFile $zip -UseBasicParsing -Headers $headers
         $staging = Join-Path $Root 'runtime\update-staging'
         if (Test-Path -LiteralPath $staging) { Remove-Item -Recurse -Force -LiteralPath $staging }
         Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -134,7 +159,7 @@ if ((Test-Path -LiteralPath (Join-Path $Root '.git')) -and $git) {
         # GitHub zipballs contain one top folder (owner-repo-commit).
         $source = Get-ChildItem -LiteralPath $staging -Directory | Select-Object -First 1
         if (-not $source -or -not (Test-Path -LiteralPath (Join-Path $source.FullName 'app\lantern_talk'))) {
-            throw 'The downloaded release does not look like Local Lantern Talk. Nothing was changed.'
+            throw 'The download does not look like Local Lantern Talk. Nothing was changed.'
         }
         foreach ($item in Get-ChildItem -LiteralPath $source.FullName -Force) {
             if ($Keep -contains $item.Name) { continue }

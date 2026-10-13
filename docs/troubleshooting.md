@@ -108,6 +108,11 @@ another model from the catalog.
 **"Local Lantern Talk is running. Quit it first"**: use *Quit app* or close the
 `start.bat` window, then run `update.bat` again.
 
+**"github.com/… could not be reached"** (installation from a ZIP): `update.bat` downloads
+the newest version from GitHub. While the repository is private, GitHub only shows it to
+logged-in users: install the GitHub CLI once (`winget install --id GitHub.cli -e`, then a
+new window) and log in with `gh auth login --hostname github.com --git-protocol https --web`.
+
 **"This git checkout has local changes"**: you edited files in the program folder.
 Commit or stash them (or undo them), then update again.
 

@@ -108,6 +108,8 @@ project uses [Semantic Versioning](https://semver.org/).
   starter model instead (spec §4).
 
 ### Fixed
+- `update.bat` on a ZIP installation: falls back to the main branch while there is no
+  release, and uses the GitHub CLI login for a private repository.
 - Switches were drawn on the checkbox itself, which Firefox does not render; they are now
   drawn next to it and show their state in every browser.
 - The greeting no longer starts the chat history sent to the model: strict chat templates
