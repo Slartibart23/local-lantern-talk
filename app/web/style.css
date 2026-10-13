@@ -383,3 +383,23 @@ input[type="range"] { width: 100%; accent-color: var(--amber); }
 .locked { opacity: .55; }
 .locked-note { margin: 0 0 14px; padding: 8px 10px; border: 1px solid var(--amber); border-radius: 8px; background: var(--amber-soft); font-size: 12px; color: var(--text); }
 .locked-note[hidden] { display: none; }
+
+/* ---- decorations: fairy lights and red lanterns (Settings → Appearance) ------------------- */
+.garland { position: relative; height: 0; z-index: 3; pointer-events: none; }
+.garland svg { position: absolute; left: 0; top: -1px; overflow: visible; }
+.garland-wire { fill: none; stroke: #5a4a3a; stroke-width: 1.2; }
+.bulb-glow { opacity: .28; filter: blur(4px); }
+.bulb-core { filter: drop-shadow(0 0 3px currentColor); }
+.bulb { animation: twinkle 2.4s ease-in-out infinite; animation-delay: var(--delay); }
+@keyframes twinkle { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+.lantern { animation: sway 5s ease-in-out infinite; }
+.lantern:last-of-type { animation-delay: -2.5s; }
+@keyframes sway { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+.lantern-body { fill: #c8281e; stroke: #8c160f; stroke-width: 1; }
+.lantern-rib { fill: none; stroke: #8c160f; stroke-width: .8; opacity: .8; }
+.lantern-cap { fill: #3a2a1e; }
+.lantern-tassel { stroke: #f2a93b; stroke-width: 1.5; stroke-linecap: round; }
+.lantern-glow { fill: #ff5a3c; opacity: .22; filter: blur(7px); }
+body.decorated .messages { padding-top: 40px;
+  background: radial-gradient(ellipse 70% 220px at 50% 0, rgba(242, 169, 59, .07), transparent 70%); }
+body.decorated .brand-icon { color: #e5533d; filter: drop-shadow(0 0 6px rgba(229, 83, 61, .7)); }

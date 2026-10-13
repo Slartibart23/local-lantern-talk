@@ -1297,6 +1297,70 @@ function speakerNode() {
   return app.speakerOut || app.audioCtx.destination;
 }
 
+// ---------------------------------------------------------------- decorations (fairy lights, lanterns)
+
+const BULB_COLORS = ["#f2a93b", "#e5533d", "#ffe3a3", "#f07b2c"];
+
+function decorationsOn() {
+  return storageGet("llt.decorations") !== "off";
+}
+
+function setDecorations(on) {
+  storageSet("llt.decorations", on ? "" : "off");
+  applyDecorations();
+}
+
+function applyDecorations() {
+  const on = decorationsOn();
+  document.body.classList.toggle("decorated", on);
+  $("set-decorations").checked = on;
+  drawGarland();
+}
+
+// A string of lights hanging under the chat header, with a red paper lantern at each end.
+function drawGarland() {
+  const box = $("garland");
+  box.innerHTML = "";
+  if (!decorationsOn()) return;
+  const w = Math.max(200, box.clientWidth);
+  const sag = Math.min(16, w / 60);
+  const y = (x) => 2 + sag * (1 - ((x - w / 2) / (w / 2)) ** 2);
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("width", w);
+  svg.setAttribute("height", 52);
+  svg.setAttribute("viewBox", `0 0 ${w} 52`);
+  const add = (tag, attrs, parent = svg) => {
+    const node = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    parent.append(node);
+    return node;
+  };
+  add("path", { d: `M 0 2 Q ${w / 2} ${2 + sag * 2} ${w} 2`, class: "garland-wire" });
+  const count = Math.max(6, Math.floor((w - 80) / 46));
+  for (let i = 0; i < count; i++) {
+    const x = 40 + ((w - 80) * i) / (count - 1);
+    const by = y(x) + 6;
+    const g = add("g", { class: "bulb", style: `--delay:${((i * 0.37) % 2.4).toFixed(2)}s` });
+    add("line", { x1: x, y1: y(x), x2: x, y2: by - 2, class: "garland-wire" }, g);
+    add("circle", { cx: x, cy: by + 1, r: 7, fill: BULB_COLORS[i % 4], class: "bulb-glow" }, g);
+    add("ellipse", { cx: x, cy: by + 1, rx: 2.6, ry: 3.4, fill: BULB_COLORS[i % 4], class: "bulb-core" }, g);
+  }
+  for (const x of [16, w - 16]) {
+    const lantern = add("g", { class: "lantern", style: `transform-origin:${x}px 2px` });
+    add("line", { x1: x, y1: 0, x2: x, y2: 12, class: "garland-wire" }, lantern);
+    add("ellipse", { cx: x, cy: 27, rx: 15, ry: 17, class: "lantern-glow" }, lantern);
+    add("rect", { x: x - 5, y: 11, width: 10, height: 3, rx: 1, class: "lantern-cap" }, lantern);
+    add("ellipse", { cx: x, cy: 25, rx: 10, ry: 11.5, class: "lantern-body" }, lantern);
+    for (const dx of [-5, 0, 5]) {
+      add("path", { d: `M ${x + dx} 14 Q ${x + dx * 1.6} 25 ${x + dx} 36`, class: "lantern-rib" }, lantern);
+    }
+    add("rect", { x: x - 5, y: 36, width: 10, height: 3, rx: 1, class: "lantern-cap" }, lantern);
+    add("line", { x1: x, y1: 39, x2: x, y2: 46, class: "lantern-tassel" }, lantern);
+  }
+  box.append(svg);
+}
+
 // ---------------------------------------------------------------- misc UI
 
 let toastTimer = null;
@@ -1445,6 +1509,9 @@ function init() {
   $("new-char").onclick = () => openEditor(null);
   $("quit-app").onclick = quitApp;
   $("open-settings").onclick = openSettings;
+  $("set-decorations").onchange = (e) => setDecorations(e.target.checked);
+  window.addEventListener("resize", () => { if (decorationsOn()) drawGarland(); });
+  applyDecorations();
   $("close-settings").onclick = closeSettings;
   $("settings").onclick = (e) => { if (e.target === $("settings")) closeSettings(); };
   $("input-device").onchange = (e) => chooseInputDevice(e.target.value);

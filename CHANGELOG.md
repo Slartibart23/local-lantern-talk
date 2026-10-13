@@ -97,6 +97,9 @@ project uses [Semantic Versioning](https://semver.org/).
 - "Need help? Ask Claude" hints in installer, update, start-up and error messages and
   in the docs; installation guide covers ZIP download vs. `git clone` and running the
   installer in a command window.
+- Decorations: a string of twinkling fairy lights and two swaying red paper lanterns
+  under the chat header, a glowing lantern logo; can be switched off in
+  Settings → Appearance.
 - Model catalog: Magidonia 24B v4.3 Heretic and Qwen 3.8 27B Abliterated; Cydonia 24B v4.3
   now uses bartowski's imatrix quantizations.
 - "Quit app" button: closes the app from the browser, unloads all models and frees the
