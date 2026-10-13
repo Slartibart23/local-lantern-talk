@@ -1,0 +1,206 @@
+# Model catalog (spec §13). Editable without touching code.
+# Sizes and file names were verified on Hugging Face when this file was written.
+# min_vram_gb = file size + KV cache for context_default + compute buffers (rough).
+# The app checks the real fit with llama.cpp before loading a model.
+
+models:
+  - id: gemma4-26b-a4b-heretic
+    display_name: "Gemma 4 26B-A4B Heretic"
+    family: "Gemma 4"
+    variant: uncensored
+    purpose: "Roleplay & assistant; best German in the catalog"
+    hf_repo: mradermacher/gemma-4-26B-A4B-it-ultra-uncensored-heretic-i1-GGUF
+    context_default: 8192
+    license_note: "Apache-2.0 (Gemma 4). Uncensored community build of Google's Gemma 4."
+    languages_note: "Very good German and many other languages."
+    note: "Mixture-of-experts: only 4B parameters active, so it stays fast even when partly on the CPU."
+    files:
+      Q4_K_M:
+        file: "gemma-4-26B-A4B-it-ultra-uncensored-heretic.i1-Q4_K_M.gguf"
+        size_bytes: 16796012064
+        min_vram_gb: 18.5
+      Q5_K_M:
+        file: "gemma-4-26B-A4B-it-ultra-uncensored-heretic.i1-Q5_K_M.gguf"
+        size_bytes: 19132886560
+        min_vram_gb: 20.5
+      Q6_K:
+        file: "gemma-4-26B-A4B-it-ultra-uncensored-heretic.i1-Q6_K.gguf"
+        size_bytes: 22638395424
+        min_vram_gb: 24.0
+  - id: cydonia-24b-v4.3
+    display_name: "Cydonia 24B v4.3"
+    family: "Mistral Small 3.2"
+    variant: uncensored
+    purpose: "Roleplay; community favorite, lots of dialogue"
+    hf_repo: TheDrummer/Cydonia-24B-v4.3-GGUF
+    context_default: 8192
+    license_note: "Apache-2.0 base (Mistral Small 3.2); roleplay finetune by TheDrummer."
+    languages_note: "Strongest in English; good German."
+    files:
+      Q4_K_M:
+        file: "Cydonia-24B-v4zg-Q4_K_M.gguf"
+        size_bytes: 14333910144
+        min_vram_gb: 16.5
+      Q5_K_M:
+        file: "Cydonia-24B-v4zg-Q5_K_M.gguf"
+        size_bytes: 16763985024
+        min_vram_gb: 19.0
+      Q6_K:
+        file: "Cydonia-24B-v4zg-Q6_K.gguf"
+        size_bytes: 19345939584
+        min_vram_gb: 21.5
+  - id: magidonia-24b-v4.3
+    display_name: "Magidonia 24B v4.3"
+    family: "Magistral Small"
+    variant: uncensored
+    purpose: "Roleplay; Cydonia's sibling on the Magistral base"
+    hf_repo: TheDrummer/Magidonia-24B-v4.3-GGUF
+    context_default: 8192
+    license_note: "Apache-2.0 base (Magistral Small 2509); roleplay finetune by TheDrummer."
+    languages_note: "Strongest in English; good German."
+    files:
+      Q4_K_M:
+        file: "Cydonia-24B-v4zk-Q4_K_M.gguf"
+        size_bytes: 14333912192
+        min_vram_gb: 16.5
+      Q5_K_M:
+        file: "Cydonia-24B-v4zk-Q5_K_M.gguf"
+        size_bytes: 16763987072
+        min_vram_gb: 19.0
+      Q6_K:
+        file: "Cydonia-24B-v4zk-Q6_K.gguf"
+        size_bytes: 19345941632
+        min_vram_gb: 21.5
+  - id: skyfall-31b-v4.2
+    display_name: "Skyfall 31B v4.2"
+    family: "Magistral Small (upscaled)"
+    variant: uncensored
+    purpose: "Roleplay; larger, for 32 GB GPUs"
+    hf_repo: TheDrummer/Skyfall-31B-v4.2-GGUF
+    context_default: 8192
+    license_note: "Apache-2.0 base (Magistral Small 2509); upscaled roleplay finetune by TheDrummer."
+    languages_note: "Strongest in English; good German."
+    files:
+      Q4_K_M:
+        file: "Skyfall-31B-v4y-Q4_K_M.gguf"
+        size_bytes: 18978619840
+        min_vram_gb: 21.5
+      Q5_K_M:
+        file: "Skyfall-31B-v4y-Q5_K_M.gguf"
+        size_bytes: 22251487680
+        min_vram_gb: 24.5
+      Q6_K:
+        file: "Skyfall-31B-v4y-Q6_K.gguf"
+        size_bytes: 25728909760
+        min_vram_gb: 28.0
+  - id: gemma4-12b-heretic
+    display_name: "Gemma 4 12B Heretic"
+    family: "Gemma 4"
+    variant: uncensored
+    purpose: "Roleplay & assistant for smaller GPUs; good German"
+    hf_repo: culturerevolt/gemma-4-12b-heretic-abliterated-GGUF
+    context_default: 8192
+    license_note: "Apache-2.0 (Gemma 4). Uncensored community build of Google's Gemma 4."
+    languages_note: "Good German and many other languages."
+    files:
+      Q4_K_M:
+        file: "gemma-4-12b-heretic-Q4_K_M.gguf"
+        size_bytes: 7381382496
+        min_vram_gb: 8.5
+      Q5_K_M:
+        file: "gemma-4-12b-heretic-Q5_K_M.gguf"
+        size_bytes: 8547267936
+        min_vram_gb: 10.0
+      Q6_K:
+        file: "gemma-4-12b-heretic-Q6_K.gguf"
+        size_bytes: 9786021216
+        min_vram_gb: 11.0
+  - id: rocinante-12b-v1.1
+    display_name: "Rocinante 12B v1.1"
+    family: "Mistral Nemo"
+    variant: uncensored
+    purpose: "Roleplay classic for smaller GPUs"
+    hf_repo: TheDrummer/Rocinante-12B-v1.1-GGUF
+    context_default: 8192
+    license_note: "Apache-2.0 base (Mistral Nemo); roleplay finetune by TheDrummer."
+    languages_note: "Clearly strongest in English; German is weaker."
+    files:
+      Q4_K_M:
+        file: "Rocinante-12B-v1.1-Q4_K_M.gguf"
+        size_bytes: 7477203392
+        min_vram_gb: 9.5
+      Q5_K_M:
+        file: "Rocinante-12B-v1.1-Q5_K_M.gguf"
+        size_bytes: 8727630272
+        min_vram_gb: 11.0
+      Q6_K:
+        file: "Rocinante-12B-v1.1-Q6_K.gguf"
+        size_bytes: 10056208832
+        min_vram_gb: 12.0
+  - id: gemma4-26b-a4b
+    display_name: "Gemma 4 26B-A4B"
+    family: "Gemma 4"
+    variant: censored
+    purpose: "Assistant; fast and very good German"
+    hf_repo: bartowski/google_gemma-4-26B-A4B-it-GGUF
+    context_default: 8192
+    license_note: "Apache-2.0 (Gemma 4)."
+    languages_note: "Very good German and many other languages."
+    note: "Mixture-of-experts: only 4B parameters active, so it stays fast even when partly on the CPU."
+    files:
+      Q4_K_M:
+        file: "google_gemma-4-26B-A4B-it-Q4_K_M.gguf"
+        size_bytes: 17035039872
+        min_vram_gb: 18.5
+      Q5_K_M:
+        file: "google_gemma-4-26B-A4B-it-Q5_K_M.gguf"
+        size_bytes: 19319198848
+        min_vram_gb: 21.0
+      Q6_K:
+        file: "google_gemma-4-26B-A4B-it-Q6_K.gguf"
+        size_bytes: 22862577280
+        min_vram_gb: 24.5
+  - id: mistral-small-3.2-24b
+    display_name: "Mistral Small 3.2 24B"
+    family: "Mistral Small 3.2"
+    variant: censored
+    purpose: "Assistant; good German, French and Spanish"
+    hf_repo: bartowski/mistralai_Mistral-Small-3.2-24B-Instruct-2506-GGUF
+    context_default: 8192
+    license_note: "Apache-2.0 (Mistral Small 3.2)."
+    languages_note: "Good German, French, Spanish, Italian."
+    files:
+      Q4_K_M:
+        file: "mistralai_Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf"
+        size_bytes: 14333915264
+        min_vram_gb: 16.5
+      Q5_K_M:
+        file: "mistralai_Mistral-Small-3.2-24B-Instruct-2506-Q5_K_M.gguf"
+        size_bytes: 16763990144
+        min_vram_gb: 19.0
+      Q6_K:
+        file: "mistralai_Mistral-Small-3.2-24B-Instruct-2506-Q6_K.gguf"
+        size_bytes: 19345944704
+        min_vram_gb: 21.5
+  - id: gemma4-12b
+    display_name: "Gemma 4 12B"
+    family: "Gemma 4"
+    variant: censored
+    purpose: "Assistant; fast, good German (starter model)"
+    hf_repo: unsloth/gemma-4-12b-it-GGUF
+    context_default: 8192
+    license_note: "Apache-2.0 (Gemma 4)."
+    languages_note: "Good German and many other languages."
+    files:
+      Q4_K_M:
+        file: "gemma-4-12b-it-Q4_K_M.gguf"
+        size_bytes: 7121861440
+        min_vram_gb: 8.5
+      Q5_K_M:
+        file: "gemma-4-12b-it-Q5_K_M.gguf"
+        size_bytes: 8413576000
+        min_vram_gb: 10.0
+      Q6_K:
+        file: "gemma-4-12b-it-Q6_K.gguf"
+        size_bytes: 9786022720
+        min_vram_gb: 11.0
