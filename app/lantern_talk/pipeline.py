@@ -74,6 +74,7 @@ class TurnMetrics:
     llm_done: float | None = None
     tts_done: float | None = None
     sentences: int = 0
+    chunks: int = 0               # TTS calls (sentences are batched)
     audio_seconds: float = 0.0
     synth_seconds: float = 0.0
 
@@ -91,11 +92,14 @@ class TurnMetrics:
         rtf = self.synth_seconds / self.audio_seconds if self.audio_seconds else 0.0
         return (
             f"{text} | first sentence {fmt(self.first_sentence)} | first audio {fmt(self.first_audio)} | "
-            f"{self.sentences} sentences, {self.audio_seconds:.1f}s audio, TTS RTF {rtf:.2f}"
+            f"{self.sentences} sentences in {self.chunks} TTS calls, {self.audio_seconds:.1f}s audio, TTS RTF {rtf:.2f}"
         )
 
 
 _END = object()
+
+# Upper bound for text batched into one TTS call (OmniVoice splits internally above ~30 s).
+MAX_TTS_CHARS = 300
 
 
 @dataclass
@@ -184,18 +188,35 @@ class Conversation:
             index = 0
             try:
                 prompt = self.voices.prompt_for(voice) if voice else None
-                while True:
+                finished = False
+                while not finished:
                     item = sentences.get()
                     if item is _END:
                         break
+                    # Each OmniVoice call costs about the same regardless of text length,
+                    # so everything the LLM wrote while the previous chunk was being
+                    # synthesized is spoken in one call. The first sentence still goes
+                    # out alone, which keeps the time to first audio low.
+                    batch = [str(item)]
+                    while sum(len(t) + 1 for t in batch) < MAX_TTS_CHARS:
+                        try:
+                            nxt = sentences.get_nowait()
+                        except queue.Empty:
+                            break
+                        if nxt is _END:
+                            finished = True
+                            break
+                        batch.append(str(nxt))
                     if prompt is None or self.tts is None:
                         continue
-                    result = self.tts.synthesize(str(item), prompt, tts_language)
+                    text = " ".join(batch)
+                    result = self.tts.synthesize(text, prompt, tts_language)
                     metrics.mark("first_audio")
-                    metrics.sentences += 1
+                    metrics.sentences += len(batch)
+                    metrics.chunks += 1
                     metrics.audio_seconds += result.duration_s
                     metrics.synth_seconds += result.seconds
-                    events.put(SpeechAudio(index, str(item), result.audio, 24_000, result.seconds))
+                    events.put(SpeechAudio(index, text, result.audio, 24_000, result.seconds))
                     index += 1
             except Exception as exc:  # noqa: BLE001
                 log.exception("TTS failed")

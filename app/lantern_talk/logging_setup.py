@@ -30,4 +30,7 @@ def setup_logging(log_dir: Path, name: str, console_level: int = logging.WARNING
         logging.getLogger(noisy).setLevel(logging.WARNING)
     logging.captureWarnings(True)
     warnings.filterwarnings("ignore", category=FutureWarning)
+    # Third-party packages (e.g. pydub) contain invalid escape sequences that Python
+    # reports while compiling them; they are harmless and not actionable for users.
+    warnings.filterwarnings("ignore", category=SyntaxWarning)
     return log_file

@@ -24,3 +24,12 @@ project uses [Semantic Versioning](https://semver.org/).
   built-in voice switches to the same-gender German / Spanish / French one, so replies
   are not spoken with a foreign accent. `console.bat --no-match-language` disables it.
 - `LLT_LLAMA_BUILD` environment variable to force a llama.cpp build (troubleshooting).
+
+### Fixed
+- `llama-server.exe` kept running (holding ~9 GB VRAM) after the console window was
+  closed; child processes are now tied to the app with a Windows job object.
+- First reply after start was ~1.3 s slower: OmniVoice is now warmed up while loading.
+- Short sentences were synthesized one by one; sentences that arrive while speech is
+  being generated are now batched into one TTS call (each call has a fixed cost).
+- Harmless `SyntaxWarning`s from pydub and weight-loading progress bars no longer
+  clutter the console.

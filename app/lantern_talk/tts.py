@@ -94,7 +94,13 @@ class OmniVoiceTTS:
         from omnivoice import OmniVoice
 
         t0 = time.perf_counter()
+        from transformers.utils import logging as hf_logging
+
+        hf_logging.disable_progress_bar()  # no "Loading weights" bars in the console
         self._model = OmniVoice.from_pretrained(str(self.model_dir), device_map=self.device, dtype=torch.float16)
+        # The first generation is ~1.3 s slower (CUDA kernel setup); pay that now, not in the first reply.
+        with torch.inference_mode():
+            self._model.generate(text="Hello.", num_step=self.num_step)
         log.info("OmniVoice loaded in %.1fs", time.perf_counter() - t0)
 
     def unload(self) -> None:

@@ -45,7 +45,6 @@ set "TEMP=%LLT_ROOT%\tmp"
 rem Python
 set "PYTHONPATH=%LLT_ROOT%\app"
 set "PYTHONUTF8=1"
-set "PYTHONDONTWRITEBYTECODE=1"
 
 if not exist "%LLT_ROOT%\tmp" mkdir "%LLT_ROOT%\tmp"
 if not exist "%LLT_CACHE%" mkdir "%LLT_CACHE%"

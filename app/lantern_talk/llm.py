@@ -13,6 +13,8 @@ from pathlib import Path
 
 import httpx
 
+from .procutil import tie_to_this_process
+
 log = logging.getLogger(__name__)
 
 HOST = "127.0.0.1"
@@ -87,6 +89,8 @@ class LlamaServer:
             env=self.env,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
+        if not tie_to_this_process(self._proc):
+            log.warning("llama-server is not tied to this process; it may outlive a crash.")
         self._wait_ready(timeout_s)
 
     def _wait_ready(self, timeout_s: float) -> None:
