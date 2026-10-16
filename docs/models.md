@@ -5,8 +5,8 @@ Local Lantern Talk runs language models (LLMs) in the GGUF format with
 **Language model → Change model…**.
 
 > No model is redistributed by this project. Every model has its own license, shown
-> in the catalog. Uncensored models answer without the usual refusals — **you are
-> responsible for how you use them.**
+> in the catalog. Uncensored and explicit models answer without the usual refusals —
+> **you are responsible for how you use them.**
 
 ## The catalog
 
@@ -23,6 +23,11 @@ The catalog focuses on **German**, roleplay and assistant use. It lives in
 | Qwen 3.8 27B Abliterated | uncensored | Assistant & roleplay | 16.6 GB | Strong all-rounder; dense model, best on 32 GB GPUs |
 | Gemma 4 12B Heretic | uncensored | Roleplay & assistant | 7.4 GB | Good German, for smaller GPUs |
 | Rocinante 12B v1.1 | uncensored | Roleplay | 7.5 GB | Classic; clearly strongest in English |
+| Qwen 3.6 27B Uncensored Aggressive | explicit | Adult roleplay & assistant | 17.5 GB (Q4_K_P) | HauhauCS build: answers directly, without preamble; own K_P quantizations |
+| Qwen 3.6 27B Abliterated | explicit | Adult roleplay & assistant | 16.5 GB | Strong all-rounder; small context cache, so long contexts are cheap |
+| Mistral Small 3.2 24B Abliterated v2 | explicit | Adult roleplay & assistant | 14.3 GB | Mistral Small 3.2 with refusals removed |
+| Mistral Small 24B (2501) Abliterated | explicit | Adult roleplay & assistant | 14.3 GB | The earlier Mistral Small, refusals removed |
+| Dolphin 3.0 Mistral 24B | explicit | Adult roleplay & assistant | 14.3 GB | Follows your instructions without refusals; mostly trained in English |
 | Gemma 4 26B-A4B | censored | Assistant | 17.0 GB | Very good German |
 | Mistral Small 3.2 24B | censored | Assistant | 14.3 GB | Good German, French, Spanish |
 | Gemma 4 12B | censored | Assistant | 7.1 GB | Fast; the installer's starter model |
@@ -39,6 +44,10 @@ Good to know:
   German, Gemma 4 is the best choice.
 - **Uncensored builds** ("abliterated", "heretic") are made by the community from
   the original models and can be slightly less precise than the originals.
+- **Labels:** *censored* = the original releases, careful and precise; *uncensored* =
+  community builds and roleplay finetunes without the usual refusals; *explicit* =
+  models chosen for adult content. **Family mode** (Settings) hides uncensored and
+  explicit models.
 - **Thinking is switched off.** Some models reason before answering; that would
   delay every spoken reply by seconds. The app disables it, and anything that still
   looks like reasoning (`<think>…`) is never spoken or shown.
@@ -46,9 +55,11 @@ Good to know:
 ## Quantization and GPU memory
 
 Each model comes in several **quantizations**: Q6_K (best, largest), Q5_K_M, Q4_K_M
-(smallest). The catalog picks one automatically:
+(smallest). HauhauCS' models use their own *K_P* quantizations (Q4_K_P, Q5_K_P,
+Q6_K_P), which are a little larger and better than the K_M of the same number. The
+catalog picks one automatically:
 
-1. Start with the quantization of your hardware profile (`high`: Q5_K_M,
+1. Start with the quantization of your hardware profile (`ultra`: Q6_K, `high`: Q5_K_M,
    `mid` / `low`: Q4_K_M — see [installation.md](installation.md)).
 2. Go down until the model fits completely into the free GPU memory.
 3. A quantization you already downloaded is used if it fits at least partly.
@@ -78,8 +89,17 @@ model.
 | Gemma 4 12B Q5_K_M | fully on the GPU (8.8 GB) | about 1.3–2.2 s |
 | Gemma 4 26B-A4B Heretic Q4_K_M | experts of 5–6 of 30 blocks on the CPU | about 2.2 s |
 
-On 32 GB GPUs (desktop RTX 5090) the 24–26B models fit completely. Values for other
-GPUs are estimates until someone measures them.
+### Measured on a desktop RTX 5090 (32 GB)
+
+With Whisper, OmniVoice, Smart Turn and Windows loaded (2.3 GB in use before the start),
+about **21.4 GB** remain for a language model.
+
+| Model | Context (Automatic) | Placement | First audio after a typed message |
+|---|---|---|---|
+| Gemma 4 12B Q5_K_M | 32 768 tokens | fully on the GPU (9.7 GB) | about 1.3 s |
+
+The 24–27B models fit completely in Q5 or Q6. Values for other GPUs are estimates until
+someone measures them.
 
 ## Downloads
 
@@ -107,8 +127,8 @@ For a repository, the app picks one GGUF file: the quantization you chose, or wi
 downloaded — repositories are never cloned. Split GGUFs (`-00001-of-00003.gguf`)
 are not supported; pick a quantization that comes as a single file.
 
-Give the model a **label** (censored / uncensored / unknown); you can change it later
-in the catalog. Your models are stored in `user_data\custom_models.json`.
+Give the model a **label** (censored / uncensored / explicit / unknown); you can change
+it later in the catalog. Your models are stored in `user_data\custom_models.json`.
 
 **Copying files by hand:** GGUF files you put into `models\llm` appear in the catalog
 automatically with the label "unlabeled", which you can change.
@@ -119,8 +139,23 @@ variable `HF_TOKEN` before running `start.bat`.
 
 ## Context length
 
-The default context is 8192 tokens (about 6,000 words of conversation). It can be
-changed in **Settings → Language model** (4096 to 32768 tokens); a longer context needs
-more GPU memory, and the model is reloaded when you change it. Longer conversations are
-summarized into the character's memory (see [memory.md](memory.md)), so the default is
-enough for most chats.
+The context is the model's short-term memory: everything it sees at once — the
+character's description, the rules, its memory and the recent conversation. About half
+of it is kept for the conversation. Set it in **Settings → Language model**:
+
+- **Automatic** (the default) loads the largest context that fits completely on the GPU,
+  up to the limit of your hardware profile (`ultra` / `high`: 32 768 tokens, `mid`:
+  16 384, `low`: 8 192, `unsupported`: 4 096). On a 16 GB GPU it therefore picks a
+  shorter context than on a 32 GB GPU, without any setting.
+- Switch Automatic off to choose a value yourself with the **slider** (2 048 tokens up to
+  the model's maximum, in steps of 1 024). The bar under it shows for the loaded model:
+  **green** fits completely on the GPU (fast), **yellow** part of the model moves to the
+  CPU (noticeably slower), **red** too big.
+- How much memory a context needs depends strongly on the model: Gemma 4 and Qwen 3.6
+  need little, Mistral-based 24B models several GB for 32 k tokens. The app measures it
+  for each model with llama.cpp (three quick checks the first time a model is loaded),
+  so the zones are exact for your GPU, the chosen quantization and whether voice output
+  is on.
+- Changing the value reloads the model (a few seconds). Longer conversations are
+  summarized into the character's memory (see [memory.md](memory.md)); a longer context
+  keeps more of the chat word for word and makes the summary longer.

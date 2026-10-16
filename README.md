@@ -12,6 +12,10 @@ your computer.
 
 - **Voice conversations** — just talk; the app listens, answers and speaks. Or type at
   any time. The microphone is muted while the AI speaks, so it never hears itself.
+- **Talk your way** — three talk modes, one click under the chat: *Auto* (a short pause
+  ends your turn), *Smart* (a small turn-detection model hears whether you sound
+  finished, so the AI waits while you think) and *Push to talk*. *Hold on* collects
+  everything you say until you click *Send*; *Stop* ends a reply at once.
 - **Natural speech in many languages** — 8 built-in voices (German, English, Spanish,
   French × female / male), shipped with the app, that follow the language you speak, so
   a German reply never has an English accent.
@@ -20,16 +24,28 @@ your computer.
 - **Characters** — assistants like *Lena* and *Max*, roleplay characters like *Elara*
   (fantasy tavern) and *Captain Vargas* (sci-fi), or your own: describe a personality
   once, and the character behaves that way in every conversation, with its own voice,
-  its own scene (tavern, space, red lantern, study) and, optionally, its own model.
+  avatar, chat background, text colour, scene (tavern, space, red lantern, study) and,
+  optionally, its own model. Export a character as a file and import it elsewhere.
+- **Director's notes** — steer the story without saying it: "A stranger walks in",
+  "It is a stormy night". For the next reply, pinned for good, or *Continue* to let the
+  character go on by itself. Never spoken.
+- **Edit the conversation** — delete messages from the end (also from memory and the
+  recording), let the AI write its last answer again, or change your last message.
+- **Your profile** — your name, a few words about you and your own avatar; every
+  character knows who it talks to.
 - **Memory** — characters remember earlier conversations across restarts: a short
   summary plus a list of facts you can view, edit and reset.
 - **Actions are never spoken** — `*smiles*` and stage directions are shown dimmed as
   "not spoken" (or hidden), never read aloud.
 - **Session recording** — each chat as one MP3 of the whole dialogue plus a
   screenplay-style transcript; replay any message with one click.
-- **Model catalog** — German-focused assistant and roleplay models (censored and
-  uncensored) with one-click download, automatic choice of the quantization that fits
-  your GPU, and your own GGUF models from Hugging Face.
+- **Model catalog** — German-focused assistant and roleplay models (censored,
+  uncensored and explicit) with one-click download, automatic choice of the quantization
+  that fits your GPU, and your own GGUF models from Hugging Face. A family mode hides the
+  uncensored and explicit ones.
+- **Fits your GPU** — the context length is chosen automatically from what really fits
+  (measured per model); a slider with green / yellow / red zones lets you choose
+  yourself. Hardware profiles from 10 GB up to 32 GB+.
 - **Portable** — everything lives in one folder: no admin rights, no registry entries,
   nothing in your user profile. Delete the folder and it is gone.
 
@@ -49,7 +65,7 @@ say). The same app covers a wide range:
 | A voice assistant for questions, explanations, brainstorming, writing | Lena, Max, or your own expert character | Gemma 4 26B-A4B (best German), Mistral Small 3.2, Qwen 3.8 27B |
 | In-depth, well-founded discussions | A knowledgeable character, e.g. a professor or a specialist | Gemma 4 26B-A4B, Mistral Small 3.2, Qwen 3.8 27B |
 | Interactive stories and roleplay | Elara (fantasy tavern), Captain Vargas (sci-fi), or your own | Cydonia, Magidonia, Skyfall, Gemma 4 26B-A4B Heretic |
-| Mature, uncensored roleplay (NSFW) between adults | Your own adult character | Uncensored models: Gemma 4 Heretic, Cydonia, Magidonia (Heretic), Qwen 3.8 Abliterated, Rocinante |
+| Mature, uncensored roleplay (NSFW) between adults | Your own adult character | Explicit models: Qwen 3.6 Uncensored Aggressive, Qwen 3.6 Abliterated, Mistral Small Abliterated, Dolphin 3.0; uncensored: Gemma 4 Heretic, Cydonia, Magidonia (Heretic), Qwen 3.8 Abliterated, Rocinante |
 
 - **Censored** models (marked *censored* in the catalog) are the original releases by
   Google and Mistral: careful, precise, and they decline some topics. They are the best
@@ -57,6 +73,9 @@ say). The same app covers a wide range:
 - **Uncensored** models are community builds ("heretic", "abliterated") or roleplay
   finetunes that answer without the usual refusals — including explicit content. They
   can be slightly less precise than the originals.
+- **Explicit** models are uncensored builds picked for adult content. **Family mode**
+  (Settings) hides uncensored and explicit models and characters marked *For adults
+  only*.
 - The character's description steers tone and content just as much as the model: an
   uncensored model with a friendly assistant persona still behaves like an assistant.
 - Every model runs **only on your computer**; nothing you say is sent anywhere.
@@ -71,15 +90,17 @@ say). The same app covers a wide range:
 Everything runs locally on your NVIDIA GPU, in four steps per turn:
 
 1. **Listen** — your browser sends the microphone audio to the app. **Silero VAD**
-   detects when you start and stop speaking; **Whisper large-v3-turbo** (faster-whisper)
+   detects when you start and stop speaking — in *Smart* mode **Smart Turn v3** also
+   checks whether you sound finished — and **Whisper large-v3-turbo** (faster-whisper)
    turns your words into text and recognizes the language. You can also just type.
 2. **Think** — **llama.cpp** runs the language model you picked in the **model catalog**
    (*Language model → Change model…*). Models are GGUF files from Hugging Face; the app
    downloads exactly one file, picks the quantization that fits your GPU memory, and
    splits the model between GPU and CPU if it does not fit completely. You can also add
-   any other GGUF model by its Hugging Face name. The character's instructions, its
-   memory (facts and a summary of earlier chats) and rules for speakable answers are
-   sent along with your message. See [docs/models.md](docs/models.md).
+   any other GGUF model by its Hugging Face name. The character's instructions, your
+   profile, its memory (facts and a summary of earlier chats), your director's notes and
+   rules for speakable answers are sent along with your message. See
+   [docs/models.md](docs/models.md).
 3. **Speak** — **OmniVoice** (k2-fsa) turns the reply into speech, sentence by sentence,
    so the voice starts while the model is still writing. It speaks with one of the
    8 built-in voices (designed with OmniVoice, shipped with the app) or clones a voice
@@ -90,7 +111,7 @@ Everything runs locally on your NVIDIA GPU, in four steps per turn:
    and can record every chat as an MP3 plus a transcript.
    See [docs/memory.md](docs/memory.md) and [docs/recording.md](docs/recording.md).
 
-A turn usually takes 2–3 seconds from the end of your sentence to the first spoken
+A turn usually takes 1.5–3 seconds from the end of your sentence to the first spoken
 word on an RTX 5090. More technical details: [docs/architecture.md](docs/architecture.md).
 
 ## Requirements
@@ -109,8 +130,9 @@ word on an RTX 5090. More technical details: [docs/architecture.md](docs/archite
   into the program folder.
 - Text-only use (microphone and voice output off) needs much less GPU memory.
 - Internet access is needed only for installation and model downloads.
-- Measured on an RTX 5090 Laptop GPU (24 GB); values for other GPUs are estimates
-  until someone measures them (see [docs/installation.md](docs/installation.md)).
+- Measured on an RTX 5090 Laptop GPU (24 GB) and a desktop RTX 5090 (32 GB); values for
+  other GPUs are estimates until someone measures them (see
+  [docs/installation.md](docs/installation.md)).
 
 The installer picks the llama.cpp build from your driver version:
 
@@ -170,6 +192,12 @@ later without touching your models or personal data.
 
 ## Disclaimers
 
+- **Use at your own risk:** Local Lantern Talk is provided as is, without any warranty.
+  You use it at your own risk and are responsible for what you do with it and what you
+  generate with it.
+- **Use it responsibly and respect privacy:** respect other people's privacy and
+  rights. Record, clone, imitate or talk about real people only with their consent, and
+  never use the app to harass, deceive or harm anyone.
 - **Voice cloning:** only clone voices with the explicit consent of the person whose
   voice it is. Never use cloned voices for impersonation, fraud or deception.
 - **Uncensored models:** you are responsible for how you use them.

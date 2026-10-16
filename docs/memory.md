@@ -12,7 +12,8 @@ Everything is stored locally in `user_data\memory\memory.db` (SQLite).
 - **Rolling summary**: when the history gets too long for the language model's context
   (about half of the context is reserved for it), the oldest exchanges are summarized
   by the model. The summary replaces them in the prompt; the most recent messages are
-  always kept word for word.
+  always kept word for word. The summary grows with the context: about 200 words at
+  8 192 tokens, 400 at 16 384, 800 at 32 768 and at most 1000.
 - **Facts**: every 4 replies the model is asked, in a separate short request, which
   durable facts the conversation revealed: names, preferences, relationships and
   important events. Facts that turned out to be wrong are removed. Up to 30 facts are
@@ -27,6 +28,21 @@ Everything is stored locally in `user_data\memory\memory.db` (SQLite).
 Facts and the summary are added to the character's instructions in every request. The
 character therefore "knows" them without reading the whole old conversation.
 
+### How much of a chat is remembered word for word?
+
+That depends on the context length (**Settings → Language model**). About half of it
+holds the conversation:
+
+| Context | Word for word | Roughly |
+| --- | --- | --- |
+| 8 192 tokens | about 2 000 words | 10–20 exchanges |
+| 16 384 tokens | about 4 000 words | 25–40 exchanges |
+| 32 768 tokens | about 8 000 words | 50–80 exchanges |
+
+A chat can go on as long as you like; older parts live on in the summary and the facts.
+With *Automatic* the app picks the longest context that fits on your GPU. The slider
+shows in green, yellow and red what fits for the loaded model.
+
 Memory upkeep runs between replies and takes a second or two. If you speak during that
 time, your words are handled right after it.
 
@@ -40,6 +56,8 @@ In the right panel under **Memory**:
 - **Summary of earlier conversations** shows the current summary.
 - **Reset this character's memory…** deletes the history, the summary and all facts
   of the active character. Other characters are not affected.
+- **Deleting messages** in the chat (🗑) removes them from the history too. Facts the
+  model already learned from them stay in the list until you delete them there.
 
 ## Turning memory off
 

@@ -35,7 +35,10 @@
         <p class="start-loading-note">This can take up to 2 minutes, depending on your computer. Local Lantern Talk will tell you here when it is ready.</p>
       </div>
       <p id="start-text" hidden>Ready! Everything runs on this computer. Click Start to allow the microphone and audio playback.</p>
-      <button id="start-btn" class="primary" type="button" disabled>Please wait…</button>
+      <button id="start-btn" class="primary" type="button" disabled title="Start the conversation: allows the microphone and audio playback in this browser tab">Please wait…</button>
+      <p class="start-legal">You use Local Lantern Talk at your own risk and are responsible for what you do with
+        it. Use it responsibly and respect other people's privacy: record, clone or talk about real people only with
+        their consent.</p>
     </div>
   </div>
 
@@ -61,10 +64,10 @@
       </section>
       <div class="side-art" id="side-art-left" aria-hidden="true"></div>
       <div class="quit-area">
-        <button type="button" id="open-settings" class="secondary quit-btn settings-btn">
+        <button type="button" id="open-settings" class="secondary quit-btn settings-btn" title="Settings: your profile, audio devices, microphone, voice output, language model, appearance, family mode and recording">
           <svg aria-hidden="true"><use href="#i-sliders"/></svg><span>Settings</span>
         </button>
-        <button type="button" id="quit-app" class="secondary quit-btn">
+        <button type="button" id="quit-app" class="secondary quit-btn" title="Close Local Lantern Talk and free the GPU memory. Your conversations are saved.">
           <svg aria-hidden="true"><use href="#i-power"/></svg><span>Quit app</span>
         </button>
         <p class="hint">Ends the app and frees the GPU memory. Conversations are saved.</p>
@@ -75,7 +78,7 @@
       <div class="chat-bg" id="chat-bg" aria-hidden="true"></div>
       <div class="scene-fx" aria-hidden="true"></div>
       <header class="chat-header">
-        <button type="button" class="icon-btn narrow-only" id="toggle-left" aria-label="Show characters" aria-controls="left-panel" aria-expanded="false">
+        <button type="button" class="icon-btn narrow-only" id="toggle-left" aria-label="Show characters" aria-controls="left-panel" aria-expanded="false" title="Show the characters and recorded sessions">
           <svg aria-hidden="true"><use href="#i-menu"/></svg>
         </button>
         <span class="avatar header-avatar" id="header-avatar" title="The character you are talking to">LA</span>
@@ -93,7 +96,7 @@
         <button type="button" class="avatar header-avatar user-avatar" id="user-avatar" hidden
                 title="You — change your name, picture and text colour in Settings → Your profile"
                 aria-label="Your profile"></button>
-        <button type="button" class="icon-btn narrow-only" id="toggle-right" aria-label="Show settings panel" aria-controls="right-panel" aria-expanded="false">
+        <button type="button" class="icon-btn narrow-only" id="toggle-right" aria-label="Show settings panel" aria-controls="right-panel" aria-expanded="false" title="Show the side panel: voice, thinking pauses, language model, GPU and memory">
           <svg aria-hidden="true"><use href="#i-sliders"/></svg>
         </button>
       </header>
@@ -102,8 +105,8 @@
       <div id="resume-banner" class="resume-banner" role="status" hidden>
         <span id="resume-text"></span>
         <span class="resume-actions">
-          <button type="button" id="resume-continue" class="secondary">Continue</button>
-          <button type="button" id="resume-new" class="primary">Start new chat</button>
+          <button type="button" id="resume-continue" class="secondary" title="Continue the last chat where you left it">Continue</button>
+          <button type="button" id="resume-new" class="primary" title="Start a new chat; the character keeps the old one in its memory">Start new chat</button>
         </span>
       </div>
 
@@ -113,7 +116,7 @@
             <div class="session-title" id="session-title"></div>
             <div class="small muted">Recorded session · read-only · ▶ plays the recording from that point</div>
           </div>
-          <button type="button" id="close-session" class="secondary">Back to chat</button>
+          <button type="button" id="close-session" class="secondary" title="Close the recorded session and go back to the chat">Back to chat</button>
         </div>
         <div id="session-messages" class="messages" role="log" aria-label="Recorded messages"></div>
       </div>
@@ -131,7 +134,7 @@
           <button type="button" class="talk-mode" data-mode="ptt" role="radio" aria-checked="false"
                   title="Push to talk: only listens while you hold the Talk button or the Space bar. A short click starts, a second click sends, for long thoughts.">Push to talk</button>
         </div>
-        <button type="button" id="status-btn" class="status" data-state="loading" aria-describedby="status-detail">
+        <button type="button" id="status-btn" class="status" data-state="loading" aria-describedby="status-detail" title="Shows what the app is doing. Click to pause or resume listening.">
           <span class="status-icon"><svg aria-hidden="true"><use href="#i-mic"/></svg></span>
           <span class="status-text">
             <span id="status-label">Loading</span>
@@ -155,12 +158,12 @@
 
       <div id="edit-bar" class="edit-bar" hidden>
         <span>Editing your last message — send it to get a new answer.</span>
-        <button type="button" id="edit-cancel" class="link-btn">Cancel (Esc)</button>
+        <button type="button" id="edit-cancel" class="link-btn" title="Keep your last message as it is (Esc)">Cancel (Esc)</button>
       </div>
       <form id="text-form" class="composer">
         <label for="text-input" class="sr-only">Message</label>
-        <textarea id="text-input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for a new line)" maxlength="4000"></textarea>
-        <button type="submit" class="primary send" aria-label="Send">
+        <textarea id="text-input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for a new line)" maxlength="4000" title="Type a message instead of speaking. Enter sends, Shift+Enter starts a new line."></textarea>
+        <button type="submit" class="primary send" aria-label="Send" title="Send your message (Enter)">
           <svg aria-hidden="true"><use href="#i-send"/></svg><span>Send</span>
         </button>
       </form>
@@ -185,29 +188,29 @@
       <p id="locked-note" class="locked-note" hidden>Loading… these settings are available again in a moment.</p>
       <section>
         <h2>Voice</h2>
-        <label class="switch"><input type="checkbox" id="voice-output"><span>Voice output</span></label>
+        <label class="switch" title="Speak the replies aloud. Off: replies as text only, and the speech model leaves the GPU."><input type="checkbox" id="voice-output"><span>Voice output</span></label>
         <label class="field-label" for="voice-select">Voice</label>
-        <select id="voice-select"></select>
+        <select id="voice-select" title="The voice the character speaks with. Built-in voices follow the language you speak."></select>
         <div class="row wrap">
-          <button type="button" id="preview-voice" class="secondary">▶ Preview</button>
-          <button type="button" id="rename-voice" class="secondary">Rename…</button>
-          <button type="button" id="delete-voice" class="secondary">Delete</button>
+          <button type="button" id="preview-voice" class="secondary" title="Hear a sample sentence in this voice">▶ Preview</button>
+          <button type="button" id="rename-voice" class="secondary" title="Rename your own voice clip">Rename…</button>
+          <button type="button" id="delete-voice" class="secondary" title="Delete your own voice clip from user_data\voices">Delete</button>
         </div>
         <ul id="voice-warnings" class="voice-warnings" hidden></ul>
         <div class="row">
-          <button type="button" id="add-voice" class="secondary">Add voice…</button>
+          <button type="button" id="add-voice" class="secondary" title="Add a voice clip (3–10 s of clean speech) to clone a voice. Only with the speaker&#x27;s consent.">Add voice…</button>
           <input type="file" id="voice-file" accept=".mp3,.wav,.flac,.ogg,.opus,.m4a,.aac,.webm,audio/*" hidden>
         </div>
         <div id="reftext-box" class="reftext" hidden>
           <label class="field-label" for="reftext">Reference text <span id="reftext-origin" class="badge"></span></label>
-          <textarea id="reftext" rows="4" placeholder="Exactly what is said in the clip, word for word"></textarea>
+          <textarea id="reftext" rows="4" placeholder="Exactly what is said in the clip, word for word" title="Exactly what is said in the clip, word for word. The clone sounds best when this matches."></textarea>
           <div class="row">
-            <button type="button" id="reftext-save" class="secondary">Save text</button>
-            <button type="button" id="reftext-whisper" class="secondary">Use Whisper</button>
+            <button type="button" id="reftext-save" class="secondary" title="Save the reference text and rebuild the voice with it">Save text</button>
+            <button type="button" id="reftext-whisper" class="secondary" title="Forget your text and let Whisper transcribe the clip again">Use Whisper</button>
           </div>
           <p class="hint">The clone is best when this matches the clip exactly. Saved as <code id="reftext-file"></code>.</p>
           <label class="field-label" for="reftext-lang">Language of the clip</label>
-          <select id="reftext-lang">
+          <select id="reftext-lang" title="The language spoken in the clip">
             <option value="">Detect automatically</option>
             <option value="de">German</option>
             <option value="en">English</option>
@@ -222,14 +225,14 @@
           </select>
           <p class="hint">The language spoken in the clip. It helps Whisper transcribe the clip and tells the app which language the voice speaks best.</p>
         </div>
-        <label class="switch"><input type="checkbox" id="match-language"><span>Match built-in voice to spoken language</span></label>
+        <label class="switch" title="A built-in voice switches to the language you speak (German, English, Spanish, French)"><input type="checkbox" id="match-language"><span>Match built-in voice to spoken language</span></label>
         <p class="hint">Add a clip with 3–10 s of clean speech to clone a voice (MP3, WAV, FLAC, OGG, OPUS, M4A…). It is trimmed and its volume evened out automatically. Files are kept in <code>user_data\voices</code>; you can also copy them there and reload the page. Only clone voices with the speaker's consent.</p>
       </section>
 
       <section aria-labelledby="quick-pause-title">
         <h2 id="quick-pause-title">Thinking pauses</h2>
         <label class="field-label" for="quick-end-silence">End of speech after <output id="quick-end-silence-out" for="quick-end-silence"></output></label>
-        <input type="range" id="quick-end-silence" min="300" max="3000" step="100">
+        <input type="range" id="quick-end-silence" min="300" max="3000" step="100" title="How long you can pause before your turn ends (talk mode Auto; Smart waits up to twice as long while you sound unfinished)">
         <p class="hint">How long you can pause before the character answers. If it interrupts you while you think, move it to the right (1.2–2 s works well for calm conversations).</p>
       </section>
 
@@ -246,7 +249,7 @@
           <div id="model-context" class="model-context" title="How many tokens the model sees at once. Change it in Settings → Language model."></div>
         </div>
         <div class="row">
-          <button type="button" id="open-catalog" class="secondary">Change model…</button>
+          <button type="button" id="open-catalog" class="secondary" title="Open the model catalog: download, load or add language models">Change model…</button>
         </div>
       </section>
 
@@ -266,24 +269,24 @@
           <ul id="fact-list" class="facts" aria-label="Remembered facts"></ul>
           <form id="fact-form" class="fact-form">
             <label for="fact-input" class="sr-only">New fact</label>
-            <input id="fact-input" type="text" maxlength="200" placeholder="Add a fact, e.g. My name is Tom" autocomplete="off">
-            <button type="submit" class="secondary">Add</button>
+            <input id="fact-input" type="text" maxlength="200" placeholder="Add a fact, e.g. My name is Tom" autocomplete="off" title="A fact the character should always remember, e.g. My name is Tom">
+            <button type="submit" class="secondary" title="Add this fact to the character&#x27;s memory">Add</button>
           </form>
           <details class="memory-summary">
             <summary>Summary of earlier conversations</summary>
             <p id="memory-summary" class="small"></p>
           </details>
           <p class="hint">The character updates its facts every few replies and summarizes older parts of long conversations. Everything stays in <code>user_data\memory</code>.</p>
-          <button type="button" id="reset-memory" class="link-btn">Reset this character's memory…</button>
+          <button type="button" id="reset-memory" class="link-btn" title="Delete this character&#x27;s conversation history, summary and facts">Reset this character's memory…</button>
         </div>
       </section>
 
       <section>
         <h2>Session</h2>
-        <label class="switch"><input type="checkbox" id="record-sessions"><span>Record sessions (one MP3 + transcript per chat)</span></label>
+        <label class="switch" title="Record each chat as one MP3 and a transcript in user_data\sessions"><input type="checkbox" id="record-sessions"><span>Record sessions (one MP3 + transcript per chat)</span></label>
         <p id="recording-files" class="hint"></p>
-        <label class="switch"><input type="checkbox" id="show-actions"><span>Show actions as text (never spoken)</span></label>
-        <button type="button" id="open-sessions" class="secondary">Open session folder</button>
+        <label class="switch" title="Show actions like *smiles* as dimmed text. They are never spoken either way."><input type="checkbox" id="show-actions"><span>Show actions as text (never spoken)</span></label>
+        <button type="button" id="open-sessions" class="secondary" title="Open user_data\sessions in Explorer">Open session folder</button>
       </section>
       <div class="side-art" id="side-art-right" aria-hidden="true"></div>
     </aside>
@@ -296,21 +299,21 @@
           <h1 id="catalog-title">Language models</h1>
           <p id="catalog-gpu" class="muted small">—</p>
         </div>
-        <button type="button" id="close-catalog" class="icon-btn" aria-label="Close the model catalog">✕</button>
+        <button type="button" id="close-catalog" class="icon-btn" aria-label="Close the model catalog" title="Close the model catalog (Esc)">✕</button>
       </header>
 
       <div class="chips" role="group" aria-label="Filter models">
-        <button type="button" class="chip" data-filter="all" aria-pressed="true">All</button>
-        <button type="button" class="chip" data-filter="censored" aria-pressed="false">Censored</button>
-        <button type="button" class="chip" data-filter="uncensored" aria-pressed="false">Uncensored</button>
-        <button type="button" class="chip" data-filter="explicit" aria-pressed="false">Explicit</button>
-        <button type="button" class="chip" data-filter="downloaded" aria-pressed="false">Downloaded</button>
+        <button type="button" class="chip" data-filter="all" aria-pressed="true" title="Show all models">All</button>
+        <button type="button" class="chip" data-filter="censored" aria-pressed="false" title="Original releases that decline some topics">Censored</button>
+        <button type="button" class="chip" data-filter="uncensored" aria-pressed="false" title="Community builds and finetunes without the usual refusals">Uncensored</button>
+        <button type="button" class="chip" data-filter="explicit" aria-pressed="false" title="Models for adult content without refusals">Explicit</button>
+        <button type="button" class="chip" data-filter="downloaded" aria-pressed="false" title="Only models you have downloaded">Downloaded</button>
       </div>
 
       <div id="download-bar" class="download-bar" hidden>
         <div class="download-text"><span id="download-name"></span> <span id="download-detail" class="mono small"></span></div>
         <div class="progress"><span id="download-fill"></span></div>
-        <button type="button" id="cancel-download" class="secondary small-btn">Cancel</button>
+        <button type="button" id="cancel-download" class="secondary small-btn" title="Stop the download; it continues where it stopped when you start it again">Cancel</button>
       </div>
 
       <div id="model-list" class="model-list"></div>
@@ -322,18 +325,18 @@
           <code>models\llm</code> appear here automatically.</p>
         <form id="custom-form" class="custom-form">
           <label class="field-label" for="custom-source">Repository or link</label>
-          <input id="custom-source" type="text" placeholder="e.g. TheDrummer/Cydonia-24B-v4.3-GGUF" autocomplete="off" required>
+          <input id="custom-source" type="text" placeholder="e.g. TheDrummer/Cydonia-24B-v4.3-GGUF" autocomplete="off" required title="A Hugging Face repo id (owner/name), a Hugging Face link or a direct link to a .gguf file">
           <div class="custom-row">
             <div>
               <label class="field-label" for="custom-quant">Quantization</label>
-              <select id="custom-quant">
+              <select id="custom-quant" title="Which quantization to download. Auto picks the best one that fits your GPU.">
                 <option value="">Auto (recommended)</option>
                 <option>Q4_K_M</option><option>Q5_K_M</option><option>Q6_K</option><option>Q8_0</option>
               </select>
             </div>
             <div>
               <label class="field-label" for="custom-variant">Label</label>
-              <select id="custom-variant">
+              <select id="custom-variant" title="How the model is labeled in the catalog: censored, uncensored or explicit">
                 <option value="unknown">Unknown</option>
                 <option value="censored">Censored</option>
                 <option value="uncensored">Uncensored</option>
@@ -341,7 +344,7 @@
               </select>
             </div>
           </div>
-          <button type="submit" class="primary custom-submit">Add &amp; download</button>
+          <button type="submit" class="primary custom-submit" title="Look the model up on Hugging Face, add it to the catalog and download it">Add &amp; download</button>
         </form>
         <div id="custom-suggestions" class="suggestions" hidden>
           <p id="custom-suggestions-text"></p>
@@ -359,34 +362,34 @@
     <form id="char-form" class="catalog-panel editor-panel">
       <header class="catalog-head">
         <h1 id="char-editor-title">Edit character</h1>
-        <button type="button" id="close-editor" class="icon-btn" aria-label="Close the character editor">✕</button>
+        <button type="button" id="close-editor" class="icon-btn" aria-label="Close the character editor" title="Close without saving (Esc)">✕</button>
       </header>
       <div class="editor-grid">
         <div>
           <label class="field-label" for="ce-name">Name</label>
-          <input id="ce-name" type="text" maxlength="60" required autocomplete="off">
+          <input id="ce-name" type="text" maxlength="60" required autocomplete="off" title="The character&#x27;s name, shown in the list and the chat">
         </div>
         <div>
           <label class="field-label" for="ce-initials">Initials</label>
-          <input id="ce-initials" type="text" maxlength="3" placeholder="auto" autocomplete="off">
+          <input id="ce-initials" type="text" maxlength="3" placeholder="auto" autocomplete="off" title="Up to 3 letters shown when there is no avatar picture; empty = from the name">
         </div>
         <div>
           <label class="field-label" for="ce-kind">Type</label>
-          <select id="ce-kind">
+          <select id="ce-kind" title="Assistant: helps and answers. Roleplay: stays in character and drives a story.">
             <option value="assistant">Assistant</option>
             <option value="roleplay">Roleplay</option>
           </select>
         </div>
       </div>
       <label class="field-label" for="ce-persona">Short description <span class="muted">(shown in the list)</span></label>
-      <input id="ce-persona" type="text" maxlength="200" autocomplete="off">
+      <input id="ce-persona" type="text" maxlength="200" autocomplete="off" title="One line shown under the name in the character list">
       <label class="field-label" for="ce-prompt">Personality and instructions</label>
-      <textarea id="ce-prompt" rows="9" maxlength="8000" placeholder="You are Hilde, a 70-year-old baker from a village in the Black Forest. You are warm, a little stubborn and love telling stories…"></textarea>
+      <textarea id="ce-prompt" rows="9" maxlength="8000" placeholder="You are Hilde, a 70-year-old baker from a village in the Black Forest. You are warm, a little stubborn and love telling stories…" title="Who the character is, how they talk, what they know and where the conversation takes place. Sent with every message (up to 8000 characters; 1500–3000 work best)."></textarea>
       <p class="hint">Describe who the character is, how they talk, what they know and where the conversation takes place. The model follows this in every conversation with this character. English works best with most models, but German is fine too. Rules for speech (no markdown, no stage directions read aloud) are added automatically.</p>
       <label class="field-label" for="ce-greeting">Greeting <span class="muted">(first message of a new conversation)</span></label>
-      <textarea id="ce-greeting" rows="2" maxlength="2000"></textarea>
+      <textarea id="ce-greeting" rows="2" maxlength="2000" title="The first message of every new chat with this character"></textarea>
       <label class="field-label" for="ce-scene">Scene <span class="muted">(the look of the chat: background, colours and decorations)</span></label>
-      <select id="ce-scene">
+      <select id="ce-scene" title="The look of the chat: background, colours and decorations">
         <option value="plain">Plain</option>
         <option value="tavern">Tavern — candlelight, wood, barrel and mug</option>
         <option value="space">Space — stars, planet and rocket</option>
@@ -425,28 +428,28 @@
       <div class="editor-grid two">
         <div>
           <label class="field-label" for="ce-voice">Voice</label>
-          <select id="ce-voice"></select>
+          <select id="ce-voice" title="The voice this character speaks with"></select>
         </div>
         <div>
           <label class="field-label" for="ce-model">Language model</label>
-          <select id="ce-model"></select>
+          <select id="ce-model" title="A language model just for this character; it is loaded when you switch to them"></select>
         </div>
       </div>
       <div class="editor-switches">
-        <label class="switch"><input type="checkbox" id="ce-voice-output"><span>Voice output</span></label>
-        <label class="switch"><input type="checkbox" id="ce-actions"><span>Show actions as text</span></label>
-        <label class="switch"><input type="checkbox" id="ce-memory"><span>Remember conversations</span></label>
-        <label class="switch"><input type="checkbox" id="ce-recording"><span>Record sessions</span></label>
+        <label class="switch" title="Whether this character speaks aloud"><input type="checkbox" id="ce-voice-output"><span>Voice output</span></label>
+        <label class="switch" title="Show this character&#x27;s actions as dimmed text (never spoken)"><input type="checkbox" id="ce-actions"><span>Show actions as text</span></label>
+        <label class="switch" title="Remember conversations with this character (history, summary and facts)"><input type="checkbox" id="ce-memory"><span>Remember conversations</span></label>
+        <label class="switch" title="Record chats with this character"><input type="checkbox" id="ce-recording"><span>Record sessions</span></label>
         <label class="switch" title="Hidden while family mode is on (Settings → Family mode)"><input type="checkbox" id="ce-adult"><span>For adults only</span></label>
       </div>
       <div class="editor-actions">
-        <button type="button" id="ce-delete" class="secondary danger">Delete</button>
-        <button type="button" id="ce-duplicate" class="secondary">Duplicate</button>
+        <button type="button" id="ce-delete" class="secondary danger" title="Delete this character and everything they remember">Delete</button>
+        <button type="button" id="ce-duplicate" class="secondary" title="Make a copy of this character (without its memory)">Duplicate</button>
         <button type="button" id="ce-export" class="secondary"
                 title="Save this character as a file to keep or share: description, look, pictures and pinned notes. Its memory and a cloned voice are never included.">Export…</button>
         <span class="spacer"></span>
-        <button type="button" id="ce-cancel" class="secondary">Cancel</button>
-        <button type="submit" class="primary">Save</button>
+        <button type="button" id="ce-cancel" class="secondary" title="Close without saving">Cancel</button>
+        <button type="submit" class="primary" title="Save the character; changes apply right away">Save</button>
       </div>
     </form>
   </div>
@@ -457,8 +460,9 @@
         <div>
           <h1 id="settings-title">Settings</h1>
           <p class="muted small" id="settings-version">—</p>
+          <p class="muted small">Use at your own risk, responsibly and with respect for other people's privacy.</p>
         </div>
-        <button type="button" id="close-settings" class="icon-btn" aria-label="Close the settings">✕</button>
+        <button type="button" id="close-settings" class="icon-btn" aria-label="Close the settings" title="Close the settings (Esc)">✕</button>
       </header>
 
       <div class="settings-grid">
@@ -492,41 +496,41 @@
         <section aria-labelledby="set-audio-title">
           <h2 id="set-audio-title">Audio devices</h2>
           <label class="field-label" for="input-device">Microphone</label>
-          <select id="input-device"></select>
+          <select id="input-device" title="The microphone this browser uses"></select>
           <label class="field-label" for="output-device">Speaker / headphones</label>
-          <select id="output-device"></select>
+          <select id="output-device" title="The speaker or headphones this browser plays on"></select>
           <p class="hint" id="device-hint">Chosen for this browser. Device names appear once the microphone is allowed.</p>
         </section>
 
         <section aria-labelledby="set-mic-title">
           <h2 id="set-mic-title">Microphone</h2>
-          <label class="switch"><input type="checkbox" id="mic-enabled"><span>Microphone on</span></label>
+          <label class="switch" title="Off: type only; speech recognition leaves the GPU"><input type="checkbox" id="mic-enabled"><span>Microphone on</span></label>
           <label class="field-label" for="vad-threshold">Speech detection <output id="vad-threshold-out" for="vad-threshold"></output></label>
-          <input type="range" id="vad-threshold" min="0.3" max="0.8" step="0.05">
+          <input type="range" id="vad-threshold" min="0.3" max="0.8" step="0.05" title="How sure the app must be that you are speaking. Raise it if noise starts a turn.">
           <div class="range-labels"><span>more sensitive</span><span>ignores more noise</span></div>
           <label class="field-label" for="end-silence">End of speech after <output id="end-silence-out" for="end-silence"></output></label>
-          <input type="range" id="end-silence" min="300" max="3000" step="100">
+          <input type="range" id="end-silence" min="300" max="3000" step="100" title="How long you can pause before your turn ends (talk mode Auto)">
           <p class="hint">How long you can pause before your turn ends. Raise it if you get cut off mid-sentence.</p>
         </section>
 
         <section aria-labelledby="set-voice-title">
           <h2 id="set-voice-title">Voice output</h2>
-          <label class="switch"><input type="checkbox" id="set-voice-output"><span>Voice output on</span></label>
+          <label class="switch" title="Speak the replies aloud"><input type="checkbox" id="set-voice-output"><span>Voice output on</span></label>
           <label class="field-label" for="tts-steps">Synthesis steps</label>
-          <select id="tts-steps">
+          <select id="tts-steps" title="More steps can sound cleaner but take longer before the reply starts">
             <option value="16">Fast — 16 steps</option>
             <option value="32">Standard — 32 steps</option>
             <option value="48">High — 48 steps</option>
             <option value="64">Best — 64 steps</option>
           </select>
           <label class="field-label" for="tts-precision">Precision</label>
-          <select id="tts-precision">
+          <select id="tts-precision" title="Number precision of the speech synthesis; fp16 is fast, fp32 slower and uses more memory">
             <option value="fp16">fp16 — fast</option>
             <option value="bf16">bf16 — fast</option>
             <option value="fp32">fp32 — full precision, about 2.6× slower</option>
           </select>
           <p class="hint">More steps and fp32 can sound cleaner but take longer before the reply starts. Synthesis time roughly doubles from 32 to 64 steps; fp32 also needs about 2 GB more VRAM.</p>
-          <button type="button" id="regenerate-builtins" class="secondary">Regenerate built-in voices</button>
+          <button type="button" id="regenerate-builtins" class="secondary" title="Create the 8 built-in voices again (each gets a new, slightly different sound)">Regenerate built-in voices</button>
         </section>
 
         <section aria-labelledby="set-llm-title">
@@ -590,22 +594,22 @@
 
         <section aria-labelledby="set-look-title">
           <h2 id="set-look-title">Appearance</h2>
-          <label class="switch"><input type="checkbox" id="set-decorations"><span>Decorations: scenes, fairy lights and lanterns</span></label>
+          <label class="switch" title="Scenes, fairy lights and lanterns; stored in this browser"><input type="checkbox" id="set-decorations"><span>Decorations: scenes, fairy lights and lanterns</span></label>
           <p class="hint">Stored in this browser. Animations stop when Windows is set to reduce motion.</p>
         </section>
 
         <section aria-labelledby="set-family-title">
           <h2 id="set-family-title">Family mode</h2>
-          <label class="switch"><input type="checkbox" id="set-family"><span>Family mode</span></label>
+          <label class="switch" title="Hide uncensored and explicit models and characters for adults only"><input type="checkbox" id="set-family"><span>Family mode</span></label>
           <p class="hint">Hides uncensored and explicit language models in the catalog and characters marked
             "For adults only". It is a filter for shared computers, not a lock: anyone can switch it off here.</p>
         </section>
 
         <section aria-labelledby="set-rec-title">
           <h2 id="set-rec-title">Session recording</h2>
-          <label class="switch"><input type="checkbox" id="set-record-sessions"><span>Record sessions</span></label>
+          <label class="switch" title="Record each chat as one MP3 and a transcript"><input type="checkbox" id="set-record-sessions"><span>Record sessions</span></label>
           <label class="field-label" for="session-bitrate">MP3 quality</label>
-          <select id="session-bitrate">
+          <select id="session-bitrate" title="Sound quality and size of the recorded session MP3">
             <option value="32">32 kbit/s — about 15 MB per hour</option>
             <option value="48">48 kbit/s — about 22 MB per hour</option>
             <option value="64">64 kbit/s — about 29 MB per hour (default)</option>
@@ -613,7 +617,7 @@
             <option value="128">128 kbit/s — about 58 MB per hour</option>
           </select>
           <label class="field-label" for="session-gap">Pause between turns <output id="session-gap-out" for="session-gap"></output></label>
-          <input type="range" id="session-gap" min="0" max="2000" step="100">
+          <input type="range" id="session-gap" min="0" max="2000" step="100" title="Silence between turns in the recording (the waiting time is never recorded)">
           <p class="hint">Applies to new recordings; waiting time is never recorded.</p>
         </section>
       </div>
@@ -624,17 +628,17 @@
     <div class="catalog-panel crop-panel">
       <header class="catalog-head">
         <h1 id="crop-title">Fit the picture</h1>
-        <button type="button" id="crop-close" class="icon-btn" aria-label="Cancel">✕</button>
+        <button type="button" id="crop-close" class="icon-btn" aria-label="Cancel" title="Cancel (Esc)">✕</button>
       </header>
       <p class="hint">Drag the picture to move it, use the slider or the mouse wheel to zoom.</p>
       <canvas id="crop-canvas" class="crop-canvas" width="300" height="300"
               title="Drag to move the picture; scroll to zoom"></canvas>
       <label class="field-label" for="crop-zoom">Zoom</label>
-      <input type="range" id="crop-zoom" min="1" max="4" step="0.01" value="1">
+      <input type="range" id="crop-zoom" min="1" max="4" step="0.01" value="1" title="Zoom the picture">
       <div class="editor-actions">
         <span class="spacer"></span>
-        <button type="button" id="crop-cancel" class="secondary">Cancel</button>
-        <button type="button" id="crop-ok" class="primary">Use picture</button>
+        <button type="button" id="crop-cancel" class="secondary" title="Do not use this picture">Cancel</button>
+        <button type="button" id="crop-ok" class="primary" title="Use this part of the picture">Use picture</button>
       </div>
     </div>
   </div>

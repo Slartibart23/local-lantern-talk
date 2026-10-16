@@ -61,6 +61,11 @@ Elara: Ach, die Goldene Laterne … die gibt es schon seit dreißig Jahren.
 - Only the spoken words are written. Actions (`*wipes the counter*`), out-of-character
   remarks and model reasoning are left out.
 - Typed messages and replies without voice output appear like spoken ones.
+- With a name in **Settings → Your profile**, your lines start with your name instead of
+  "You". Director's notes are never part of the transcript.
+- **Deleting messages** in the chat (🗑, see [characters.md](characters.md#deleting-writing-again-and-editing-messages))
+  cuts them off the end of the MP3 and the transcript too. *Write again* replaces the
+  last reply in the recording.
 - The position of every utterance in the MP3 (for the replay buttons) is kept in a
   hidden file, `user_data\sessions\.index\<session>.jsonl`. If you delete a session's
   `.md` and `.mp3`, this file is removed automatically.

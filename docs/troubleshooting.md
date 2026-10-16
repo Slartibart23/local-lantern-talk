@@ -66,9 +66,18 @@ your microphone" and the browser must be allowed).
 it does not move, the browser gets no sound (wrong device, muted microphone). If it moves
 but nothing happens, lower **Speech detection** in Settings.
 
-**My sentence is cut off / the character interrupts my thinking pauses**: move **Thinking
-pauses → End of speech after** in the right panel to the right (1.2–2 s works well; up to
-3 s). The same slider is in Settings → Microphone.
+**My sentence is cut off / the character interrupts my thinking pauses**: switch the talk
+mode under the chat to **Smart** — it waits while you sound unfinished and answers quickly
+when you are done — or to **Push to talk**, or click **Hold on** while you think and
+**Send** when you are done. In *Auto* you can also move **Thinking pauses → End of speech
+after** in the right panel to the right (1.2–2 s works well; up to 3 s).
+
+**Smart says the model could not be downloaded**: older installations fetch the Smart
+Turn model (9 MB) once when you choose *Smart*; that needs an internet connection. Running
+`install.bat` again downloads it as well.
+
+**Push to talk does not react to the Space bar**: click into an empty part of the chat
+first; while you type in a text field, Space types a space.
 
 **The app reacts to background noise or its own voice**: raise **Speech detection**, and
 use headphones if your speakers are loud. The microphone is muted while the character
@@ -88,9 +97,10 @@ exact reference text matter most.
 ## Language model and GPU memory
 
 **"… is too big for the free GPU memory"** or **"The GPU ran out of memory"**: pick a
-smaller model or quantization in *Change model…*, lower the **Context length** in
-Settings, close other programs that use the GPU (games, video editors, other AI tools),
-or turn voice output off. The VRAM bar in the right panel shows what uses the memory.
+smaller model or quantization in *Change model…*, switch the **Context length** in
+Settings to *Automatic* (or move it into the green zone), close other programs that use
+the GPU (games, video editors, other AI tools such as LM Studio), or turn voice output
+off. The VRAM bar in the right panel shows what uses the memory.
 
 **Replies are slow and a notice says part of the model runs on the CPU**: the model does
 not fit completely into GPU memory. A smaller quantization is faster.

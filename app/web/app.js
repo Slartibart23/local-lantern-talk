@@ -923,7 +923,8 @@ function modelRow(m) {
     el("div", { class: "model-purpose" }, m.purpose + (m.note ? ` — ${m.note}` : "")),
     meta ? el("div", { class: "model-meta" }, meta) : null));
 
-  const select = el("select", { "aria-label": `Quantization for ${m.name}` });
+  const select = el("select", { "aria-label": `Quantization for ${m.name}`,
+                                title: "How finely the model is stored: higher numbers are better but bigger" });
   for (const x of m.quants) {
     const opt = new Option(`${x.quant} · ${x.size_gb} GB${x.downloaded ? " · downloaded" : ""}`, x.quant);
     select.append(opt);
@@ -938,12 +939,13 @@ function modelRow(m) {
   if (loaded) {
     actions.append(el("span", { class: "loaded-label" }, "Loaded"));
   } else if (q.downloaded) {
-    actions.append(el("button", { type: "button", class: "primary", onclick: () => loadModel(q.file) }, "Load"));
+    actions.append(el("button", { type: "button", class: "primary", title: "Load this model now (takes a few seconds)",
+                                  onclick: () => loadModel(q.file) }, "Load"));
   } else if (downloading) {
     actions.append(el("span", { class: "muted small" }, "Downloading…"));
   } else {
     const btn = el("button", {
-      type: "button", class: "primary",
+      type: "button", class: "primary", title: `Download ${q.file} (${q.size_gb} GB) and load it`,
       onclick: () => send({ type: "download_model", id: m.id, quant: q.quant }),
     }, "Download & load");
     if (q.fit === "too_big") {
@@ -957,19 +959,20 @@ function modelRow(m) {
   }
   if (q.downloaded && !loaded) {
     actions.append(el("button", {
-      type: "button", class: "secondary", "aria-label": `Delete ${q.file}`,
+      type: "button", class: "secondary", "aria-label": `Delete ${q.file}`, title: "Delete the downloaded file",
       onclick: () => { if (confirm(`Delete ${q.file} (${q.size_gb} GB) from models\\llm?`)) send({ type: "delete_model", file: q.file }); },
     }, "Delete"));
   }
   if (m.source !== "catalog") {
-    const label = el("select", { "aria-label": `Label for ${m.name}` });
+    const label = el("select", { "aria-label": `Label for ${m.name}`, title: "How this model is labeled in the catalog" });
     for (const v of ["unknown", "censored", "uncensored", "explicit"]) label.append(new Option(VARIANT_LABEL[v], v));
     label.value = m.variant;
     label.onchange = () => send({ type: "set_model_label", file: q.file, variant: label.value });
     actions.append(label);
   }
   if (m.source === "custom" && !q.downloaded) {
-    actions.append(el("button", { type: "button", class: "secondary", onclick: () => send({ type: "remove_custom_model", id: m.id }) }, "Remove"));
+    actions.append(el("button", { type: "button", class: "secondary", title: "Remove this model from the catalog",
+                                  onclick: () => send({ type: "remove_custom_model", id: m.id }) }, "Remove"));
   }
   row.append(actions);
   return row;

@@ -85,28 +85,35 @@ Options (for advanced users), e.g. `install.bat -Yes`:
 | ffmpeg | ~0.1 GB | `runtime\ffmpeg` |
 | Whisper large-v3-turbo | ~1.6 GB | `models\whisper` |
 | OmniVoice | ~3.2 GB | `models\omnivoice` |
-| Silero VAD, fonts | < 5 MB | `models\vad`, `runtime\fonts` |
+| Silero VAD, Smart Turn v3.2 (talk mode Smart), fonts | ~12 MB | `models\vad`, `runtime\fonts` |
 | Starter model Gemma 4 12B (optional) | 7.1–8.4 GB | `models\llm` |
 
-Every runtime download (uv, llama.cpp, ffmpeg) is verified with a pinned SHA-256
-checksum. The 8 built-in voices come with the app (`config\builtin_voices\`, under 1 MB);
+Every runtime download (uv, llama.cpp, ffmpeg) and the Smart Turn model are verified with
+a pinned SHA-256 checksum. Installations from before Smart Turn existed download it
+(9 MB) the first time you choose the talk mode *Smart*. The 8 built-in voices come with the app (`config\builtin_voices\`, under 1 MB);
 the installer only prepares them for OmniVoice (a few seconds).
 
 ## Hardware profiles
 
-The installer picks a profile from your GPU's memory and stores it in
-`user_data\settings.json` (`hardware_profile`). You can choose another one in
-**Settings → Language model → Hardware profile** (`hardware_profile_override`).
+The app picks a profile from your GPU's memory and stores it in
+`user_data\settings.json` (`hardware_profile`); a new GPU or a new profile is picked up
+at the next start. You can choose another one in **Settings → Language model → Hardware
+profile** (`hardware_profile_override`); the **i** next to it explains what it does.
 
-| Profile | VRAM | Whisper | Default model quantization |
-|---|---|---|---|
-| `high` | 24 GB+ | GPU, float16 | Q5_K_M |
-| `mid` | 16–23 GB | GPU, int8 | Q4_K_M |
-| `low` | 10–15 GB | GPU, int8 | Q4_K_M, models up to 12B |
-| `unsupported` | < 10 GB | CPU | best effort; text-only recommended |
+| Profile | VRAM | Whisper | Default model quantization | Automatic context up to |
+|---|---|---|---|---|
+| `ultra` | 32 GB+ | GPU, float16 | Q6_K | 32 768 tokens |
+| `high` | 24–31 GB | GPU, float16 | Q5_K_M | 32 768 tokens |
+| `mid` | 16–23 GB | GPU, int8 | Q4_K_M | 16 384 tokens |
+| `low` | 10–15 GB | GPU, int8 | Q4_K_M, models up to 12B | 8 192 tokens |
+| `unsupported` | < 10 GB | CPU | best effort; text-only recommended | 4 096 tokens |
+
+The automatic context only goes as high as it still fits completely on the GPU, so the
+limit is a maximum, not a promise.
 
 Cards report slightly less memory than their nominal size (a "24 GB" RTX 5090
-Laptop GPU reports 23.9 GB), so the limits are set just below the nominal values.
+Laptop GPU reports 23.9 GB, a desktop RTX 5090 31.8 GB), so the limits are set just
+below the nominal values.
 
 ### Measured memory use
 
@@ -118,8 +125,18 @@ Measured on an **RTX 5090 Laptop GPU (24 GB)**, driver 616.92:
 | OmniVoice (fp16) | ~2.3 GB, up to ~4.7 GB while speaking |
 | Gemma 3 12B Q5_K_M, 8k context | ~9.4 GB |
 
-Values for other GPUs (RTX 3080, RTX 4090, desktop RTX 5090 with 32 GB) are
-estimates until someone measures them on that hardware.
+Measured on a **desktop RTX 5090 (32 GB)**, driver 616.92, profile `ultra`:
+
+| Component | VRAM |
+|---|---|
+| Whisper large-v3-turbo (float16) + Silero VAD | ~2.6 GB |
+| OmniVoice (fp16) | ~2.1 GB, more while speaking |
+| Gemma 4 12B Q5_K_M, 32k context (Automatic) | ~9.7 GB |
+| Smart Turn v3.2 | runs on the CPU (about 15 ms per check) |
+
+Loading everything took 34 s; the first spoken word followed a typed message after
+1.3 s. Values for other GPUs (RTX 3080, RTX 4090) are estimates until someone measures
+them on that hardware.
 
 ## Expected warnings
 

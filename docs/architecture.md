@@ -17,7 +17,9 @@ Everything runs on the local computer; the backend only listens on `127.0.0.1`.
                                            │   │   ├─ sentences.py  streaming sentences │
                                            │   │   └─ tts.py        OmniVoice           │
                                            │   ├─ characters.py   personas             │
+                                           │   ├─ turn.py         end of turn (Smart)  │
                                            │   ├─ memory.py       SQLite history/facts │
+                                           │   ├─ images.py       avatars, backgrounds │
                                            │   ├─ recorder.py     session MP3 + .md    │
                                            │   └─ models.py       catalog, downloads   │
                                            └────────────────────────────────────────────┘
@@ -30,14 +32,19 @@ Everything runs on the local computer; the backend only listens on `127.0.0.1`.
    while the engine is in the *Listening* state; it is muted while the assistant thinks
    or speaks and while a recording is replayed, so the app never hears itself.
 2. **Voice activity detection** — the audio thread resamples to 16 kHz and feeds Silero
-   VAD in 32 ms frames. An utterance ends after the configured silence (default 700 ms).
-   The full-quality audio of the same span is kept for session recording.
+   VAD in 32 ms frames. How an utterance ends depends on the talk mode: *Auto* after the
+   configured silence (default 700 ms); *Smart* asks Smart Turn v3.2 (an 8 MB ONNX model
+   on the CPU, `turn.py`) after 300 ms of silence whether the speaker sounds finished, and
+   otherwise waits for a long pause; *Push to talk* and *Hold on* collect all audio between
+   two button events (markers in the audio queue keep them in order with the sound). The
+   full-quality audio of the same span is kept for session recording.
 3. **Speech recognition** — faster-whisper (large-v3-turbo) transcribes the utterance
    and detects its language. Typed messages skip this step; their language is guessed
    from the text.
-4. **Prompt** — the character's instructions, roleplay rules, remembered facts and
-   summary, and rules for speakable output form the system prompt
-   (`prompts.py`); the unsummarized history follows.
+4. **Prompt** — the character's instructions, your profile, roleplay rules, remembered
+   facts and summary, director's notes (pinned ones and the one for this reply) and rules
+   for speakable output form the system prompt (`prompts.py`); the unsummarized history
+   follows.
 5. **Language model** — `llama-server` (llama.cpp) streams the reply. Reasoning is
    disabled in the chat template and filtered anyway.
 6. **Sanitizer** — `sanitizer.py` splits the stream into *speech*, *action*, *OOC*,
@@ -63,6 +70,15 @@ Everything runs on the local computer; the backend only listens on `127.0.0.1`.
   delays the conversation.
 - **Download thread** — model downloads with progress, cancel and resume.
 
+## Context length
+
+When a model is loaded for the first time, `llama-fit-params` is run for three context
+lengths (4k, 16k, 64k). Its memory breakdown (weights + context cache + compute buffers)
+grows linearly with the context, so the need of any other length is interpolated
+(`models.ContextProfile`). *Automatic* takes the largest multiple of 1024 that fits into
+the free memory (minus a 512 MB reserve), capped by the hardware profile; the settings
+slider colours the same data green / yellow / red.
+
 ## GPU memory
 
 The language model gets what is left after Whisper, Silero VAD and OmniVoice (which grows
@@ -86,6 +102,7 @@ ends together with the app even if the console window is closed or the app crash
 | Memory | `user_data\memory\memory.db` | SQLite: messages, summaries, facts, meta |
 | Voices | `user_data\voices\` | audio clips + `.txt` reference texts; prepared clips and voice prompts are cached in `.cache\` |
 | Sessions | `user_data\sessions\` | `<session>.mp3`, `<session>.md`, offsets in `.index\<session>.jsonl` |
+| Pictures | `user_data\images\` | avatars and backgrounds (WebP / PNG / JPEG, shrunk in the browser) |
 | Models | `models\` | GGUF, CTranslate2, safetensors, TorchScript |
 
 ## Security
@@ -95,6 +112,7 @@ ends together with the app even if the console window is closed or the app crash
   WebSocket and uploads require the app's own origin; recordings are not served to
   other web pages.
 - Chat text, characters and facts are never written to the log files.
+- Pictures and character exports are only served to the app's own page.
 
 ## Tests
 

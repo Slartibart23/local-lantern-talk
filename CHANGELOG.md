@@ -109,8 +109,46 @@ project uses [Semantic Versioning](https://semver.org/).
   now uses bartowski's imatrix quantizations.
 - "Quit app" button: closes the app from the browser, unloads all models and frees the
   GPU memory; conversations are saved.
+- Talk modes under the chat, one click to switch: *Auto* (a pause ends the turn), *Smart*
+  (Smart Turn v3.2 hears whether you sound finished and waits while you think; 8 MB ONNX
+  model on the CPU, downloaded by the installer or once on first use) and *Push to talk*
+  (Talk button or Space; hold, or click to start and again to send). *Hold on* collects
+  everything you say, including the sentence in progress, until *Send*.
+- *Stop* button (and Esc) ends the reply that is being written or spoken.
+- Delete messages from the end of a chat (with everything after them): they are removed
+  from the chat, the memory, the LLM history and the session recording (MP3, transcript
+  and index are cut). *Write again* for the last reply, *Edit* for your last message.
+- Director's notes under the message box: a note for the next reply, notes pinned to the
+  character (kept across *End chat* and restarts), and *Continue* to let the character go
+  on by itself. Never spoken and never in the transcript.
+- Pictures and colours: an avatar per character (cropped to a circle in the browser,
+  shown in the list and at the top left of the chat), a washed-out chat background per
+  character, and 16 text colours for the character's and your own messages.
+- Your profile (Settings): name, a few words about you (sent to every character), your
+  own avatar at the top right of the chat and your text colour; your name replaces "You"
+  in session transcripts.
+- Character export / import: one file with description, look, pictures and pinned notes;
+  memory and cloned voices are never included.
+- Family mode (Settings): hides uncensored and explicit models and characters marked
+  *For adults only*.
+- Context length: *Automatic* (default) loads the largest context that fits completely on
+  the GPU, capped by the hardware profile; otherwise a slider in 1024-token steps up to the
+  model's maximum with green / yellow / red zones measured for the loaded model
+  (llama-fit-params at three context lengths, interpolated). Explanations behind **i**.
+- Hardware profile `ultra` for 32 GB+ GPUs (Q6_K, automatic context up to 32k); a new
+  profile is picked up at the next start without reinstalling.
+- Model catalog: a new label *explicit* (filter, badge, label for your own models) with
+  Qwen 3.6 27B Uncensored Aggressive (HauhauCS, K_P quantizations), Qwen 3.6 27B
+  Abliterated, Mistral Small 3.2 24B Abliterated v2, Mistral Small 24B (2501) Abliterated
+  and Dolphin 3.0 Mistral 24B.
+- English tooltips on every field and button.
+- A notice on the start screen, in Settings and in the README: use the app at your own
+  risk, responsibly and with respect for other people's privacy.
 
 ### Changed
+- The example characters greet in English and use the English built-in voices; they still
+  answer in the language you speak.
+- The memory summary grows with the context (200 words at 8k, 400 at 16k, 800 at 32k).
 - License: PolyForm Strict 1.0.0 instead of MIT — noncommercial use; changing the software,
   sharing changed versions or commercial use only with the author's permission. Own data and
   configuration files may be changed (additional permissions in `LICENSE`).

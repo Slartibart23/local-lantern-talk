@@ -19,13 +19,14 @@ Everything lives inside the program folder. The sub-folders are fixed:
 │   ├── llm\             GGUF language models
 │   ├── whisper\         speech recognition
 │   ├── omnivoice\       speech synthesis
-│   ├── vad\             voice activity detection
+│   ├── vad\             voice activity detection (Silero) and end-of-turn detection (Smart Turn)
 │   └── builtin_voices\  the 8 generated built-in voices
 ├── user_data\     Everything personal
 │   ├── characters\      one JSON file per character
 │   ├── voices\          your voice clips (+ .txt transcripts)
 │   ├── memory\          memory.db (history, summaries, facts)
 │   ├── sessions\        recordings: <session>.mp3 + <session>.md
+│   ├── images\          avatars and chat backgrounds you added
 │   ├── custom_models.json
 │   └── settings.json
 └── logs\          server.log, llama-server.log, console / setup / self-test logs
@@ -43,6 +44,7 @@ installs are needed, and deleting the folder removes the app completely.
 
 | Section | Setting | Default |
 | --- | --- | --- |
+| Your profile | Your name, a few words about you, your avatar, the text colour of your messages | empty |
 | Audio devices | Microphone, speaker / headphones (stored in the browser) | system default |
 | Microphone | Microphone on | on |
 | | Speech detection (0.3 more sensitive … 0.8 ignores more noise) | 0.50 |
@@ -51,14 +53,19 @@ installs are needed, and deleting the folder removes the app completely.
 | | Synthesis steps (16 / 32 / 48 / 64) | 32 |
 | | Precision (fp16 / bf16 / fp32) | fp16 |
 | | Regenerate built-in voices | — |
-| Language model | Context length (4096 … 32768 tokens) | 8192 |
-| | Hardware profile (automatic or high / mid / low / unsupported) | automatic |
+| Language model | Context length: Automatic, or a slider in 1024-token steps with green / yellow / red zones | Automatic |
+| | Hardware profile (automatic or ultra / high / mid / low / unsupported) | automatic |
+| Appearance | Decorations: scenes, fairy lights and lanterns (stored in the browser) | on |
+| Family mode | Hides uncensored and explicit models and characters marked *For adults only* | off |
 | Session recording | Record sessions | on |
 | | MP3 quality (32 … 128 kbit/s) | 64 kbit/s |
 | | Pause between turns (0 … 2 s) | 0.5 s |
 
 The side panels hold the settings you change most often: voice, *Match built-in voice to
-spoken language*, language model, memory and session recording.
+spoken language*, language model, memory and session recording. The **talk mode**
+(*Auto*, *Smart*, *Push to talk*) is switched with one click under the chat. Every field
+and button explains itself in a tooltip when you point at it; the **i** buttons open a
+longer explanation (context length, hardware profile).
 
 ## `user_data\settings.json`
 
@@ -74,12 +81,17 @@ closed; invalid values are ignored or rejected with a message.
 | `match_language` | Built-in voices follow the spoken language |
 | `show_actions` | Show actions as text (the active character's setting) |
 | `end_silence_ms`, `vad_threshold` | End of speech (200–3000 ms) and speech detection (0.2–0.9) |
+| `talk_mode` | `auto` (a pause ends your turn), `smart` (Smart Turn decides) or `ptt` (push to talk) |
 | `num_step`, `tts_precision` | OmniVoice synthesis steps (8–96) and precision |
-| `context` | LLM context length: 2048, 4096, 8192, 16384, 32768 or 65536 |
+| `context_auto` | Pick the largest context that fits on the GPU (up to the hardware profile's limit) |
+| `context` | Fixed context length when `context_auto` is off: 2048–131072 in steps of 1024 |
 | `record_sessions`, `session_gap_ms`, `session_bitrate_kbps` | Session recording |
-| `hardware_profile` | Detected by the installer (`high`, `mid`, `low`, `unsupported`) |
+| `hardware_profile` | Detected from the GPU (`ultra`, `high`, `mid`, `low`, `unsupported`) |
 | `hardware_profile_override` | Your choice; empty = use the detected profile |
 | `gpu_name`, `gpu_vram_mib` | Detected GPU (informational) |
+| `user_name`, `user_about` | Your profile: sent to every character with each message |
+| `user_avatar`, `user_color` | Your picture (in `user_data\images\`) and the text colour of your messages |
+| `family_mode` | Family mode on / off |
 
 ## Command-line options
 
