@@ -10,21 +10,31 @@ switches all of that in one click.
 Four example characters are shipped in `config\default_characters\` and copied to
 `user_data\characters\` on the first start:
 
-| Character | Type | Voice |
-| --- | --- | --- |
-| **Lena** | Assistant: warm and upbeat | built-in English female |
-| **Max** | Assistant: calm and precise | built-in English male |
-| **Elara** | Roleplay: keeper of the Gilded Lantern tavern (fantasy) | built-in English female |
-| **Captain Vargas** | Roleplay: captain of the survey ship Meridian (sci-fi) | built-in English male |
+| Character | Use | Scene | Recommended models (24–32 GB · 10–16 GB) |
+| --- | --- | --- | --- |
+| **Lena** | Everyday assistant: questions, writing, planning | Plain | Gemma 4 26B-A4B · Gemma 4 12B |
+| **Max** | Small talk and good company | Plain | Mistral Small 3.2 24B · Mistral Nemo 12B |
+| **Professor Edmund Hale** | In-depth conversations: explaining and debating | Study | Qwen 3.8 27B Abliterated · Qwen3 14B |
+| **Elara** | Fantasy roleplay: keeper of the Gilded Lantern tavern | Tavern | Cydonia 24B · Rocinante 12B |
+| **Captain Vargas** | Science-fiction roleplay: commander of the survey ship Meridian | Space | Magidonia 24B · MN-12B Mag-Mell R1 |
+| **Vivienne** | Adult evening roleplay: owner of The Red Lantern bar (*for adults only*) | Red lantern | Qwen 3.6 27B Abliterated · Gemma 4 12B Heretic |
+
+Each comes with a portrait (AI-generated, no real people), a **profile** and two
+recommended models: one for GPUs with 24–32 GB and one for 10–16 GB. Click the character's
+picture in the chat to see the profile card; *Show in catalog* opens the model in the
+catalog. A recommendation never loads a model by itself.
 
 They greet you in English. As soon as you speak or type German, Spanish or French, they
 answer in your language, and their built-in voice switches to the same language.
 
-They are copied only once. Changing or deleting them later never brings them back on
-their own, and updates never overwrite your edited versions. To get the current shipped
-version of an example character back: delete it in the app, close the app, delete the
-file `user_data\characters\.defaults-copied` and start the app again. Missing example
-characters are then copied once more; your other characters are not touched.
+Each example is copied once. New examples in an update appear at the next start, and an
+example without a picture gets its portrait once. Changing or deleting them later never
+brings them back on their own, and updates never overwrite your edited versions. To get
+the current shipped version of an example character back: delete it in the app, close
+the app, delete the file `user_data\characters\.defaults.json` (and `.defaults-copied`, if
+it is there) and start the app again.
+Missing example characters are then copied once more; your other characters are not
+touched.
 
 ## Creating and editing characters
 
@@ -45,10 +55,11 @@ characters are then copied once more; your other characters are not touched.
 | **Name** | Shown in the list and the header (up to 60 characters). |
 | **Initials** | Shown when there is no avatar picture. Left empty, they are made from the name ("Großmutter Hilde" → GH). |
 | **Type** | *Assistant* or *Roleplay*. Roleplay characters additionally get rules to stay in character and never speak for you. |
-| **Short description** | One line shown as a tooltip in the list. |
+| **Short description** | One line shown as a tooltip in the list and on the profile card. |
+| **Profile** | The profile card for you: age, background, personality. Shown when you click the character's picture; the model does not see it. |
 | **Personality and instructions** | The most important field: who the character is. See below. |
 | **Greeting** | The first message of every new conversation. It is shown as text, not spoken. |
-| **Scene** | The look of the chat: *Tavern*, *Space*, *Red lantern*, *Study* or *Plain* — background, accent colour, fairy-light colours and cliparts in the side panels. Elara and Captain Vargas come with a scene. Switch decorations off in **Settings → Appearance**. |
+| **Scene** | The look of the chat: *Tavern*, *Space*, *Red lantern*, *Study* or *Plain* — background, accent colour, fairy-light colours and cliparts in the side panels. Every example character comes with a scene. Switch decorations off in **Settings → Appearance**. |
 | **Avatar** | A picture of the character, shown in the list, in the header and as a portrait at the top left of the chat. Choose any JPG, PNG or WebP photo; you move and zoom it to fit the circle, and the app shrinks it to 768 × 768 pixels. The portrait size is set in **Settings → Appearance → Avatar size**: *Small* (header only), *Medium* or *Large*. Portraits grow with the window height (Medium about 245 px, Large about 390 px on a 2560 × 1440 screen), get smaller in narrow windows and are hidden on very small ones. |
 | **Chat background** | A picture behind the chat, shown washed out so the text stays readable (*Washed out*, 40–95 %). It replaces the scene's background; the app shrinks it to at most 1920 pixels. |
 | **Text colour** | One of 16 clearly different colours for the character's messages, all readable on the dark chat. Your own colour is set in **Settings → Your profile**. |

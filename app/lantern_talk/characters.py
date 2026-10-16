@@ -20,6 +20,10 @@ SCENES = ("plain", "tavern", "space", "red-lantern", "study")  # look of the cha
 MAX_TEXT = 8000
 MAX_NOTE = 300     # characters per director's note
 MAX_NOTES = 8      # pinned notes per character
+MAX_PROFILE = 2000
+# The examples shipped before new ones were added; installations that copied them have the old marker file.
+FIRST_DEFAULTS = ("lena", "max", "elara", "captain-vargas")
+DEFAULTS_STATE = ".defaults.json"
 # Chat text colours (web UI): 16 clearly different colours that are all readable on the dark chat.
 TEXT_COLORS = ("white", "silver", "yellow", "gold", "orange", "coral", "red", "pink", "magenta", "lavender",
                "violet", "sky", "blue", "turquoise", "mint", "lime")
@@ -51,6 +55,8 @@ class Character:
     text_color: str = ""              # one of TEXT_COLORS for the character's messages; "" = default
     director_notes: list[str] = field(default_factory=list)   # pinned director's notes (always active)
     adult: bool = False               # for adults only: hidden in family mode
+    profile: str = ""                 # profile card for you (who the character is); not sent to the model
+    recommended_models: list[str] = field(default_factory=list)  # catalog ids: big GPUs first, then small ones
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -120,39 +126,77 @@ def validate(data: dict[str, Any], char_id: str) -> Character:
     if not isinstance(notes, list):
         notes = []
     values["director_notes"] = [" ".join(str(n).split())[:MAX_NOTE] for n in notes if str(n).strip()][:MAX_NOTES]
+    profile = str(values.get("profile", "") or "").strip()
+    if len(profile) > MAX_PROFILE:
+        raise CharacterError(f"The profile is too long ({MAX_PROFILE} characters at most).")
+    values["profile"] = profile
+    models = values.get("recommended_models") or []
+    values["recommended_models"] = [str(m) for m in models if re.fullmatch(r"[\w.\-]{1,80}", str(m))][:4] \
+        if isinstance(models, list) else []
     return Character(**values)
 
 
 class CharacterStore:
     """Loads, saves, creates and deletes character files."""
 
-    def __init__(self, folder: Path, defaults: Path) -> None:
+    def __init__(self, folder: Path, defaults: Path, images: Any = None) -> None:
         self.folder = folder
         self.defaults = defaults
+        self.images = images   # ImageStore for the examples' portraits (None in tests)
         self.characters: dict[str, Character] = {}
 
+    def _defaults_state(self) -> dict[str, list[str]]:
+        state_file = self.folder / DEFAULTS_STATE
+        try:
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            # Before this file existed, the first four examples were copied once (marker file).
+            state = {"characters": list(FIRST_DEFAULTS) if (self.folder / ".defaults-copied").exists() else []}
+        return {"characters": list(state.get("characters") or []), "avatars": list(state.get("avatars") or [])}
+
     def load(self) -> None:
-        """Read all characters; copy the shipped examples on the very first start (spec §10)."""
+        """Read all characters. Each shipped example is copied once (spec §10): new examples also reach
+        older installations, and examples you changed or deleted are never brought back."""
         self.folder.mkdir(parents=True, exist_ok=True)
-        marker = self.folder / ".defaults-copied"
-        if not marker.exists():
-            if self.defaults.is_dir():
-                for f in sorted(self.defaults.glob("*.json")):
-                    if not (self.folder / f.name).exists():
-                        shutil.copy(f, self.folder / f.name)
-            marker.write_text("The example characters were copied once; deleted ones stay deleted.\n")
+        state = self._defaults_state()
+        shipped_files = sorted(self.defaults.glob("*.json")) if self.defaults.is_dir() else []
+        for f in shipped_files:
+            if f.stem not in state["characters"]:
+                if not (self.folder / f.name).exists():
+                    shutil.copy(f, self.folder / f.name)
+                state["characters"].append(f.stem)
         self.characters = {}
         for f in sorted(self.folder.glob("*.json")):
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
-                if "scene" not in data:  # copied before scenes existed: take the example's scene
-                    shipped = self.defaults / f.name
-                    if shipped.exists():
-                        data["scene"] = json.loads(shipped.read_text(encoding="utf-8")).get("scene", "plain")
+                shipped_path = self.defaults / f.name
+                shipped = json.loads(shipped_path.read_text(encoding="utf-8")) if shipped_path.exists() else None
+                if shipped is not None:
+                    # Copied from an older version: take over what the example has gained since.
+                    for key in ("scene", "profile", "recommended_models"):
+                        if key not in data and key in shipped:
+                            data[key] = shipped[key]
                 char = validate(data, f.stem)
+                if shipped is not None and char.id not in state["avatars"]:
+                    char = self._give_portrait(char)
+                    state["avatars"].append(char.id)
                 self.characters[char.id] = char
             except (OSError, ValueError) as exc:
                 log.warning("Skipping character file %s: %s", f.name, exc)
+        state_file = self.folder / DEFAULTS_STATE
+        state_file.write_text(json.dumps(state, indent=1) + "\n", encoding="utf-8")
+
+    def _give_portrait(self, char: Character) -> Character:
+        """An example without a picture gets its shipped portrait, once (you can replace or remove it)."""
+        picture = self.defaults / f"{char.id}.webp"
+        if self.images is None or char.avatar or not picture.exists():
+            return char
+        try:
+            char.avatar = self.images.save("avatar", picture.read_bytes())
+            self._write(char)
+        except (OSError, ValueError) as exc:
+            log.warning("Could not add the portrait of %s: %s", char.id, exc)
+        return char
 
     def list(self) -> list[Character]:
         return sorted(self.characters.values(), key=lambda c: (c.kind != "assistant", c.name.lower()))

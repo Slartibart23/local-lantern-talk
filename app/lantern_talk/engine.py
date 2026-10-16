@@ -170,7 +170,7 @@ class Engine:
         self.conversation.config.user = user_context(s.user_name, s.user_about)
         self.images = ImageStore(paths.images)
         self._fresh_images: dict[str, float] = {}  # uploaded, maybe not saved yet (editor still open)
-        self.characters = CharacterStore(paths.characters, paths.config / "default_characters")
+        self.characters = CharacterStore(paths.characters, paths.config / "default_characters", self.images)
         self.characters.load()
         self.memory = MemoryStore(paths.memory / "memory.db")
         self.character: Character | None = None

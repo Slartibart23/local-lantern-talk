@@ -73,11 +73,11 @@ say). The same app covers a wide range:
 
 | You want … | Character | Good models from the catalog |
 |---|---|---|---|
-| Casual, funny small talk | Lena, Max, or your own cheerful character | Gemma 4 12B, Gemma 4 26B-A4B |
-| A voice assistant for questions, explanations, brainstorming, writing | Lena, Max, or your own expert character | Gemma 4 26B-A4B (best German), Mistral Small 3.2, Qwen 3.8 27B |
-| In-depth, well-founded discussions | A knowledgeable character, e.g. a professor or a specialist | Gemma 4 26B-A4B, Mistral Small 3.2, Qwen 3.8 27B |
-| Interactive stories and roleplay | Elara (fantasy tavern), Captain Vargas (sci-fi), or your own | Cydonia, Magidonia, Skyfall, Gemma 4 26B-A4B Heretic |
-| Mature, uncensored roleplay (NSFW) between adults | Your own adult character | Explicit models: Qwen 3.6 Uncensored Aggressive, Qwen 3.6 Abliterated, Mistral Small Abliterated, Dolphin 3.0; uncensored: Gemma 4 Heretic, Cydonia, Magidonia (Heretic), Qwen 3.8 Abliterated, Rocinante |
+| Casual, funny small talk | **Max**, or your own cheerful character | Mistral Small 3.2, Mistral Nemo 12B |
+| A voice assistant for questions, explanations, brainstorming, writing | **Lena**, or your own expert character | Gemma 4 26B-A4B (best German), Gemma 4 12B |
+| In-depth, well-founded discussions | **Professor Edmund Hale**, or your own specialist | Qwen 3.8 27B, Qwen3 14B, Gemma 4 26B-A4B |
+| Interactive stories and roleplay | **Elara** (fantasy tavern), **Captain Vargas** (sci-fi), or your own | Cydonia, Magidonia, Skyfall, Gemma 4 26B-A4B Heretic, Mag-Mell 12B |
+| Mature, uncensored roleplay (NSFW) between adults | **Vivienne** (*for adults only*), or your own adult character | Explicit models: Qwen 3.6 Uncensored Aggressive, Qwen 3.6 Abliterated, Mistral Small Abliterated, Dolphin 3.0; uncensored: Gemma 4 Heretic, Cydonia, Magidonia (Heretic), Qwen 3.8 Abliterated, Rocinante |
 
 - **Censored** models (marked *censored* in the catalog) are the original releases by
   Google and Mistral: careful, precise, and they decline some topics. They are the best

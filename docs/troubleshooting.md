@@ -133,7 +133,7 @@ Commit or stash them (or undo them), then update again.
 - Reset a character's memory: right panel → *Reset this character's memory…*.
 - Reset all settings: close the app and delete `user_data\settings.json`.
 - Restore the example characters: close the app and delete
-  `user_data\characters\.defaults-copied`; missing example characters are copied again on
-  the next start (your own characters stay).
+  `user_data\characters\.defaults.json` (and `.defaults-copied`, if it is there); missing
+  example characters are copied again on the next start (your own characters stay).
 - Rebuild the runtime: delete `runtime\` and run `install.bat` (models and your data
   stay).

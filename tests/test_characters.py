@@ -7,10 +7,12 @@ from pathlib import Path
 
 import pytest
 
+from lantern_talk.catalog import load_catalog
 from lantern_talk.characters import CharacterError, CharacterStore, initials_for, slugify
 
 ROOT = Path(__file__).parents[1]
 DEFAULTS = ROOT / "config" / "default_characters"
+CATALOG_IDS = {e.id for e in load_catalog(ROOT / "config" / "model_catalog.yaml")}
 
 
 @pytest.fixture()
@@ -22,13 +24,17 @@ def store(tmp_path: Path) -> CharacterStore:
 
 def test_shipped_examples(store: CharacterStore) -> None:
     chars = {c.id: c for c in store.list()}
-    assert set(chars) == {"max", "lena", "elara", "captain-vargas"}
+    assert set(chars) == {"max", "lena", "elara", "captain-vargas", "professor-hale", "vivienne"}
     assert chars["max"].kind == chars["lena"].kind == "assistant"
     assert chars["elara"].kind == chars["captain-vargas"].kind == "roleplay"
     assert chars["max"].voice == "builtin:en_male" and chars["lena"].voice == "builtin:en_female"
     assert [c.kind for c in store.list()][:2] == ["assistant", "assistant"]  # assistants first
     for c in chars.values():
         assert c.greeting and c.system_prompt and len(c.avatar_initials) == 2
+        assert c.profile and len(c.recommended_models) == 2 and (DEFAULTS / f"{c.id}.webp").exists()
+        assert all(m in CATALOG_IDS for m in c.recommended_models)  # every recommendation is in the catalog
+    assert chars["vivienne"].adult and not any(c.adult for c in chars.values() if c.id != "vivienne")
+    assert len({c.scene for c in chars.values()}) == 5  # every scene is used
 
 
 def test_deleted_examples_are_not_copied_again(store: CharacterStore) -> None:
@@ -101,3 +107,32 @@ def test_scene_is_validated_and_taken_from_the_examples(tmp_path: Path) -> None:
     store = CharacterStore(folder, defaults)
     store.load()
     assert store.get("elara").scene == "tavern"
+
+
+def test_older_installations_get_new_examples_and_portraits(tmp_path: Path) -> None:
+    from lantern_talk.images import ImageStore
+
+    folder = tmp_path / "chars"
+    folder.mkdir()
+    # An installation from before: the first four examples were copied, then Max was deleted.
+    (folder / ".defaults-copied").write_text("x", encoding="utf-8")
+    for cid in ("lena", "elara", "captain-vargas"):
+        old = json.loads((DEFAULTS / f"{cid}.json").read_text(encoding="utf-8"))
+        for key in ("profile", "recommended_models"):
+            old.pop(key, None)
+        (folder / f"{cid}.json").write_text(json.dumps(old), encoding="utf-8")
+    edited = json.loads((folder / "elara.json").read_text(encoding="utf-8"))
+    edited["avatar"] = "avatar-0123456789ab.webp"  # a picture of your own
+    (folder / "elara.json").write_text(json.dumps(edited), encoding="utf-8")
+    images = ImageStore(tmp_path / "images")
+    store = CharacterStore(folder, DEFAULTS, images)
+    store.load()
+    ids = {c.id for c in store.list()}
+    assert ids == {"lena", "elara", "captain-vargas", "professor-hale", "vivienne"}  # Max stays deleted
+    assert store.get("lena").profile and store.get("lena").recommended_models  # new fields taken over
+    assert images.path(store.get("lena").avatar) and images.path(store.get("vivienne").avatar)
+    assert store.get("elara").avatar == "avatar-0123456789ab.webp"  # your own picture is kept
+    # The portrait is given once: removing it is respected on the next start.
+    store.save({**store.get("lena").to_dict(), "avatar": ""}, "lena")
+    store.load()
+    assert store.get("lena").avatar == ""

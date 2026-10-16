@@ -146,6 +146,14 @@ project uses [Semantic Versioning](https://semver.org/).
   risk, responsibly and with respect for other people's privacy.
 
 ### Changed
+- Six example characters with six uses, each with an AI-generated portrait, a profile card
+  (click the picture) and two recommended models (24–32 GB and 10–16 GB; *Show in catalog*,
+  never loaded automatically): Lena (everyday assistant), Max (small talk), Professor Edmund
+  Hale (in-depth conversations, new), Elara (fantasy), Captain Vargas (sci-fi) and Vivienne
+  (adult evening roleplay at The Red Lantern, new, for adults only). New examples and the
+  portraits also reach older installations once; edited or deleted characters stay as they are.
+- Model catalog: Mistral Nemo 12B Instruct, Qwen3 14B and MN-12B Mag-Mell R1 for smaller GPUs.
+- Scene *Red lantern* restyled as a modern bar: red neon, neon lips, a martini and a stiletto.
 - Avatars as portraits at the top corners of the chat (the character left, you right), in three
   sizes (Settings → Appearance → Avatar size) that grow with the window, so they stay large on
   1440p and 4K monitors; avatars are stored at 768 × 768 pixels.

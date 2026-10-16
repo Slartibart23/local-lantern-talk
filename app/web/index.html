@@ -81,7 +81,7 @@
         <button type="button" class="icon-btn narrow-only" id="toggle-left" aria-label="Show characters" aria-controls="left-panel" aria-expanded="false" title="Show the characters and recorded sessions">
           <svg aria-hidden="true"><use href="#i-menu"/></svg>
         </button>
-        <span class="avatar header-avatar" id="header-avatar" title="The character you are talking to">LA</span>
+        <span class="avatar header-avatar" id="header-avatar" title="The character you are talking to: click for the profile">LA</span>
         <div class="chat-title">
           <div class="chat-name" id="header-name">Lantern</div>
           <div class="chat-sub"><span id="header-role">Assistant</span> · <span id="header-voice">—</span></div>
@@ -123,7 +123,7 @@
 
       <div id="messages" class="messages" role="log" aria-live="polite" aria-label="Messages">
         <div class="portraits" aria-hidden="true">
-          <img class="portrait char" id="portrait-char" alt="" hidden>
+          <img class="portrait char" id="portrait-char" alt="" hidden title="Show the profile">
           <img class="portrait you" id="portrait-you" alt="" hidden>
         </div>
         <div class="empty" id="empty-hint">Say hello, or type a message below.</div>
@@ -402,6 +402,10 @@
       </div>
       <label class="field-label" for="ce-persona">Short description <span class="muted">(shown in the list)</span></label>
       <input id="ce-persona" type="text" maxlength="200" autocomplete="off" title="One line shown under the name in the character list">
+      <label class="field-label" for="ce-profile">Profile <span class="muted">(the profile card for you: age, background, personality — not sent to the model)</span></label>
+      <textarea id="ce-profile" rows="3" maxlength="2000"
+                title="Shown when you click the character's picture. The model does not see it; describe the character for the model under Personality and instructions."></textarea>
+      <p class="hint" id="ce-recommended"></p>
       <label class="field-label" for="ce-prompt">Personality and instructions</label>
       <textarea id="ce-prompt" rows="9" maxlength="8000" placeholder="You are Hilde, a 70-year-old baker from a village in the Black Forest. You are warm, a little stubborn and love telling stories…" title="Who the character is, how they talk, what they know and where the conversation takes place. Sent with every message (up to 8000 characters; 1500–3000 work best)."></textarea>
       <p class="hint">Describe who the character is, how they talk, what they know and where the conversation takes place. The model follows this in every conversation with this character. English works best with most models, but German is fine too. Rules for speech (no markdown, no stage directions read aloud) are added automatically.</p>
@@ -412,7 +416,7 @@
         <option value="plain">Plain</option>
         <option value="tavern">Tavern — candlelight, wood, barrel and mug</option>
         <option value="space">Space — stars, planet and rocket</option>
-        <option value="red-lantern">Red lantern — red light, rose and cocktail</option>
+        <option value="red-lantern">Red lantern — red neon, lips, martini and stiletto</option>
         <option value="study">Study — parchment, books and globe</option>
       </select>
       <div class="editor-look">
@@ -645,6 +649,31 @@
           <input type="range" id="session-gap" min="0" max="2000" step="100" title="Silence between turns in the recording (the waiting time is never recorded)">
           <p class="hint">Applies to new recordings; waiting time is never recorded.</p>
         </section>
+      </div>
+    </div>
+  </div>
+
+  <div id="profile-card" class="catalog" role="dialog" aria-modal="true" aria-labelledby="pc-name" hidden>
+    <div class="catalog-panel profile-panel">
+      <header class="catalog-head">
+        <div class="pc-head">
+          <span class="avatar pc-avatar" id="pc-avatar" aria-hidden="true"></span>
+          <div>
+            <h1 id="pc-name">—</h1>
+            <p class="muted small" id="pc-persona"></p>
+          </div>
+        </div>
+        <button type="button" id="pc-close" class="icon-btn" aria-label="Close the profile" title="Close (Esc)">✕</button>
+      </header>
+      <p class="pc-profile" id="pc-profile"></p>
+      <h2 class="pc-title">Recommended language models</h2>
+      <ul class="pc-models" id="pc-models"></ul>
+      <p class="hint">A recommendation only: switching characters never loads another model. Load or download it in
+        the catalog.</p>
+      <div class="editor-actions">
+        <span class="spacer"></span>
+        <button type="button" id="pc-edit" class="secondary" title="Open the character editor">Edit character</button>
+        <button type="button" id="pc-ok" class="primary" title="Close the profile">Close</button>
       </div>
     </div>
   </div>

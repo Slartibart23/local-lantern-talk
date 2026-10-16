@@ -182,6 +182,28 @@ models:
         file: "Rocinante-12B-v1.1-Q6_K.gguf"
         size_bytes: 10056208832
         min_vram_gb: 12.0
+  - id: mn-12b-mag-mell-r1
+    display_name: "MN-12B Mag-Mell R1"
+    family: "Mistral Nemo"
+    variant: uncensored
+    purpose: "Roleplay for smaller GPUs; lively storytelling"
+    hf_repo: bartowski/MN-12B-Mag-Mell-R1-GGUF
+    context_default: 8192
+    license_note: "Apache-2.0 base (Mistral Nemo); roleplay merge by inflatebot, imatrix quants by bartowski."
+    languages_note: "Strongest in English; German, French and Spanish are weaker."
+    files:
+      Q4_K_M:
+        file: "MN-12B-Mag-Mell-R1-Q4_K_M.gguf"
+        size_bytes: 7477205984
+        min_vram_gb: 9.5
+      Q5_K_M:
+        file: "MN-12B-Mag-Mell-R1-Q5_K_M.gguf"
+        size_bytes: 8727632864
+        min_vram_gb: 10.5
+      Q6_K:
+        file: "MN-12B-Mag-Mell-R1-Q6_K.gguf"
+        size_bytes: 10056211424
+        min_vram_gb: 12.0
   - id: qwen3.6-27b-hauhaucs-aggressive
     display_name: "Qwen 3.6 27B Uncensored Aggressive"
     family: "Qwen 3.6"
@@ -362,3 +384,48 @@ models:
         file: "gemma-4-12b-it-Q6_K.gguf"
         size_bytes: 9786022720
         min_vram_gb: 11.0
+  - id: mistral-nemo-12b
+    display_name: "Mistral Nemo 12B Instruct"
+    family: "Mistral Nemo"
+    variant: censored
+    purpose: "Assistant & small talk for smaller GPUs; natural conversation"
+    hf_repo: bartowski/Mistral-Nemo-Instruct-2407-GGUF
+    context_default: 8192
+    license_note: "Apache-2.0 (Mistral Nemo, Mistral AI and NVIDIA); imatrix quants by bartowski."
+    languages_note: "Good German, French, Spanish, Italian and Portuguese."
+    files:
+      Q4_K_M:
+        file: "Mistral-Nemo-Instruct-2407-Q4_K_M.gguf"
+        size_bytes: 7477208192
+        min_vram_gb: 9.5
+      Q5_K_M:
+        file: "Mistral-Nemo-Instruct-2407-Q5_K_M.gguf"
+        size_bytes: 8727635072
+        min_vram_gb: 10.5
+      Q6_K:
+        file: "Mistral-Nemo-Instruct-2407-Q6_K.gguf"
+        size_bytes: 10056213632
+        min_vram_gb: 12.0
+  - id: qwen3-14b
+    display_name: "Qwen3 14B"
+    family: "Qwen 3"
+    variant: censored
+    purpose: "Assistant for smaller GPUs; strong at explaining and reasoning"
+    hf_repo: Qwen/Qwen3-14B-GGUF
+    context_default: 8192
+    license_note: "Apache-2.0 (Qwen3), official GGUF by the Qwen team."
+    languages_note: "Good German, French and Spanish, and many other languages."
+    note: "Reasoning is switched off, so it answers right away."
+    files:
+      Q4_K_M:
+        file: "Qwen3-14B-Q4_K_M.gguf"
+        size_bytes: 9001752960
+        min_vram_gb: 11.0
+      Q5_K_M:
+        file: "Qwen3-14B-Q5_K_M.gguf"
+        size_bytes: 10514569568
+        min_vram_gb: 12.5
+      Q6_K:
+        file: "Qwen3-14B-Q6_K.gguf"
+        size_bytes: 12121937248
+        min_vram_gb: 14.0

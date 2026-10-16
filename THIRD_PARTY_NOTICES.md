@@ -20,6 +20,10 @@ The 8 built-in voice clips in `config\builtin_voices\` were generated with OmniV
 voice design (synthetic voices, no recordings of real people) and are shipped with the
 app for that reason.
 
+The portraits of the example characters (`config\default_characters\*.webp`) are
+AI-generated images of fictional people, provided by the project's author; they do not
+show real persons. They are part of Local Lantern Talk and licensed with it.
+
 > **Non-commercial use:** the OmniVoice model weights are licensed for non-commercial
 > use only. Because every spoken reply (built-in and cloned voices) is produced with
 > them, using Local Lantern Talk's voice output commercially is not permitted by that

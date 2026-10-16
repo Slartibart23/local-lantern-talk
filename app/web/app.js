@@ -909,13 +909,14 @@ function renderCatalog() {
   if (!models.length) list.append(el("p", { class: "muted" }, "No models in this view."));
   for (const m of models) list.append(modelRow(m));
   renderDownload();
+  focusCatalogRow();
 }
 
 function modelRow(m) {
   const chosen = app.chosenQuant[m.id] || m.recommended.quant;
   const q = m.quants.find((x) => x.quant === chosen) || m.quants[0];
   const loaded = m.state === "loaded" && q.file === app.settings.model;
-  const row = el("div", { class: `model-row ${q.fit}${loaded ? " loaded" : ""}` });
+  const row = el("div", { class: `model-row ${q.fit}${loaded ? " loaded" : ""}`, "data-id": m.id });
 
   const meta = [m.family, m.languages_note, m.license_note].filter(Boolean).join(" · ");
   const hf = m.hf_repo ? el("a", { class: "hf-link", href: `https://huggingface.co/${m.hf_repo}`, target: "_blank",
@@ -1282,6 +1283,12 @@ function openEditor(id) {
   $("ce-initials").value = c ? d.avatar_initials : "";
   $("ce-kind").value = d.kind;
   $("ce-persona").value = d.persona;
+  $("ce-profile").value = d.profile || "";
+  const recommended = (d.recommended_models || []).map(modelName).filter(Boolean);
+  $("ce-recommended").textContent = recommended.length
+    ? `Recommended models: ${recommended.join(" (24–32 GB) · ")}${recommended.length > 1 ? " (10–16 GB)" : ""}. ` +
+      "A recommendation only; nothing is loaded automatically."
+    : "";
   $("ce-prompt").value = d.system_prompt;
   $("ce-greeting").value = d.greeting;
   fillVoiceOptions($("ce-voice"), d.voice);
@@ -1314,6 +1321,8 @@ function saveEditor(ev) {
     avatar_initials: $("ce-initials").value.trim().toUpperCase(),
     kind: $("ce-kind").value,
     persona: $("ce-persona").value.trim(),
+    profile: $("ce-profile").value.trim(),
+    recommended_models: (app.characters.find((x) => x.id === app.editingId) || {}).recommended_models || [],
     system_prompt: $("ce-prompt").value.trim(),
     greeting: $("ce-greeting").value.trim(),
     voice: $("ce-voice").value,
@@ -1760,8 +1769,11 @@ function applyDecorations() {
   $("set-decorations").checked = on;
   $("set-avatar-size").value = avatarSize();
   const [left, right] = on ? SCENES[name].art : ["", ""];
-  $("side-art-left").innerHTML = left;
-  $("side-art-right").innerHTML = right;
+  for (const [id, art] of [["side-art-left", left], ["side-art-right", right]]) {
+    const pictures = [].concat(art);  // one clipart or a pair
+    $(id).innerHTML = pictures.join("");
+    $(id).classList.toggle("pair", pictures.length > 1);
+  }
   drawGarland();
 }
 
@@ -2026,6 +2038,61 @@ function cropDialog(bitmap) {
   });
 }
 
+// ---------------------------------------------------------------- profile card (click the character's picture)
+
+function modelName(id) {
+  const m = app.models.find((x) => x.id === id);
+  return m ? m.name : "";
+}
+
+function openProfileCard() {
+  const c = app.character;
+  if (!c) return;
+  setAvatar($("pc-avatar"), c.avatar, c.avatar_initials);
+  $("pc-name").textContent = c.name;
+  $("pc-persona").textContent = [KIND_LABEL[c.kind] || c.kind, c.persona, c.adult ? "for adults only" : ""]
+    .filter(Boolean).join(" · ");
+  $("pc-profile").textContent = c.profile || "No profile yet. Add one in the character editor (Profile).";
+  const list = $("pc-models");
+  list.innerHTML = "";
+  const labels = ["For GPUs with 24–32 GB", "For GPUs with 10–16 GB"];
+  (c.recommended_models || []).forEach((id, i) => {
+    const m = app.models.find((x) => x.id === id);
+    if (!m) return;
+    const loaded = m.downloaded_files.includes(app.settings.model);
+    list.append(el("li", {},
+      el("span", { class: "pc-model" }, el("strong", {}, m.name),
+        el("span", { class: `badge ${m.variant}` }, VARIANT_LABEL[m.variant]),
+        loaded ? el("span", { class: "badge fits" }, "loaded") : null),
+      el("span", { class: "muted small" }, labels[i] || ""),
+      el("button", { type: "button", class: "secondary", title: "Open the model catalog at this model",
+                     onclick: () => { closeProfileCard(); showInCatalog(id); } }, "Show in catalog")));
+  });
+  if (!list.children.length) list.append(el("li", { class: "muted small" }, "No recommendation for this character."));
+  $("profile-card").hidden = false;
+  $("pc-ok").focus();
+}
+
+function closeProfileCard() {
+  $("profile-card").hidden = true;
+}
+
+function showInCatalog(id) {
+  app.catalogFilter = "all";
+  app.catalogFocus = { id, until: Date.now() + 2500 };  // the catalog is drawn again when fresh data arrives
+  openCatalog();
+  renderCatalog();
+}
+
+function focusCatalogRow() {
+  const f = app.catalogFocus;
+  if (!f || Date.now() > f.until) { app.catalogFocus = null; return; }
+  const row = document.querySelector(`#model-list .model-row[data-id="${CSS.escape(f.id)}"]`);
+  if (!row) return;
+  row.scrollIntoView({ block: "center" });
+  row.classList.add("flash");
+}
+
 function openProfileSettings() {
   openSettings();
   $("settings-profile").scrollIntoView({ block: "start" });
@@ -2236,6 +2303,12 @@ function init() {
   $("ce-name").addEventListener("input", () => { if (app.editLook) renderEditorLook(); });
   $("ce-initials").addEventListener("input", () => { if (app.editLook) renderEditorLook(); });
   $("user-avatar").onclick = openProfileSettings;
+  $("header-avatar").onclick = openProfileCard;
+  $("portrait-char").onclick = openProfileCard;
+  $("pc-close").onclick = closeProfileCard;
+  $("pc-ok").onclick = closeProfileCard;
+  $("pc-edit").onclick = () => { closeProfileCard(); if (app.character) openEditor(app.character.id); };
+  $("profile-card").onclick = (e) => { if (e.target === $("profile-card")) closeProfileCard(); };
   $("you-avatar-pick").onclick = async () => {
     const name = await chooseImage("user-avatar");
     if (name) changeSetting("user_avatar", name);
@@ -2303,6 +2376,7 @@ function init() {
     if (ev.key === "Escape") {
       if (["thinking", "speaking"].includes(app.state) && $("char-editor").hidden && $("settings").hidden) stopReply();
       else if (app.collecting) cancelTalk();
+      else if (!$("profile-card").hidden) closeProfileCard();
       else if (app.editingLast) cancelEditLast();
       else if (!$("char-editor").hidden) closeEditor();
       else if (!$("settings").hidden) closeSettings();

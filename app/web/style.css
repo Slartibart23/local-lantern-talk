@@ -443,6 +443,8 @@ body.decorated .brand-icon { color: #e5533d; filter: drop-shadow(0 0 6px rgba(22
 .side-art { margin-top: auto; padding: 12px 0 4px; display: flex; justify-content: center; pointer-events: none; }
 .side-art:empty { padding: 0; }
 .side-art svg { width: 150px; height: auto; opacity: .85; }
+.side-art.pair { gap: 8px; }
+.side-art.pair svg { width: 125px; }
 .panel.right .side-art { margin-top: 6px; }
 .quit-area { margin-top: 0; }
 .char .avatar { box-shadow: 0 0 0 1px color-mix(in srgb, var(--ring, transparent) 45%, transparent); }
@@ -470,13 +472,19 @@ body.scene-space .scene-fx { background-image:
 body.scene-space .panel { background: linear-gradient(#0d1324, #0a0f1d); }
 body.scene-space { --ai-bubble: rgba(18, 28, 48, .85); }
 
-body.scene-red-lantern .center { background: radial-gradient(ellipse 55% 50% at 50% 0, rgba(220,40,40,.24), transparent 70%), linear-gradient(#1e0c0e, #140809); }
+body.scene-red-lantern .center { background:
+    radial-gradient(ellipse 50% 45% at 50% 0, rgba(255, 45, 111, .22), transparent 70%),
+    radial-gradient(ellipse 40% 50% at 100% 100%, rgba(200, 16, 46, .22), transparent 70%),
+    radial-gradient(ellipse 35% 40% at 0 70%, rgba(150, 30, 120, .16), transparent 70%),
+    linear-gradient(#1a0810, #0f0509); }
 body.scene-red-lantern .scene-fx { background:
     radial-gradient(circle 26px at 15% 30%, rgba(255,80,60,.18), transparent), radial-gradient(circle 18px at 80% 22%, rgba(255,140,60,.16), transparent),
     radial-gradient(circle 34px at 70% 80%, rgba(255,60,80,.12), transparent), radial-gradient(circle 20px at 30% 85%, rgba(255,110,60,.14), transparent);
   animation: scene-drift 8s ease-in-out infinite alternate; }
-body.scene-red-lantern .panel { background: linear-gradient(#1f1012, #170b0c); }
-body.scene-red-lantern { --ai-bubble: rgba(48, 16, 18, .86); }
+body.scene-red-lantern .panel { background: linear-gradient(#1c0b12, #12060b); }
+body.scene-red-lantern { --ai-bubble: rgba(52, 12, 26, .86); }
+body.scene-red-lantern .scene-fx { animation: scene-neon 6s ease-in-out infinite; }
+@keyframes scene-neon { 0%, 100% { opacity: 1; } 47% { opacity: 1; } 48% { opacity: .55; } 50% { opacity: 1; } 52% { opacity: .7; } 54% { opacity: 1; } }
 
 body.scene-study .center { background: radial-gradient(ellipse 50% 60% at 90% 10%, rgba(255,220,150,.14), transparent 70%), linear-gradient(#1b1a14, #15140f); }
 body.scene-study .panel { background: linear-gradient(#1d1b15, #171610); }
@@ -613,3 +621,20 @@ body.viewing-session .portraits { display: none; }
   .portraits { display: none; }
   body.portrait-left .messages, body.portrait-right .messages { padding-left: 14px; padding-right: 14px; }
 }
+
+/* ---- profile card ------------------------------------------------------------------------ */
+.profile-panel { width: min(640px, 96vw); }
+.pc-head { display: flex; align-items: center; gap: 16px; }
+.pc-head h1 { margin: 0 0 2px; }
+.pc-avatar { width: 96px; height: 96px; font-size: 24px; }
+.pc-profile { margin: 16px 0; line-height: 1.6; white-space: pre-wrap; }
+.pc-title { font-size: 11px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--text-faint); margin: 0 0 8px; }
+.pc-models { list-style: none; margin: 0; padding: 0; }
+.pc-models li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 0;
+  border-bottom: 1px solid var(--line); }
+.pc-model { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pc-models .secondary { padding: 5px 10px; font-size: 12px; }
+.chat-header .header-avatar { cursor: pointer; }
+.portrait.char { pointer-events: auto; cursor: pointer; }
+.model-row.flash { border-color: var(--amber); box-shadow: 0 0 0 2px var(--amber); transition: box-shadow .3s; }
+@media (max-width: 640px) { .pc-models li { grid-template-columns: 1fr; } }

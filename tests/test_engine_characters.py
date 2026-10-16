@@ -256,7 +256,7 @@ def test_duplicate_and_delete_active_character(setup) -> None:  # noqa: ANN001
     _turn(engine, rec, "Hallo!")
     start = len(rec.events)
     engine.duplicate_character("lena")
-    ev = _wait(rec, "character", start, lambda e: len(e["characters"]) == 5)
+    ev = _wait(rec, "character", start, lambda e: len(e["characters"]) == 7)
     assert any(c["name"] == "Lena (copy)" for c in ev["characters"])
     start = len(rec.events)
     engine.delete_character("lena")

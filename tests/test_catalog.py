@@ -19,7 +19,7 @@ BY_ID = {e.id: e for e in CATALOG}
 # ---------------------------------------------------------------- shipped catalog
 
 def test_shipped_catalog_is_valid() -> None:
-    assert len(CATALOG) == 16
+    assert len(CATALOG) == 19
     assert len({e.id for e in CATALOG}) == len(CATALOG)
     for e in CATALOG:
         assert e.variant in ("censored", "uncensored", "explicit")

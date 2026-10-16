@@ -65,28 +65,6 @@ const rocket = svg(`
     <path d="M72 80 Q80 112 88 80 Z" fill="#ffb02e"/><path d="M76 80 Q80 98 84 80 Z" fill="#fff1b8"/>
   </g>`);
 
-const rose = svg(`
-  <path d="M80 60 Q76 90 82 116" stroke="#3f7a3a" stroke-width="4" fill="none"/>
-  <path d="M80 88 Q60 80 52 92 Q66 98 80 92 Z" fill="#4f8f45"/>
-  <path d="M81 100 Q100 92 108 102 Q94 108 81 104 Z" fill="#4f8f45"/>
-  <circle cx="80" cy="40" r="30" fill="#ff4a5a" opacity=".14"/>
-  <path d="M58 44 Q56 22 80 18 Q104 22 102 44 Q100 64 80 66 Q60 64 58 44 Z" fill="#b3122a"/>
-  <path d="M64 42 Q64 26 80 24 Q96 26 96 42 Q94 56 80 58 Q66 56 64 42 Z" fill="#d61f38"/>
-  <path d="M70 40 Q72 30 82 30 Q92 32 90 42 Q88 50 80 50 Q72 48 70 40 Z" fill="#e8394f"/>
-  <path d="M76 38 Q80 32 86 36 Q86 42 80 44 Q76 42 76 38 Z" fill="#a50f25"/>`);
-
-const cocktail = svg(`
-  <circle cx="44" cy="22" r="2" fill="#ffd6cc"/><circle cx="122" cy="16" r="1.6" fill="#ffd6cc"/>
-  <path d="M120 40 l4 -6 l4 6 l-4 6 Z" fill="#ffb3a0" opacity=".8"/>
-  <path d="M36 52 l3 -5 l3 5 l-3 5 Z" fill="#ffb3a0" opacity=".7"/>
-  <path d="M46 30 L114 30 L82 66 L78 66 Z" fill="#e5533d" opacity=".85"/>
-  <path d="M46 30 L114 30" stroke="#e8e6e1" stroke-width="3" opacity=".7"/>
-  <path d="M46 30 L80 68 L114 30" fill="none" stroke="#e8e6e1" stroke-width="2.5" opacity=".6"/>
-  <line x1="80" y1="68" x2="80" y2="104" stroke="#e8e6e1" stroke-width="3" opacity=".6"/>
-  <ellipse cx="80" cy="106" rx="20" ry="4" fill="#e8e6e1" opacity=".6"/>
-  <line x1="100" y1="12" x2="88" y2="44" stroke="#8a6a3a" stroke-width="2"/>
-  <circle cx="100" cy="14" r="7" fill="#c8102e"/><circle cx="98" cy="12" r="2" fill="#ff8a8a"/>`);
-
 const books = svg(`
   <ellipse cx="74" cy="110" rx="66" ry="6" fill="#000" opacity=".3"/>
   <rect x="14" y="88" width="110" height="20" rx="3" fill="#6b2d2d"/>
@@ -111,6 +89,35 @@ const globe = svg(`
   <line x1="80" y1="90" x2="80" y2="102" stroke="#8a6a3a" stroke-width="5"/>
   <path d="M58 108 Q80 98 102 108 Z" fill="#8a6a3a"/>`);
 
+// Red lantern: a modern bar in the red-light quarter — neon lips, a martini and a stiletto.
+const neonLips = svg(`
+  <rect x="14" y="10" width="132" height="96" rx="14" fill="#14070b" stroke="#3a1420" stroke-width="3"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M34 56 C46 34 64 32 80 44 C96 32 114 34 126 56 C110 84 96 92 80 92 C64 92 50 84 34 56 Z"
+          stroke="#ff2d6f" stroke-width="12" opacity=".25"/>
+    <path d="M34 56 C46 34 64 32 80 44 C96 32 114 34 126 56 C110 84 96 92 80 92 C64 92 50 84 34 56 Z"
+          stroke="#ff5c8a" stroke-width="4"/>
+    <path d="M40 57 C60 62 100 62 120 57" stroke="#ff9ab8" stroke-width="3"/>
+  </g>
+  <circle cx="30" cy="24" r="2.5" fill="#ff5c8a"/><circle cx="130" cy="24" r="2.5" fill="#ff5c8a"/>`);
+
+const martini = svg(`
+  <ellipse cx="80" cy="56" rx="46" ry="40" fill="#ff2d6f" opacity=".12"/>
+  <path d="M38 22 L122 22 L80 66 Z" fill="#ffd9e4" opacity=".25" stroke="#ffe6ee" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M50 34 L110 34 L80 62 Z" fill="#ff3d6e" opacity=".75"/>
+  <line x1="80" y1="66" x2="80" y2="100" stroke="#ffe6ee" stroke-width="3"/>
+  <ellipse cx="80" cy="102" rx="24" ry="5" fill="none" stroke="#ffe6ee" stroke-width="3"/>
+  <line x1="98" y1="10" x2="84" y2="42" stroke="#c8a24a" stroke-width="2.5"/>
+  <circle cx="84" cy="44" r="7" fill="#d1132f"/><path d="M84 37 C88 30 94 28 98 30" fill="none" stroke="#3d6b3a" stroke-width="2"/>`);
+
+const stiletto = svg(`
+  <ellipse cx="80" cy="104" rx="64" ry="7" fill="#000" opacity=".35"/>
+  <path d="M26 98 C24 80 34 66 48 62 C62 58 76 60 92 66 C110 72 126 80 134 94 L134 100 L118 100
+           C110 88 96 82 84 82 C70 82 60 88 52 100 Z" fill="#c8102e"/>
+  <path d="M30 96 C34 76 50 68 66 68" fill="none" stroke="#ff5c7a" stroke-width="3" opacity=".7"/>
+  <path d="M120 98 L126 100 L128 112 L124 112 Z" fill="#7a0a1c"/>
+  <path d="M26 98 L52 100" stroke="#7a0a1c" stroke-width="4" stroke-linecap="round"/>`);
+
 export const SCENES = {
   plain: { label: "Plain", ring: "#f2a93b", lanterns: true,
            bulbs: ["#f2a93b", "#e5533d", "#ffe3a3", "#f07b2c"], art: [paperLantern, ""] },
@@ -118,8 +125,8 @@ export const SCENES = {
             bulbs: ["#ffb347", "#ffd27a", "#f07b2c", "#ffe3a3"], art: [barrelAndMug, candle] },
   space: { label: "Space", ring: "#6fb6ff", lanterns: false,
            bulbs: ["#9fd0ff", "#e6f2ff", "#6fb6ff", "#c7b8ff"], art: [planet, rocket] },
-  "red-lantern": { label: "Red lantern", ring: "#ff5a4a", lanterns: true,
-                   bulbs: ["#e5533d", "#ff7a5c", "#ffb3a0", "#c8281e"], art: [rose, cocktail] },
+  "red-lantern": { label: "Red lantern", ring: "#ff3d6e", lanterns: false,
+                   bulbs: ["#ff2d6f", "#ff5c8a", "#c8102e", "#ff9ab8"], art: [neonLips, [martini, stiletto]] },
   study: { label: "Study", ring: "#d8c08a", lanterns: false,
            bulbs: ["#ffe3a3", "#f2c46b", "#fff1cc", "#e0b060"], art: [books, globe] },
 };
