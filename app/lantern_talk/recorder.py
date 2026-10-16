@@ -110,6 +110,22 @@ def mp3_duration(data: bytes | memoryview) -> float:
     return seconds
 
 
+def mp3_cut_position(data: bytes | memoryview, seconds: float) -> int:
+    """Byte position of the first frame that starts at or after ``seconds``."""
+    i, t = 0, 0.0
+    while i < len(data):
+        if t >= seconds - 1e-6:
+            return i
+        info = _frame_info(data, i)
+        if info is None:
+            i += 1
+            continue
+        length, samples, rate = info
+        t += samples / rate
+        i += length
+    return len(data)
+
+
 def estimate_duration(path: Path) -> float:
     """Quick duration of a constant-bitrate MP3 from its size."""
     try:
@@ -338,6 +354,11 @@ class SessionRecorder:
         if self.name is not None:
             self._queue.put(("item", item))
 
+    def truncate(self, name: str, drop: int) -> None:
+        """Remove the newest ``drop`` utterances of session ``name`` (MP3, transcript and index)."""
+        if drop > 0 and self.valid_name(name):
+            self._queue.put(("truncate", (name, drop)))
+
     def wait_idle(self, timeout: float = 30.0) -> None:
         """Block until everything queued so far is written (tests, shutdown)."""
         done = threading.Event()
@@ -375,6 +396,11 @@ class SessionRecorder:
                     mp3 = md = None
                 elif cmd == "item" and mp3 is not None and md is not None:
                     self._write(arg, mp3, md)
+                elif cmd == "truncate":
+                    name, drop = arg
+                    seconds = self._truncate(name, drop)
+                    if mp3 is not None and mp3.stem == name:
+                        self.duration = seconds  # the next utterance continues where the cut is
             except Exception:  # noqa: BLE001 - recording must never break the conversation
                 log.exception("Session recording failed (%s)", cmd)
 
@@ -404,6 +430,41 @@ class SessionRecorder:
             _append(md, f"{speaker}: {item.text.strip()}\n\n")
         if self.on_recorded is not None:
             self.on_recorded(item.msg_id, mp3.stem, offset, duration)
+
+
+    def _truncate(self, name: str, drop: int) -> float:
+        """Cut the last ``drop`` index entries; returns the new MP3 length in seconds."""
+        index = index_path(self.folder, name)
+        md = self.folder / f"{name}.md"
+        mp3 = self.folder / f"{name}.mp3"
+        entries = []
+        if index.exists():
+            for line in index.read_text(encoding="utf-8").splitlines():
+                try:
+                    entries.append(json.loads(line))
+                except ValueError:
+                    continue  # a line cut off by a crash
+        kept = entries[:max(0, len(entries) - drop)]
+        end = max((e["offset"] + e["duration"] for e in kept if e.get("duration")), default=0.0)
+        seconds = 0.0
+        if mp3.exists():
+            data = mp3.read_bytes()
+            cut = mp3_cut_position(data, end)
+            with mp3.open("r+b") as f:
+                f.truncate(cut)
+            seconds = mp3_duration(data[:cut])
+        index.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in kept), encoding="utf-8",
+                         newline="")
+        if md.exists():
+            first = md.read_text(encoding="utf-8").split("\n", 1)[0]
+            lines = [first if first.startswith("# ") else f"# {name}", ""]
+            for e in kept:
+                text = e.get("text", "") if e.get("role") == "user" else spoken_text(e.get("segments") or [])
+                if text.strip():
+                    lines += [f"{e.get('speaker', '?')}: {text.strip()}", ""]
+            md.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="")
+        log.info("Removed the last %d utterances of session %s", min(drop, len(entries)), name)
+        return seconds
 
 
 def _append(path: Path, data: bytes | str) -> None:

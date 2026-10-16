@@ -522,3 +522,24 @@ body.scene-study.colored-ai .msg.ai .bubble { background: rgba(44, 38, 28, .94);
   background: var(--panel-2); cursor: grab; touch-action: none; box-shadow: 0 0 0 1px var(--line); }
 .crop-canvas:active { cursor: grabbing; }
 @media (max-width: 640px) { .editor-look, .profile-grid { grid-template-columns: 1fr; } }
+
+/* ---- message actions: delete, write again, edit; stop ------------------------------------ */
+.msg-actions { display: inline-flex; gap: 2px; margin-left: 2px; opacity: 0; transition: opacity .15s; }
+.msg:hover .msg-actions, .msg-actions:focus-within { opacity: 1; }
+.msg-act { display: none; width: 22px; height: 18px; padding: 0; border: 0; border-radius: 5px; background: none;
+  color: var(--text-faint); cursor: pointer; }
+.msg-act svg { width: 14px; height: 14px; vertical-align: -2px; }
+.msg-act:hover { color: var(--amber); background: var(--panel-2); }
+.msg-act.act-delete:hover { color: var(--red); }
+.msg.deletable .act-delete, .msg.ai.last.deletable .act-regen, .msg.user.last-user.deletable .act-edit { display: inline-block; }
+body.busy .msg-actions { display: none; }
+.meta .stopped { color: var(--amber); }
+.stop-btn { border-color: var(--red); color: var(--red); }
+.stop-btn[hidden] { display: none; }
+.stop-btn:hover { background: rgba(239, 125, 109, .12); border-color: var(--red); }
+.stop-btn svg { width: 16px; height: 16px; }
+.edit-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 24px 0; padding: 6px 12px;
+  border: 1px solid var(--amber); border-radius: 10px; background: var(--amber-soft); font-size: 13px; }
+.edit-bar[hidden] { display: none; }
+.edit-bar .link-btn { margin: 0; }
+@media (max-width: 820px) { .edit-bar { margin: 4px 14px 0; } }

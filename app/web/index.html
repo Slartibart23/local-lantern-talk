@@ -18,6 +18,9 @@
     <symbol id="i-edit" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></symbol>
     <symbol id="i-end" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 5h16v11H9l-5 4zM9.5 8.5l5 5M14.5 8.5l-5 5"/></symbol>
     <symbol id="i-power" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 3v8M7.5 6.2a7 7 0 1 0 9 0"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M20 5v5h-5M20 10a8 8 0 1 0 1.5 5"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></symbol>
     <symbol id="i-sliders" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 7h10M18 7h2M4 17h4M12 17h8M16 5v4M10 15v4"/></symbol>
   </svg>
 
@@ -124,11 +127,20 @@
           </span>
           <span class="meter" aria-hidden="true"><span id="meter-fill"></span></span>
         </button>
-        <button type="button" id="pause-btn" class="icon-btn labeled" aria-pressed="false">
+        <button type="button" id="pause-btn" class="icon-btn labeled" aria-pressed="false"
+                title="Pause or resume listening (the microphone stays muted while paused)">
           <svg aria-hidden="true"><use href="#i-pause"/></svg><span>Pause listening</span>
+        </button>
+        <button type="button" id="stop-btn" class="icon-btn labeled stop-btn" hidden
+                title="Stop the reply now (Esc). What was written so far stays in the chat.">
+          <svg aria-hidden="true"><use href="#i-stop"/></svg><span>Stop</span>
         </button>
       </div>
 
+      <div id="edit-bar" class="edit-bar" hidden>
+        <span>Editing your last message — send it to get a new answer.</span>
+        <button type="button" id="edit-cancel" class="link-btn">Cancel (Esc)</button>
+      </div>
       <form id="text-form" class="composer">
         <label for="text-input" class="sr-only">Message</label>
         <textarea id="text-input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for a new line)" maxlength="4000"></textarea>

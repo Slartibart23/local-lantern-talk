@@ -118,6 +118,14 @@ class MemoryStore:
         self._execute("UPDATE messages SET replay_session = ?, replay_offset = ?, replay_duration = ? WHERE id = ?",
                       (session, offset, duration, message_id))
 
+    def delete_from(self, character: str, first_id: int) -> None:
+        """Forget the unsummarized messages from ``first_id`` on (deleting the end of a chat)."""
+        self._execute("DELETE FROM messages WHERE character = ? AND id >= ? AND summarized = 0", (character, first_id))
+
+    def is_active(self, character: str, message_id: int) -> bool:
+        rows = self._query("SELECT summarized FROM messages WHERE character = ? AND id = ?", (character, message_id))
+        return bool(rows) and rows[0][0] == 0
+
     def mark_summarized(self, character: str, up_to_id: int) -> None:
         self._execute("UPDATE messages SET summarized = 1 WHERE character = ? AND id <= ?", (character, up_to_id))
 

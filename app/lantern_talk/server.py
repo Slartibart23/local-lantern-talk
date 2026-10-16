@@ -10,7 +10,8 @@ Browser → server, JSON: ``text``, ``mic_format`` (sample_rate), ``playback_end
 ``download_model`` (id, quant), ``cancel_download``, ``delete_model`` (file),
 ``add_custom_model`` (source, quant, variant), ``remove_custom_model`` (id),
 ``set_model_label`` (file, variant), ``preview_voice`` (voice), ``rename_voice`` (voice, name),
-``delete_voice`` (voice), ``regenerate_builtin_voices``. Binary: microphone PCM
+``delete_voice`` (voice), ``regenerate_builtin_voices``, ``delete_from`` (id), ``regenerate``,
+``edit_last`` (text), ``stop_reply``. Binary: microphone PCM
 (int16 mono at the announced sample rate).
 
 Server → browser, JSON: ``hello`` (full snapshot), ``state``, ``user_message``,
@@ -57,7 +58,7 @@ from .settings import SettingsStore
 log = logging.getLogger(__name__)
 
 # WebSocket messages with personal content (chat text, characters, facts) never go to the log.
-PRIVATE_MESSAGES = {"text", "save_character", "add_fact", "update_fact"}
+PRIVATE_MESSAGES = {"text", "save_character", "add_fact", "update_fact", "edit_last"}
 
 HOST = "127.0.0.1"
 DEFAULT_PORT = 7865
@@ -262,6 +263,14 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
                     engine.update_settings(dict(data.get("values") or {}))
                 elif kind == "new_conversation":
                     engine.new_conversation()
+                elif kind == "delete_from":
+                    engine.delete_from(int(data.get("id", 0)))
+                elif kind == "regenerate":
+                    engine.regenerate()
+                elif kind == "edit_last":
+                    engine.edit_last(str(data.get("text", ""))[:4000])
+                elif kind == "stop_reply":
+                    engine.stop_reply()
                 elif kind == "download_model":
                     engine.download_model(str(data.get("id", "")), data.get("quant") or None)
                 elif kind == "cancel_download":

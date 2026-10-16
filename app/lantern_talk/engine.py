@@ -243,6 +243,27 @@ class Engine:
     def new_conversation(self) -> None:
         self._commands.put(("new", None))
 
+    # -- editing the end of the chat --------------------------------------------------------
+    def delete_from(self, msg_id: int) -> None:
+        """Delete this message and everything after it (chat, memory, LLM history, recording)."""
+        self._commands.put(("delete_from", msg_id))
+
+    def regenerate(self) -> None:
+        """Write the last reply again."""
+        self._commands.put(("regenerate", None))
+
+    def edit_last(self, text: str) -> None:
+        """Replace the last user message (and what followed it) with ``text`` and answer again."""
+        text = text.strip()
+        if text:
+            self._commands.put(("edit_last", text))
+
+    def stop_reply(self) -> None:
+        """Stop the reply that is being written or spoken (not queued: the worker is busy with the turn)."""
+        if self.state in (State.THINKING, State.SPEAKING):
+            self.conversation.cancel.set()
+            self._playback_done.set()
+
     def set_voice_language(self, voice: str, language: str) -> None:
         """Language spoken in a custom voice clip; "" means "detect it from the transcript"."""
         self._commands.put(("voice_language", (voice, language)))
@@ -284,6 +305,7 @@ class Engine:
             "download": job.public() if job else None,
             "gpu": self.gpu_summary(),
             "transcript": self.transcript,
+            "deletable_from": self._deletable_from(),
             "components": self.components_status(),
             "voice_info": self.voice_info(),
             "character": self.character.to_dict() if self.character else None,
@@ -537,6 +559,9 @@ class Engine:
             "reset_memory": self._handle_reset_memory,
             "replay": self._handle_replay,
             "voice_language": lambda arg: self._handle_voice_language(*arg),
+            "delete_from": self._handle_delete_from,
+            "regenerate": self._handle_regenerate,
+            "edit_last": self._handle_edit_last,
         }
         while True:
             name, arg = self._commands.get()
@@ -822,21 +847,23 @@ class Engine:
         self._turn(text, self.last_language, "text")
 
     def _turn(self, text: str, language: str | None, source: str, stt_ms: int | None = None,
-              audio: np.ndarray | None = None, audio_sr: int = 0) -> None:
+              audio: np.ndarray | None = None, audio_sr: int = 0, user: dict[str, Any] | None = None) -> None:
+        """One exchange. ``user`` is an existing message to answer again (Regenerate)."""
         self._recover_llm()
         if self.fatal_error or not self.c.server.running:
             raise UserError(self.fatal_error or "The language model is not loaded.")
         self._set_state(State.THINKING, "")
         self.resume = None  # talking on continues the chat
         recording = self._ensure_session()
-        user = {"id": self._new_id(), "role": "user", "text": text, "language": language, "source": source}
-        self.transcript.append(user)
-        self._emit({"type": "user_message", **user, "stt_ms": stt_ms})
-        if recording:  # encoded in the background while the model answers
-            tags = ["spoken", language] if source == "voice" and language else [
-                "spoken" if source == "voice" else "typed"]
-            self.recorder.add(SessionItem(user["id"], "user", self._user_label(), text, tags,
-                                          audio if source == "voice" else None, audio_sr or SAMPLE_RATE))
+        if user is None:
+            user = {"id": self._new_id(), "role": "user", "text": text, "language": language, "source": source}
+            self.transcript.append(user)
+            self._emit({"type": "user_message", **user, "stt_ms": stt_ms})
+            if recording:  # encoded in the background while the model answers
+                tags = ["spoken", language] if source == "voice" and language else [
+                    "spoken" if source == "voice" else "typed"]
+                self.recorder.add(SessionItem(user["id"], "user", self._user_label(), text, tags,
+                                              audio if source == "voice" else None, audio_sr or SAMPLE_RATE))
 
         voice = self.conversation.voice_for(language)
         reply: dict[str, Any] = {"id": self._new_id(), "role": "assistant", "segments": [],
@@ -870,9 +897,12 @@ class Engine:
             elif isinstance(event, TurnDone):
                 reply_text = event.reply
                 m = event.metrics
-                self._emit({"type": "turn_done", "audio_chunks": chunks, "metrics": m.summary(),
+                stopped = self.conversation.cancel.is_set()
+                if stopped:
+                    reply["stopped"] = True
+                self._emit({"type": "turn_done", "audio_chunks": chunks, "metrics": m.summary(), "stopped": stopped,
                             "first_audio_ms": None if m.first_audio is None else round(m.first_audio * 1000)})
-        if chunks:
+        if chunks and not self.conversation.cancel.is_set():
             # Mic stays muted until the browser has played everything (spec §9 step 5).
             if not self._playback_done.wait(timeout=audio_seconds + PLAYBACK_WAIT_MARGIN_S):
                 log.warning("Browser did not report the end of playback; continuing.")
@@ -883,10 +913,13 @@ class Engine:
             self.recorder.add(SessionItem(
                 reply["id"], "assistant", c.name if c else "Assistant", spoken_text(reply["segments"]),
                 tags, np.concatenate(spoken) if spoken else None, spoken_sr, segments=reply["segments"]))
+        if reply_text:
+            user["in_history"] = reply["in_history"] = True  # the pipeline added both to the LLM history
         self._remember_turn(user, reply, language, source, reply_text)
         self._enter_idle()
         if reply_text:
             self._maintain_memory()  # between turns; a new utterance waits in the queue
+        self._emit_editable()
 
     def _recover_llm(self) -> None:
         """llama-server stopped on its own (crash, killed): start it again before the next turn."""
@@ -931,6 +964,97 @@ class Engine:
         self._emit({"type": "cleared"})
         self._emit_character_state()
         self._enter_idle()
+
+    # -- deleting, regenerating and editing the end of the chat ----------------------------------
+    def _deletable_from(self) -> int | None:
+        """UI id of the oldest message that can still be deleted (together with everything after it).
+
+        The greeting stays, and so does what is already folded into the memory summary.
+        """
+        c = self.character
+        active = {m.id for m in self.memory.active_messages(c.id)} if c is not None and c.memory_enabled else None
+        first = None
+        for item in reversed(self.transcript):
+            if item.get("greeting") or (active is not None and item.get("db_id") and item["db_id"] not in active):
+                break
+            first = item["id"]
+        return first
+
+    def _emit_editable(self) -> None:
+        self._emit({"type": "editable", "deletable_from": self._deletable_from()})
+
+    def _emit_transcript(self) -> None:
+        self._emit({"type": "transcript", "transcript": self.transcript, "deletable_from": self._deletable_from()})
+        self._emit_sessions()
+
+    def _check_deletable(self, index: int) -> None:
+        first = self._deletable_from()
+        if first is None or self.transcript[index]["id"] < first:
+            raise UserError("This part of the chat is already in the character's memory summary and cannot be "
+                            "deleted any more.")
+
+    def _truncate(self, index: int, keep_user: bool = False) -> None:
+        """Remove ``transcript[index:]`` from the chat, the memory, the LLM history and the recording.
+
+        With ``keep_user`` the user message before ``index`` stays in the chat and the recording
+        but leaves the memory and the LLM history, so it can be answered again.
+        """
+        removed = self.transcript[index:]
+        forget = ([self.transcript[index - 1]] if keep_user else []) + removed
+        self.recorder.wait_idle()  # every finished message knows its place in the recording
+        cuts: dict[str, int] = {}
+        for item in removed:
+            if item.get("session"):
+                cuts[item["session"]] = cuts.get(item["session"], 0) + 1
+        for name, count in cuts.items():
+            self.recorder.truncate(name, count)
+        c = self.character
+        if c is not None and c.memory_enabled:
+            ids = [item["db_id"] for item in forget if item.get("db_id")]
+            if ids:
+                self.memory.delete_from(c.id, min(ids))
+            self._reload_llm_history()
+        else:
+            count = sum(1 for item in forget if item.get("in_history"))
+            if count:
+                del self.conversation.history[-count:]
+        for item in forget:
+            item.pop("in_history", None)
+            item.pop("db_id", None)
+        del self.transcript[index:]
+        self.recorder.wait_idle()
+        log.info("Deleted the last %d messages of the chat", len(removed))
+
+    def _handle_delete_from(self, msg_id: int) -> None:
+        index = next((i for i, t in enumerate(self.transcript) if t.get("id") == msg_id), None)
+        if index is None:
+            raise UserError("This message is no longer in the chat.")
+        self._check_deletable(index)
+        self._truncate(index)
+        self._emit_transcript()
+        self._enter_idle()
+
+    def _handle_regenerate(self, _: Any = None) -> None:
+        items = self.transcript
+        if (len(items) < 2 or items[-1].get("role") != "assistant" or items[-1].get("greeting")
+                or items[-2].get("role") != "user"):
+            raise UserError("There is no reply to write again.")
+        self._check_deletable(len(items) - 2)
+        user = items[-2]
+        self._truncate(len(items) - 1, keep_user=True)
+        self._emit_transcript()
+        if user.get("language"):
+            self.last_language = user["language"]
+        self._turn(user["text"], self.last_language, user.get("source") or "text", user=user)
+
+    def _handle_edit_last(self, text: str) -> None:
+        index = next((i for i in range(len(self.transcript) - 1, -1, -1)
+                      if self.transcript[i].get("role") == "user"), None)
+        if index is not None:
+            self._check_deletable(index)
+            self._truncate(index)
+            self._emit_transcript()
+        self._handle_typed(text)
 
     # -- characters (spec §10) -----------------------------------------------------------
     def list_characters(self) -> list[dict[str, Any]]:
@@ -1025,7 +1149,8 @@ class Engine:
             for m in stored:
                 self.conversation.history.append(ChatMessage(m.role, m.content))
                 item: dict[str, Any] = {"id": self._new_id(), "db_id": m.id, "session": m.replay_session,
-                                        "offset": m.replay_offset, "duration": m.replay_duration}
+                                        "offset": m.replay_offset, "duration": m.replay_duration,
+                                        "in_history": True}
                 if m.role == "user":
                     item.update({"role": "user", "text": m.content, "language": m.language,
                                  "source": m.source or "text"})
@@ -1040,6 +1165,7 @@ class Engine:
         if not self.conversation.history and c.greeting:
             self.conversation.history.append(ChatMessage("assistant", c.greeting))
             greeting: dict[str, Any] = {"id": self._new_id(), "role": "assistant", "voice": None, "greeting": True,
+                                        "in_history": True,
                                         "segments": [{"kind": seg.kind, "text": seg.text}
                                                      for seg in split_segments(c.greeting)]}
             self.transcript.append(greeting)
@@ -1055,7 +1181,7 @@ class Engine:
     def _emit_character_state(self) -> None:
         self._emit({"type": "character", "character": self.character.to_dict() if self.character else None,
                     "characters": self.list_characters(), "transcript": self.transcript,
-                    "memory": self.memory_view(), "resume": self.resume})
+                    "deletable_from": self._deletable_from(), "memory": self.memory_view(), "resume": self.resume})
         self._emit({"type": "settings", "settings": asdict(self.store.settings)})
         self._emit({"type": "voice_info", **self.voice_info()})
 

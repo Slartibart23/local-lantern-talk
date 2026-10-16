@@ -700,3 +700,26 @@ def test_context_setting_reloads_the_model(setup) -> None:  # noqa: ANN001
     engine.update_settings({"context": 5000})
     rec.wait_for(lambda ev: any(e["type"] == "error" for e in ev[start:]))
     assert engine.store.settings.context == 12288   # rolled back
+
+
+def test_a_reply_can_be_stopped(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+
+    def slow_stream(messages, sampling=None):  # noqa: ANN001, ANN202
+        for word in ["Once ", "upon ", "a ", "time. ", "There ", "was ", "a ", "dragon. "] * 20:
+            time.sleep(0.02)
+            yield word
+
+    comps.llm.stream_chat = slow_stream
+    start = len(rec.events)
+    engine.submit_text("Tell me a long story.")
+    rec.wait_for(lambda ev: any(e["type"] == "segment" for e in ev[start:]))
+    engine.stop_reply()
+    rec.wait_for(lambda ev: any(e["type"] == "turn_done" for e in ev[start:]))
+    done = [e for e in rec.events[start:] if e["type"] == "turn_done"][0]
+    assert done["stopped"] is True
+    rec.wait_state("listening", start)
+    reply = engine.transcript[-1]
+    assert reply["stopped"] is True
+    written = "".join(s["text"] for s in reply["segments"])
+    assert written and len(written) < 200  # stopped long before the end of the story

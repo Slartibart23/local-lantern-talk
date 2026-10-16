@@ -29,7 +29,7 @@ const app = {
   micError: false,      // the browser refused or has no microphone
   started: false,
   pendingAudio: null,   // metadata of the next binary message
-  playback: { scheduled: 0, ended: 0, nextTime: 0, turnDone: false },
+  playback: { scheduled: 0, ended: 0, nextTime: 0, turnDone: false, sources: [], stopped: false },
   currentAi: null,      // { el, bubble, lastSpeech }
   voiceInfo: null,      // reference text etc. of the selected voice
   modelStatus: null,    // GPU layers of the loaded language model
@@ -52,6 +52,8 @@ const app = {
   character: null,      // the active character
   memory: null,         // facts and summary of the active character
   editingId: null,      // character open in the editor (null = new)
+  deletableFrom: null,  // id of the oldest message that can still be deleted
+  editingLast: false,   // the message box holds the last user message for editing
 };
 
 // ---------------------------------------------------------------- WebSocket
@@ -92,6 +94,7 @@ function handleEvent(msg) {
       renderModels();
       applySettings();
       renderComponents(msg.components);
+      app.deletableFrom = msg.deletable_from ?? null;
       renderTranscript(msg.transcript);
       renderVoiceInfo(msg.voice_info);
       applyCharacterState(msg);
@@ -113,7 +116,16 @@ function handleEvent(msg) {
       break;
     case "character":
       applyCharacterState(msg);
+      app.deletableFrom = msg.deletable_from ?? null;
       renderTranscript(msg.transcript);
+      break;
+    case "transcript":
+      app.deletableFrom = msg.deletable_from ?? null;
+      renderTranscript(msg.transcript);
+      break;
+    case "editable":
+      app.deletableFrom = msg.deletable_from ?? null;
+      markEditable();
       break;
     case "characters":
       applyCharacterState(msg);
@@ -235,6 +247,9 @@ function setState(state, detail) {
   $("pause-btn").querySelector("span").textContent = paused ? "Resume listening" : "Pause listening";
   $("pause-btn").querySelector("use").setAttribute("href", paused ? "#i-play" : "#i-pause");
   $("pause-btn").disabled = !app.settings.mic_enabled;
+  const busy = state === "thinking" || state === "speaking";
+  $("stop-btn").hidden = !busy;
+  document.body.classList.toggle("busy", busy || state === "loading");
   if (state !== "listening") $("meter-fill").style.width = "0";
   document.querySelectorAll("#messages .msg.speaking").forEach((m) => m.classList.remove("speaking"));
   if (state === "speaking" && app.lastAiEl) app.lastAiEl.classList.add("speaking");
@@ -319,6 +334,7 @@ function addUserMessage(msg) {
     meta.append(t);
   }
   addReplayButton(meta, msg);
+  addMessageActions(meta, "user");
   el.append(bubble, meta);
   $("messages").append(el);
   scrollToEnd(true);
@@ -335,6 +351,7 @@ function startAssistantMessage(voice, id) {
   const meta = document.createElement("div");
   meta.className = "meta";
   meta.textContent = voice ? `voice: ${voiceName(voice)}` : "text only";
+  addMessageActions(meta, "ai");
   el.append(bubble, meta);
   $("messages").append(el);
   app.currentAi = { el, bubble, meta, lastSpeech: null };
@@ -372,11 +389,14 @@ function renderSegment(target, kind, text) {
   }
 }
 
-function finishAssistantMessage(msg) {
+function finishAssistantMessage(msg, stopped = false) {
   const ai = app.currentAi;
   if (!ai) return;
   ai.el.classList.remove("streaming");
   if (!ai.bubble.textContent.trim()) ai.bubble.textContent = "…";
+  if (stopped || (msg && msg.stopped)) {
+    ai.meta.insertBefore(el("span", { class: "stopped", title: "You stopped this reply" }, "stopped"), ai.meta.firstChild);
+  }
   if (msg && msg.first_audio_ms != null) {
     const t = document.createElement("span");
     t.className = "timing";
@@ -396,26 +416,104 @@ function renderTranscript(items) {
     if (item.role === "user") addUserMessage(item);
     else {
       startAssistantMessage(item.voice, item.id);
+      if (item.greeting) app.currentAi.meta.querySelector(".msg-actions")?.remove();
       const meta = app.currentAi.meta;
-      if (item.greeting) meta.textContent = "greeting";
+      if (item.greeting) {
+        meta.textContent = "greeting";
+        app.currentAi.el.classList.add("greeting");
+      }
       for (const seg of item.segments) renderSegment(app.currentAi, seg.kind, seg.text);
-      finishAssistantMessage(null);
+      finishAssistantMessage(null, item.stopped);
       addReplayButton(meta, item);
     }
   }
+  markEditable();
   scrollToEnd(true);
+}
+
+// ---------------------------------------------------------------- deleting, regenerating, editing, stopping
+
+function addMessageActions(meta, role) {
+  const box = el("span", { class: "msg-actions" });
+  const button = (cls, icon, title, onclick) => {
+    const b = el("button", { type: "button", class: `msg-act ${cls}`, title, "aria-label": title, onclick });
+    b.innerHTML = `<svg aria-hidden="true"><use href="#${icon}"/></svg>`;
+    return b;
+  };
+  if (role === "ai") {
+    box.append(button("act-regen", "i-redo", "Write this answer again", () => send({ type: "regenerate" })));
+  } else {
+    box.append(button("act-edit", "i-edit", "Change your last message and send it again", startEditLast));
+  }
+  box.append(button("act-delete", "i-trash", "Delete this message and everything after it",
+                    (ev) => deleteFrom(ev.currentTarget.closest(".msg"))));
+  meta.append(box);
+}
+
+// Messages from app.deletableFrom on can be deleted; the last reply can be written again and
+// the last own message edited.
+function markEditable() {
+  const nodes = [...document.querySelectorAll("#messages .msg")];
+  const from = app.deletableFrom;
+  for (const n of nodes) {
+    n.classList.toggle("deletable", from != null && Number(n.dataset.id) >= from && !n.classList.contains("greeting"));
+    n.classList.remove("last", "last-user");
+  }
+  const last = nodes[nodes.length - 1];
+  if (last) last.classList.add("last");
+  const lastUser = nodes.filter((n) => n.classList.contains("user")).pop();
+  if (lastUser) lastUser.classList.add("last-user");
+}
+
+function deleteFrom(node) {
+  if (!node) return;
+  const nodes = [...document.querySelectorAll("#messages .msg")];
+  const after = nodes.length - 1 - nodes.indexOf(node);
+  const name = app.character ? app.character.name : "the assistant";
+  const what = after > 0 ? `this message and the ${after} message${after > 1 ? "s" : ""} after it` : "this message";
+  if (!confirm(`Delete ${what}?\n\nThey are removed from the chat, from ${name}'s memory and from the session recording.`)) return;
+  send({ type: "delete_from", id: Number(node.dataset.id) });
+}
+
+function startEditLast() {
+  const node = document.querySelector("#messages .msg.user.last-user");
+  if (!node) return;
+  const input = $("text-input");
+  input.value = node.querySelector(".bubble").textContent;
+  app.editingLast = true;
+  $("edit-bar").hidden = false;
+  autoGrow(input);
+  input.focus();
+}
+
+function cancelEditLast() {
+  if (!app.editingLast) return;
+  app.editingLast = false;
+  $("edit-bar").hidden = true;
+  $("text-input").value = "";
+  autoGrow($("text-input"));
+}
+
+function stopReply() {
+  if (!["thinking", "speaking"].includes(app.state)) return;
+  for (const src of app.playback.sources) {
+    try { src.stop(); } catch { /* already ended */ }
+  }
+  app.playback.stopped = true;
+  app.playback.sources = [];
+  send({ type: "stop_reply" });
 }
 
 // ---------------------------------------------------------------- audio playback
 
 function resetPlayback() {
-  app.playback = { scheduled: 0, ended: 0, nextTime: 0, turnDone: false };
+  app.playback = { scheduled: 0, ended: 0, nextTime: 0, turnDone: false, sources: [], stopped: false };
 }
 
 function handleAudio(buffer) {
   const meta = app.pendingAudio;
   app.pendingAudio = null;
-  if (!meta) return;
+  if (!meta || app.playback.stopped) return;
   const ctx = app.audioCtx;
   if (!ctx) { send({ type: "playback_ended" }); return; }
   const pcm = new Int16Array(buffer);
@@ -431,6 +529,7 @@ function handleAudio(buffer) {
   src.start(startAt);
   pb.nextTime = startAt + audioBuffer.duration;
   pb.scheduled++;
+  pb.sources.push(src);
   src.onended = () => { pb.ended++; checkPlaybackEnd(); };
 }
 
@@ -1792,13 +1891,21 @@ function init() {
 
   $("status-btn").onclick = togglePause;
   $("pause-btn").onclick = togglePause;
+  $("stop-btn").onclick = stopReply;
+  $("edit-cancel").onclick = cancelEditLast;
 
   const input = $("text-input");
   $("text-form").onsubmit = (ev) => {
     ev.preventDefault();
     const text = input.value.trim();
     if (!text) return;
-    send({ type: "text", text });
+    if (app.editingLast) {
+      send({ type: "edit_last", text });
+      app.editingLast = false;
+      $("edit-bar").hidden = true;
+    } else {
+      send({ type: "text", text });
+    }
     input.value = "";
     autoGrow(input);
   };
@@ -1945,7 +2052,9 @@ function init() {
   $("toggle-right").onclick = () => togglePanel("right");
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
-      if (!$("char-editor").hidden) closeEditor();
+      if (["thinking", "speaking"].includes(app.state) && $("char-editor").hidden && $("settings").hidden) stopReply();
+      else if (app.editingLast) cancelEditLast();
+      else if (!$("char-editor").hidden) closeEditor();
       else if (!$("settings").hidden) closeSettings();
       else if (app.replay) stopReplay();
       else if (app.viewing) closeSession();

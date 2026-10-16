@@ -71,12 +71,12 @@ def setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
 
 
 def _turn(engine: Engine, rec: Recorder, text: str) -> None:
-    """One typed turn including the memory upkeep that follows it."""
+    """One typed turn including the memory upkeep that follows it ("editable" comes last)."""
     start = len(rec.events)
     engine.submit_text(text)
     rec.wait_for(lambda ev: any(e["type"] == "turn_done" for e in ev[start:]))
     engine.playback_ended()
-    rec.wait_for(lambda ev: any(e["type"] == "memory" for e in ev[start:]))
+    rec.wait_for(lambda ev: any(e["type"] == "editable" for e in ev[start:]))
 
 
 def _wait(rec: Recorder, kind: str, start: int, check=lambda e: True) -> dict[str, Any]:  # noqa: ANN001

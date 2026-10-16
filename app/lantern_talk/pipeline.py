@@ -125,6 +125,7 @@ class Conversation:
         self.config = config
         self.history: list[ChatMessage] = []
         self.active_voice: str | None = config.voice  # voice used by the last turn
+        self.cancel = threading.Event()               # set to stop the reply that is being written / spoken
 
     @property
     def voice_enabled(self) -> bool:
@@ -162,6 +163,7 @@ class Conversation:
     def run_turn(self, user_text: str, language: str | None = None) -> Iterator[TurnEvent]:
         """Run one turn and yield events until :class:`TurnDone` or :class:`TurnError`."""
         metrics = TurnMetrics()
+        self.cancel.clear()
         events: queue.Queue[object] = queue.Queue()
         sentences: queue.Queue[object] = queue.Queue()
         messages = self.build_messages(user_text, language)
@@ -190,6 +192,8 @@ class Conversation:
 
             try:
                 for delta in self.llm.stream_chat(messages):
+                    if self.cancel.is_set():
+                        break  # closing the stream makes llama-server stop writing
                     metrics.mark("first_token")
                     reply_parts.append(delta)
                     events.put(TextDelta(delta))
@@ -227,7 +231,7 @@ class Conversation:
                             finished = True
                             break
                         batch.append(str(nxt))
-                    if prompt is None or self.tts is None:
+                    if prompt is None or self.tts is None or self.cancel.is_set():
                         continue
                     text = " ".join(batch)
                     result = self.tts.synthesize(text, prompt, tts_language)

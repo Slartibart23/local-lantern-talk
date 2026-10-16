@@ -67,7 +67,7 @@ def test_spoken_turn_records_full_quality_user_audio(setup) -> None:  # noqa: F8
         engine.on_audio(quiet(), 48_000)
     rec.wait_for(lambda ev: any(e["type"] == "turn_done" for e in ev[start:]))
     engine.playback_ended()
-    rec.wait_for(lambda ev: any(e["type"] == "memory" for e in ev[start:]))
+    rec.wait_for(lambda ev: any(e["type"] == "editable" for e in ev[start:]))
     _, session = _session(engine)
     user = session["entries"][1]
     assert user["role"] == "user" and user["source"] == "voice" and "de" in user["tags"]
@@ -145,3 +145,71 @@ def test_segmenter_reports_stream_positions() -> None:
     utt = out[0]
     assert utt.end - utt.start == len(utt.audio)
     assert utt.start == FRAME_SAMPLES * 10  # speech began after 10 frames of silence
+
+
+
+def _wait_transcript(engine, rec, start: int) -> dict:  # noqa: ANN001
+    return _wait(rec, "transcript", start)
+
+
+def test_deleting_the_end_of_a_chat_cuts_memory_history_and_recording(setup) -> None:  # noqa: F811
+    engine, comps, rec = _start(setup)
+    for text in ("Erste Frage.", "Zweite Frage.", "Dritte Frage."):
+        _turn(engine, rec, text)
+    mp3, session = _session(engine)
+    assert len(session["entries"]) == 7  # greeting + 3 x (question, reply)
+    second = next(t for t in engine.transcript if t.get("text") == "Zweite Frage.")
+    start = len(rec.events)
+    engine.delete_from(second["id"])
+    ev = _wait_transcript(engine, rec, start)
+    assert [t.get("text") for t in ev["transcript"] if t["role"] == "user"] == ["Erste Frage."]
+    assert ev["deletable_from"] == ev["transcript"][1]["id"]  # the greeting stays
+    assert [m.content for m in engine.memory.active_messages("lena")][1:] == ["Erste Frage.", comps.llm.reply]
+    assert len(engine.conversation.history) == 3
+    mp3, session = _session(engine)
+    assert len(session["entries"]) == 3
+    last = session["entries"][-1]
+    assert mp3_duration(mp3.read_bytes()) == pytest.approx(last["offset"] + last["duration"], abs=0.05)
+    md = mp3.with_suffix(".md").read_text(encoding="utf-8")
+    assert "Erste Frage." in md and "Zweite Frage." not in md and md.startswith("# Lena")
+    # Talking on appends right after the cut.
+    _turn(engine, rec, "Neue Frage.")
+    mp3, session = _session(engine)
+    assert [e.get("text") for e in session["entries"] if e["role"] == "user"] == ["Erste Frage.", "Neue Frage."]
+    assert session["entries"][-1]["offset"] > last["offset"] + last["duration"]
+
+
+def test_regenerate_and_edit_the_last_message(setup) -> None:  # noqa: F811
+    engine, comps, rec = _start(setup)
+    _turn(engine, rec, "Wie heißt du?")
+    comps.llm.reply = "Ich bin Lena, schön dich zu sehen."
+    start = len(rec.events)
+    engine.regenerate()
+    rec.wait_for(lambda ev: any(e["type"] == "turn_done" for e in ev[start:]))
+    engine.playback_ended()
+    _wait(rec, "editable", start)
+    assert not any(e["type"] == "user_message" for e in rec.events[start:])  # the question stays as it was
+    assert [m.content for m in engine.memory.active_messages("lena")][1:] == [
+        "Wie heißt du?", "Ich bin Lena, schön dich zu sehen."]
+    mp3, session = _session(engine)
+    assert [e["role"] for e in session["entries"]] == ["assistant", "user", "assistant"]
+    start = len(rec.events)
+    engine.edit_last("Wie alt bist du?")
+    rec.wait_for(lambda ev: any(e["type"] == "turn_done" for e in ev[start:]))
+    engine.playback_ended()
+    _wait(rec, "editable", start)
+    users = [t["text"] for t in engine.transcript if t["role"] == "user"]
+    assert users == ["Wie alt bist du?"]
+    assert [m.role for m in engine.conversation.history] == ["assistant", "user", "assistant"]
+
+
+def test_summarized_messages_cannot_be_deleted(setup) -> None:  # noqa: F811
+    engine, comps, rec = _start(setup)
+    engine._loaded_context = 256  # tiny budget: old turns are summarized quickly
+    for i in range(6):
+        _turn(engine, rec, f"Frage {i}.")
+    first_user = next(t for t in engine.transcript if t["role"] == "user")
+    assert engine._deletable_from() > first_user["id"]
+    start = len(rec.events)
+    engine.delete_from(first_user["id"])
+    assert "summary" in _wait(rec, "error", start)["message"]
