@@ -27,7 +27,7 @@ on the left, and the one who is speaking glows.
 | Mode | What happens |
 | --- | --- |
 | **Chat** | You lead the conversation. The character you address by name answers ("Max, what do you think?"); otherwise whoever has been quiet the longest. If that reply addresses another character, they may answer too. Click a name in the bar to let that character speak now. |
-| **Story** | The characters talk with each other by themselves. **Play** starts, **Pause** stops after the line that is being spoken, **Next line** adds one line and waits. Click a name to choose who speaks next. |
+| **Story** | The characters talk with each other by themselves; switching to *Story* starts them right away. **Play** goes on after a pause, **Pause** stops after the line that is being spoken, **Next line** adds one line and waits. Click a name to choose who speaks next. |
 
 In both modes you can join in at any time by speaking or typing; the character you
 address answers, and with *Play* the story goes on afterwards. Story mode pauses by itself

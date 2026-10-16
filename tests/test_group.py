@@ -230,6 +230,17 @@ def test_story_mode_plays_until_paused(group) -> None:  # noqa: ANN001
     assert len(engine.transcript) == count  # paused: nobody goes on
 
 
+def test_switching_to_story_mode_starts_the_story(group) -> None:  # noqa: ANN001
+    engine, comps, rec = group()
+    _join(engine, rec, ["elara"])
+    start = len(rec.events)
+    engine.set_group_mode("story")
+    rec.wait_for(lambda ev: sum(e["type"] == "assistant_start" for e in ev[start:]) >= 2)
+    engine.story_pause()
+    _wait(rec, "group", start, lambda e: e["mode"] == "story" and not e["playing"])
+    rec.wait_state("listening", len(rec.events) - 1)
+
+
 def test_director_notes_for_one_character_and_step(group) -> None:  # noqa: ANN001
     engine, comps, rec = group()
     _join(engine, rec, ["max"])
