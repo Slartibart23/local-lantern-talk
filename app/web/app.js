@@ -507,7 +507,7 @@ function renderVoices() {
 
 // ---------------------------------------------------------------- language models (spec §13 / §14.2)
 
-const VARIANT_LABEL = { censored: "censored", uncensored: "uncensored", unknown: "unlabeled" };
+const VARIANT_LABEL = { censored: "censored", uncensored: "uncensored", explicit: "explicit", unknown: "unlabeled" };
 const FIT_LABEL = { fits: "fits on the GPU", partial: "partly on the CPU (slower)", too_big: "too big for this GPU" };
 
 function el(tag, attrs = {}, ...children) {
@@ -614,7 +614,7 @@ function modelRow(m) {
   }
   if (m.source !== "catalog") {
     const label = el("select", { "aria-label": `Label for ${m.name}` });
-    for (const v of ["unknown", "censored", "uncensored"]) label.append(new Option(VARIANT_LABEL[v], v));
+    for (const v of ["unknown", "censored", "uncensored", "explicit"]) label.append(new Option(VARIANT_LABEL[v], v));
     label.value = m.variant;
     label.onchange = () => send({ type: "set_model_label", file: q.file, variant: label.value });
     actions.append(label);

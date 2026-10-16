@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from lantern_talk.catalog import (
-    CustomModels, choose_quant, classify, custom_entry, load_catalog, local_only_entries,
+    QUANT_ORDER, CustomModels, choose_quant, classify, custom_entry, load_catalog, local_only_entries,
     parse_custom_source, pick_repo_file, quant_of,
 )
 
@@ -19,21 +19,30 @@ BY_ID = {e.id: e for e in CATALOG}
 # ---------------------------------------------------------------- shipped catalog
 
 def test_shipped_catalog_is_valid() -> None:
-    assert len(CATALOG) == 11
+    assert len(CATALOG) == 16
     assert len({e.id for e in CATALOG}) == len(CATALOG)
     for e in CATALOG:
-        assert e.variant in ("censored", "uncensored")
+        assert e.variant in ("censored", "uncensored", "explicit")
         assert e.hf_repo.count("/") == 1
-        assert "Q4_K_M" in e.files and len(e.files) >= 3  # a small, a default and a larger choice
+        assert any(q.startswith("Q4_K") for q in e.files) and len(e.files) >= 3  # small, default and larger
+        assert all(q in QUANT_ORDER for q in e.files)  # every quantization can be ranked
         for qf in e.files.values():
             assert qf.file.endswith(".gguf") and qf.size_bytes > 1e9
             assert qf.min_vram_gb > qf.size_gb  # KV cache and buffers come on top
 
 
 def test_catalog_has_both_variants_and_german_focus() -> None:
-    assert {e.variant for e in CATALOG} == {"censored", "uncensored"}
+    assert {e.variant for e in CATALOG} == {"censored", "uncensored", "explicit"}
     assert sum("German" in e.languages_note for e in CATALOG) == len(CATALOG)
     assert any(e.id == "gemma4-12b" for e in CATALOG)  # starter model
+
+
+def test_k_p_quants_follow_their_k_m_sibling() -> None:
+    entry = BY_ID["qwen3.6-27b-hauhaucs-aggressive"]
+    assert [q.quant for q in entry.quants_by_quality()] == ["Q6_K_P", "Q5_K_P", "Q4_K_P"]
+    # A profile that prefers Q5_K_M takes Q5_K_P when it fits.
+    assert choose_quant(entry, "Q5_K_M", 24.0).quant == "Q5_K_P"
+    assert choose_quant(entry, "Q5_K_M", 20.0).quant == "Q4_K_P"
 
 
 def test_duplicate_ids_rejected(tmp_path: Path) -> None:

@@ -182,6 +182,119 @@ models:
         file: "Rocinante-12B-v1.1-Q6_K.gguf"
         size_bytes: 10056208832
         min_vram_gb: 12.0
+  - id: qwen3.6-27b-hauhaucs-aggressive
+    display_name: "Qwen 3.6 27B Uncensored Aggressive"
+    family: "Qwen 3.6"
+    variant: explicit
+    purpose: "Adult roleplay & assistant; answers directly, without preamble or refusals"
+    hf_repo: HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive
+    context_default: 8192
+    license_note: "Apache-2.0 (Qwen 3.6). Uncensored build by HauhauCS with its own K_P (imatrix) quantizations."
+    languages_note: "Good German, French and Spanish, and many other languages."
+    note: "Dense 27B model with a very small context cache, so long contexts are cheap. Best on 24 GB+ GPUs. Reasoning is switched off."
+    files:
+      Q4_K_P:
+        file: "Qwen3.6-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf"
+        size_bytes: 17536279776
+        min_vram_gb: 19.5
+      Q5_K_P:
+        file: "Qwen3.6-27B-Uncensored-HauhauCS-Aggressive-Q5_K_P.gguf"
+        size_bytes: 20812953056
+        min_vram_gb: 23.0
+      Q6_K_P:
+        file: "Qwen3.6-27B-Uncensored-HauhauCS-Aggressive-Q6_K_P.gguf"
+        size_bytes: 23154960096
+        min_vram_gb: 25.0
+  - id: qwen3.6-27b-abliterated
+    display_name: "Qwen 3.6 27B Abliterated"
+    family: "Qwen 3.6"
+    variant: explicit
+    purpose: "Adult roleplay & assistant; strong all-rounder, refusals removed"
+    hf_repo: mradermacher/Huihui-Qwen3.6-27B-abliterated-GGUF
+    context_default: 8192
+    license_note: "Apache-2.0 (Qwen 3.6). Abliterated by huihui-ai, static quants by mradermacher."
+    languages_note: "Good German, French and Spanish, and many other languages."
+    note: "Dense 27B model with a very small context cache, so long contexts are cheap. Best on 24 GB+ GPUs. Reasoning is switched off."
+    files:
+      Q4_K_M:
+        file: "Huihui-Qwen3.6-27B-abliterated.Q4_K_M.gguf"
+        size_bytes: 16547399808
+        min_vram_gb: 18.5
+      Q5_K_M:
+        file: "Huihui-Qwen3.6-27B-abliterated.Q5_K_M.gguf"
+        size_bytes: 19231099008
+        min_vram_gb: 21.0
+      Q6_K:
+        file: "Huihui-Qwen3.6-27B-abliterated.Q6_K.gguf"
+        size_bytes: 22082529408
+        min_vram_gb: 24.0
+  - id: mistral-small-3.2-24b-abliterated-v2
+    display_name: "Mistral Small 3.2 24B Abliterated v2"
+    family: "Mistral Small 3.2"
+    variant: explicit
+    purpose: "Adult roleplay & assistant; Mistral Small 3.2 with refusals removed"
+    hf_repo: noctrex/Huihui-Mistral-Small-3.2-24B-Instruct-2506-abliterated-v2-GGUF
+    context_default: 8192
+    license_note: "Apache-2.0 base (Mistral Small 3.2). Abliterated by huihui-ai, quants by noctrex."
+    languages_note: "Good German, French, Spanish and Italian."
+    files:
+      Q4_K_M:
+        file: "Huihui-Mistral-Small-3.2-24B-Instruct-2506-abliterated-v2-Q4_K_M.gguf"
+        size_bytes: 14333923328
+        min_vram_gb: 16.5
+      Q5_K_M:
+        file: "Huihui-Mistral-Small-3.2-24B-Instruct-2506-abliterated-v2-Q5_K_M.gguf"
+        size_bytes: 16763998208
+        min_vram_gb: 19.0
+      Q6_K:
+        file: "Huihui-Mistral-Small-3.2-24B-Instruct-2506-abliterated-v2-Q6_K.gguf"
+        size_bytes: 19345952768
+        min_vram_gb: 21.5
+  - id: mistral-small-24b-2501-abliterated
+    display_name: "Mistral Small 24B (2501) Abliterated"
+    family: "Mistral Small 3"
+    variant: explicit
+    purpose: "Adult roleplay & assistant; the earlier Mistral Small with refusals removed"
+    hf_repo: mradermacher/Mistral-Small-24B-Instruct-2501-abliterated-GGUF
+    context_default: 8192
+    license_note: "Apache-2.0 (Mistral Small 2501). Abliterated by huihui-ai, static quants by mradermacher."
+    languages_note: "Good German, French, Spanish and Italian."
+    note: "Predecessor of Mistral Small 3.2; 3.2 follows instructions a little better."
+    files:
+      Q4_K_M:
+        file: "Mistral-Small-24B-Instruct-2501-abliterated.Q4_K_M.gguf"
+        size_bytes: 14333910176
+        min_vram_gb: 16.5
+      Q5_K_M:
+        file: "Mistral-Small-24B-Instruct-2501-abliterated.Q5_K_M.gguf"
+        size_bytes: 16763985056
+        min_vram_gb: 19.0
+      Q6_K:
+        file: "Mistral-Small-24B-Instruct-2501-abliterated.Q6_K.gguf"
+        size_bytes: 19345939616
+        min_vram_gb: 21.5
+  - id: dolphin3.0-mistral-24b
+    display_name: "Dolphin 3.0 Mistral 24B"
+    family: "Mistral Small 3"
+    variant: explicit
+    purpose: "Adult roleplay & assistant; general-purpose model that follows your instructions without refusals"
+    hf_repo: bartowski/cognitivecomputations_Dolphin3.0-Mistral-24B-GGUF
+    context_default: 8192
+    license_note: "Apache-2.0 base (Mistral Small 2501); finetune by Cognitive Computations (Dolphin), imatrix quants by bartowski."
+    languages_note: "Trained mostly in English; German, French and Spanish work but are weaker."
+    files:
+      Q4_K_M:
+        file: "cognitivecomputations_Dolphin3.0-Mistral-24B-Q4_K_M.gguf"
+        size_bytes: 14333925664
+        min_vram_gb: 16.5
+      Q5_K_M:
+        file: "cognitivecomputations_Dolphin3.0-Mistral-24B-Q5_K_M.gguf"
+        size_bytes: 16764001824
+        min_vram_gb: 19.0
+      Q6_K_L:
+        file: "cognitivecomputations_Dolphin3.0-Mistral-24B-Q6_K_L.gguf"
+        size_bytes: 19671021248
+        min_vram_gb: 21.5
   - id: gemma4-26b-a4b
     display_name: "Gemma 4 26B-A4B"
     family: "Gemma 4"

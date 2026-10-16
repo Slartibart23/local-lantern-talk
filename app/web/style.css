@@ -209,6 +209,7 @@ input[type="range"] { width: 100%; accent-color: var(--amber); }
 .notice { font-size: 12px; color: var(--amber); margin: 8px 0 0; }
 .badge.censored { color: var(--blue); border-color: var(--blue); }
 .badge.uncensored { color: var(--amber); border-color: var(--amber); }
+.badge.explicit { color: var(--red); border-color: var(--red); }
 .badge.fits { color: var(--green); border-color: var(--green); }
 .badge.partial { color: var(--amber); border-color: var(--amber); }
 .badge.too_big { color: var(--red); border-color: var(--red); }

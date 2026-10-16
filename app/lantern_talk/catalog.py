@@ -20,9 +20,11 @@ from urllib.parse import unquote, urlparse
 
 import yaml
 
-VARIANTS = ("censored", "uncensored", "unknown")
-# Best quality first. Used to pick the largest quantization that fits.
-QUANT_ORDER = ("Q8_0", "Q6_K_L", "Q6_K", "Q5_K_M", "Q5_K_S", "Q4_K_M", "Q4_K_S", "IQ4_XS", "Q3_K_M", "IQ3_M", "Q3_K_S")
+VARIANTS = ("censored", "uncensored", "explicit", "unknown")
+# Best quality first. Used to pick the largest quantization that fits. HauhauCS' "K_P" quants
+# sit right after the K_M they improve on, so a profile that prefers Q5_K_M also takes Q5_K_P.
+QUANT_ORDER = ("Q8_0", "Q8_K_P", "Q6_K_L", "Q6_K", "Q6_K_P", "Q5_K_M", "Q5_K_P", "Q5_K_S", "Q4_K_M", "Q4_K_P",
+               "Q4_K_S", "IQ4_XS", "Q3_K_M", "Q3_K_P", "IQ3_M", "Q3_K_S")
 QUANT_PATTERN = re.compile(r"(?<![A-Z0-9])(I?Q\d(?:_[A-Z0-9]+)+|BF16|F16|F32)(?=[.\-]|$)", re.IGNORECASE)
 SPLIT_PATTERN = re.compile(r"-\d{5}-of-\d{5}\.gguf$", re.IGNORECASE)
 HF_REPO_PATTERN = re.compile(r"^[A-Za-z0-9][\w.\-]*/[\w.\-]+$")
