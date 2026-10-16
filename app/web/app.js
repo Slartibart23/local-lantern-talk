@@ -1758,6 +1758,7 @@ function applyDecorations() {
   for (const key of Object.keys(SCENES)) body.classList.toggle(`scene-${key}`, key === name);
   body.style.setProperty("--ring", on ? SCENES[name].ring : "var(--amber)");
   $("set-decorations").checked = on;
+  $("set-avatar-size").value = avatarSize();
   const [left, right] = on ? SCENES[name].art : ["", ""];
   $("side-art-left").innerHTML = left;
   $("side-art-right").innerHTML = right;
@@ -1821,6 +1822,7 @@ const TEXT_COLORS = {
   lime: ["Lime", "#b8e64c"],
 };
 const MAX_PICTURE_FILE = 40 * 2 ** 20;
+const AVATAR_PX = 768;
 
 function imageUrl(name) {
   return `/api/images/${encodeURIComponent(name)}`;
@@ -1832,6 +1834,11 @@ function setAvatar(node, picture, initials) {
   if (picture) node.append(el("img", { src: imageUrl(picture), alt: "" }));
   else node.textContent = initials || "";
   return node;
+}
+
+function avatarSize() {
+  const size = storageGet("llt.avatarSize");
+  return ["small", "medium", "large"].includes(size) ? size : "medium";
 }
 
 function userInitials(name) {
@@ -1862,6 +1869,18 @@ function applyLook() {
   you.hidden = !(s.user_avatar || initials);
   setAvatar(you, s.user_avatar, initials);
   if (s.user_name) you.title = `${s.user_name} — change your name, picture and text colour in Settings → Your profile`;
+  // Portraits at the top corners of the chat (Settings → Appearance → Avatar size).
+  const size = avatarSize();
+  const showChar = size !== "small" && !!(c && c.avatar);
+  const showYou = size !== "small" && !!s.user_avatar;
+  if (showChar) $("portrait-char").src = imageUrl(c.avatar);
+  if (showYou) $("portrait-you").src = imageUrl(s.user_avatar);
+  $("portrait-char").hidden = !showChar;
+  $("portrait-you").hidden = !showYou;
+  if (c) $("portrait-char").title = c.name;
+  for (const key of ["small", "medium", "large"]) document.body.classList.toggle(`avatar-${key}`, size === key);
+  document.body.classList.toggle("portrait-left", showChar);
+  document.body.classList.toggle("portrait-right", showYou);
   const bg = $("chat-bg");
   if (c && c.background) {
     bg.style.backgroundImage = `url("${imageUrl(c.background)}")`;
@@ -1954,7 +1973,7 @@ function shrinkImage(bitmap, maxSide) {
   return canvasBlob(canvas);
 }
 
-// Move and zoom the picture inside a circle; the result is a 512 × 512 square.
+// Move and zoom the picture inside a circle; the result is a 768 × 768 square (sharp as a big portrait on 4K).
 function cropDialog(bitmap) {
   return new Promise((resolve) => {
     const dialog = $("crop-dialog");
@@ -1992,8 +2011,8 @@ function cropDialog(bitmap) {
       dialog.hidden = true;
       document.removeEventListener("keydown", onKey, true);
       if (!ok) { resolve(null); return; }
-      const out = el("canvas", { width: 512, height: 512 });
-      draw(out.getContext("2d"), 512);
+      const out = el("canvas", { width: AVATAR_PX, height: AVATAR_PX });
+      draw(out.getContext("2d"), AVATAR_PX);
       resolve(await canvasBlob(out));
     };
     const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); finish(false); } };
@@ -2227,6 +2246,7 @@ function init() {
   $("quit-app").onclick = quitApp;
   $("open-settings").onclick = openSettings;
   $("set-decorations").onchange = (e) => setDecorations(e.target.checked);
+  $("set-avatar-size").onchange = (e) => { storageSet("llt.avatarSize", e.target.value); applyLook(); };
   window.addEventListener("resize", () => { if (decorationsOn()) drawGarland(); });
   applyDecorations();
   $("close-settings").onclick = closeSettings;

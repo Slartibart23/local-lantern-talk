@@ -122,6 +122,10 @@
       </div>
 
       <div id="messages" class="messages" role="log" aria-live="polite" aria-label="Messages">
+        <div class="portraits" aria-hidden="true">
+          <img class="portrait char" id="portrait-char" alt="" hidden>
+          <img class="portrait you" id="portrait-you" alt="" hidden>
+        </div>
         <div class="empty" id="empty-hint">Say hello, or type a message below.</div>
       </div>
 
@@ -610,6 +614,12 @@
         <section aria-labelledby="set-look-title">
           <h2 id="set-look-title">Appearance</h2>
           <label class="switch" title="Scenes, fairy lights and lanterns; stored in this browser"><input type="checkbox" id="set-decorations"><span>Decorations: scenes, fairy lights and lanterns</span></label>
+          <label class="field-label" for="set-avatar-size">Avatar size in the chat</label>
+          <select id="set-avatar-size" title="How big the pictures of the character (top left) and of you (top right) are shown. They grow with the window, so they stay large on a 4K monitor.">
+            <option value="small">Small — only in the header</option>
+            <option value="medium">Medium — portraits at the top of the chat (default)</option>
+            <option value="large">Large — big portraits</option>
+          </select>
           <p class="hint">Stored in this browser. Animations stop when Windows is set to reduce motion.</p>
         </section>
 

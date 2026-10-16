@@ -588,3 +588,28 @@ body.busy .msg-actions { display: none; }
 .msg.director-only .director-line { margin-bottom: 0; }
 .viewing-session .director { display: none; }
 @media (max-width: 820px) { .director { padding: 0 14px 14px; } .director-form .secondary { padding: 5px 7px; } }
+
+/* ---- avatar portraits at the top of the chat (Settings → Appearance → Avatar size) -------
+   Sizes follow the window height, so the portraits stay large on a 4K monitor. */
+:root { --portrait: 0px; --portrait-gap: 18px; }
+body.avatar-medium { --portrait: clamp(110px, 17vh, 300px); }
+body.avatar-large { --portrait: clamp(150px, 27vh, 460px); }
+body.avatar-medium .chat-header .header-avatar, body.avatar-large .chat-header .header-avatar {
+  width: clamp(56px, 6vh, 96px); height: clamp(56px, 6vh, 96px); font-size: 17px; }
+.portraits { position: sticky; top: 0; height: 0; z-index: 2; pointer-events: none; flex: none; }
+.portrait { position: absolute; top: 0; width: var(--portrait); height: var(--portrait); border-radius: 50%;
+  object-fit: cover; background: var(--panel-2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring, var(--amber)) 70%, transparent), 0 12px 34px rgba(0, 0, 0, .55); }
+.portrait[hidden] { display: none; }
+.portrait.char { left: calc(-1 * (var(--portrait) + var(--portrait-gap))); }
+.portrait.you { right: calc(-1 * (var(--portrait) + var(--portrait-gap)));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 60%, transparent), 0 12px 34px rgba(0, 0, 0, .55); }
+body.portrait-left .messages { padding-left: calc(24px + var(--portrait) + var(--portrait-gap)); }
+body.portrait-right .messages { padding-right: calc(24px + var(--portrait) + var(--portrait-gap)); }
+body.viewing-session .portraits { display: none; }
+/* Narrow windows: one size smaller, and no portraits at all on small screens. */
+@media (max-width: 1100px) { body.avatar-large { --portrait: clamp(110px, 17vh, 300px); } }
+@media (max-width: 900px) {
+  .portraits { display: none; }
+  body.portrait-left .messages, body.portrait-right .messages { padding-left: 14px; padding-right: 14px; }
+}

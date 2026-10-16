@@ -56,6 +56,7 @@ installs are needed, and deleting the folder removes the app completely.
 | Language model | Context length: Automatic, or a slider in 1024-token steps with green / yellow / red zones | Automatic |
 | | Hardware profile (automatic or ultra / high / mid / low / unsupported) | automatic |
 | Appearance | Decorations: scenes, fairy lights and lanterns (stored in the browser) | on |
+| | Avatar size in the chat: Small (header only), Medium, Large portraits (stored in the browser) | Medium |
 | Family mode | Hides uncensored and explicit models and characters marked *For adults only* | off |
 | Session recording | Record sessions | on |
 | | MP3 quality (32 … 128 kbit/s) | 128 kbit/s |

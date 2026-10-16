@@ -146,6 +146,9 @@ project uses [Semantic Versioning](https://semver.org/).
   risk, responsibly and with respect for other people's privacy.
 
 ### Changed
+- Avatars as portraits at the top corners of the chat (the character left, you right), in three
+  sizes (Settings → Appearance → Avatar size) that grow with the window, so they stay large on
+  1440p and 4K monitors; avatars are stored at 768 × 768 pixels.
 - Conversation language in the right panel: English by default, other languages or
   *Automatic*; a fixed language is passed to Whisper, so noise or a short word is never
   taken for another language (a greeting in Japanese after a misheard first word).
