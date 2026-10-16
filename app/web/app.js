@@ -56,6 +56,7 @@ const app = {
   editingLast: false,   // the message box holds the last user message for editing
   collecting: false,    // push-to-talk / "Hold on": the app collects what you say until "Send"
   talkPress: null,      // when the Talk button / Space went down (push-to-talk)
+  director: { pending: "", pinned: [] },  // director's notes: for the next reply, and pinned ones
 };
 
 // ---------------------------------------------------------------- WebSocket
@@ -97,6 +98,8 @@ function handleEvent(msg) {
       applySettings();
       renderComponents(msg.components);
       app.deletableFrom = msg.deletable_from ?? null;
+      if (msg.director) app.director = msg.director;
+      renderDirector();
       renderTranscript(msg.transcript);
       renderVoiceInfo(msg.voice_info);
       applyCharacterState(msg);
@@ -118,12 +121,17 @@ function handleEvent(msg) {
       break;
     case "character":
       applyCharacterState(msg);
+      if (msg.director) { app.director = msg.director; renderDirector(); }
       app.deletableFrom = msg.deletable_from ?? null;
       renderTranscript(msg.transcript);
       break;
     case "transcript":
       app.deletableFrom = msg.deletable_from ?? null;
       renderTranscript(msg.transcript);
+      break;
+    case "director":
+      app.director = { pending: msg.pending, pinned: msg.pinned };
+      renderDirector();
       break;
     case "talk":
       app.collecting = !!msg.collecting;
@@ -339,7 +347,12 @@ function addUserMessage(msg) {
   bubble.textContent = msg.text;
   const meta = document.createElement("div");
   meta.className = "meta";
-  const parts = [msg.source === "voice" ? "spoken" : "typed"];
+  if (msg.note) el.append(directorLine(msg.note));
+  if (msg.source === "director") {
+    el.classList.add("director-only");
+    bubble.hidden = true;
+  }
+  const parts = [msg.source === "voice" ? "spoken" : msg.source === "director" ? "director's note" : "typed"];
   if (msg.source === "voice" && msg.language) parts.push(languageName(msg.language));
   meta.textContent = parts.join(" · ");
   if (msg.stt_ms) {
@@ -566,6 +579,40 @@ function cancelTalk() {
 
 function typingTarget(node) {
   return node && (node.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(node.tagName));
+}
+
+// ---------------------------------------------------------------- director's notes
+
+function directorLine(note) {
+  return el("div", { class: "director-line", title: "Director's note: never spoken, only steers the reply" },
+            el("span", { "aria-hidden": "true" }, "🎬 "), note);
+}
+
+function renderDirector() {
+  const box = $("director-chips");
+  box.innerHTML = "";
+  const d = app.director || { pending: "", pinned: [] };
+  const name = app.character ? app.character.name : "the character";
+  d.pinned.forEach((note, i) => {
+    box.append(el("span", { class: "director-chip pinned", title: `Pinned: ${name} follows this in every reply` },
+      el("span", { "aria-hidden": "true" }, "📌 "), note,
+      el("button", { type: "button", "aria-label": `Remove the pinned note: ${note}`, title: "Remove",
+                     onclick: () => send({ type: "unpin_note", index: i }) }, "✕")));
+  });
+  if (d.pending) {
+    box.append(el("span", { class: "director-chip pending", title: "Goes with your next message or Continue" },
+      el("strong", {}, "Next reply: "), d.pending,
+      el("button", { type: "button", "aria-label": "Remove the note for the next reply", title: "Remove",
+                     onclick: () => send({ type: "director_note", text: "" }) }, "✕")));
+  }
+  box.hidden = !d.pinned.length && !d.pending;
+}
+
+function directorText() {
+  const input = $("director-input");
+  const text = input.value.trim();
+  input.value = "";
+  return text;
 }
 
 function stopReply() {
@@ -1966,6 +2013,21 @@ function init() {
   $("status-btn").onclick = togglePause;
   $("pause-btn").onclick = togglePause;
   $("stop-btn").onclick = stopReply;
+  $("director-form").onsubmit = (ev) => {
+    ev.preventDefault();
+    const text = directorText();
+    if (text) send({ type: "director_note", text });
+  };
+  $("director-pin").onclick = () => {
+    const text = directorText();
+    if (text) send({ type: "pin_note", text });
+    else toast("Type the note first, then click Pin.", "info");
+  };
+  $("director-continue").onclick = () => {
+    const text = directorText();
+    if (text) send({ type: "director_note", text });
+    send({ type: "continue" });
+  };
   document.querySelectorAll(".talk-mode").forEach((b) => { b.onclick = () => setTalkMode(b.dataset.mode); });
   const talk = $("talk-btn");
   talk.onpointerdown = (e) => { if (e.button === 0) { talk.setPointerCapture(e.pointerId); talkDown(); } };

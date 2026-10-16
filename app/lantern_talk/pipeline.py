@@ -20,7 +20,7 @@ import numpy as np
 from .errors import describe as describe_error
 from .errors import is_out_of_memory
 from .llm import ChatMessage, LLMClient
-from .prompts import build_system_prompt
+from .prompts import build_system_prompt, director_context
 from .sanitizer import ActionFilter, Segment, clean_for_speech
 from .sentences import SentenceSplitter
 from .tts import OmniVoiceTTS
@@ -113,6 +113,7 @@ class ConversationConfig:
     roleplay: bool = False        # add the roleplay rules to the system prompt
     memory: str = ""              # remembered facts and summary of earlier conversations
     user: str = ""                # the user's profile (name, a few words about them)
+    director: list[str] = field(default_factory=list)  # pinned director's notes of the character
 
 
 class Conversation:
@@ -140,10 +141,10 @@ class Conversation:
             return self.voices.matched(self.config.voice, language)
         return self.config.voice
 
-    def build_messages(self, user_text: str, language: str | None) -> list[ChatMessage]:
+    def build_messages(self, user_text: str, language: str | None, note: str = "") -> list[ChatMessage]:
         prompt = build_system_prompt(
             self.config.persona, language, roleplay=self.config.roleplay, memory=self.config.memory,
-            user=self.config.user)
+            user=self.config.user, director=director_context(self.config.director, note))
         recent = list(self.history[-self.config.max_history_messages:])
         # Many chat templates (Mistral, Gemma) require user / assistant turns to alternate,
         # starting with the user: an opening greeting goes into the system prompt instead.
@@ -160,13 +161,16 @@ class Conversation:
                 messages.append(m)
         return messages
 
-    def run_turn(self, user_text: str, language: str | None = None) -> Iterator[TurnEvent]:
-        """Run one turn and yield events until :class:`TurnDone` or :class:`TurnError`."""
+    def run_turn(self, user_text: str, language: str | None = None, note: str = "") -> Iterator[TurnEvent]:
+        """Run one turn and yield events until :class:`TurnDone` or :class:`TurnError`.
+
+        ``note`` is a director's note for this reply only (never part of the history).
+        """
         metrics = TurnMetrics()
         self.cancel.clear()
         events: queue.Queue[object] = queue.Queue()
         sentences: queue.Queue[object] = queue.Queue()
-        messages = self.build_messages(user_text, language)
+        messages = self.build_messages(user_text, language, note)
         reply_parts: list[str] = []
         errors: list[str] = []
         voice = self.voice_for(language)

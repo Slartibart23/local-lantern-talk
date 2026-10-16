@@ -62,6 +62,7 @@ class Message:
     replay_session: str | None = None   # session recording that contains this message (spec §12.3)
     replay_offset: float | None = None
     replay_duration: float | None = None
+    note: str | None = None             # director's note given with this message
 
 
 @dataclass(frozen=True)
@@ -80,7 +81,8 @@ class MemoryStore:
         self._db = sqlite3.connect(str(db_path), check_same_thread=False)
         self._db.executescript(_SCHEMA)
         columns = {row[1] for row in self._db.execute("PRAGMA table_info(messages)")}
-        for name, kind in (("replay_session", "TEXT"), ("replay_offset", "REAL"), ("replay_duration", "REAL")):
+        for name, kind in (("replay_session", "TEXT"), ("replay_offset", "REAL"), ("replay_duration", "REAL"),
+                           ("note", "TEXT")):
             if name not in columns:  # databases from before session recording
                 self._db.execute(f"ALTER TABLE messages ADD COLUMN {name} {kind}")
         self._db.commit()
@@ -101,17 +103,17 @@ class MemoryStore:
 
     # -- history ----------------------------------------------------------------------
     def add_message(self, character: str, role: str, content: str, language: str | None = None,
-                    source: str | None = None, voice: str | None = None) -> int:
+                    source: str | None = None, voice: str | None = None, note: str | None = None) -> int:
         cur = self._execute(
-            "INSERT INTO messages (character, role, content, language, source, voice, created) VALUES (?,?,?,?,?,?,?)",
-            (character, role, content, language, source, voice, time.time()))
+            "INSERT INTO messages (character, role, content, language, source, voice, created, note) "
+            "VALUES (?,?,?,?,?,?,?,?)", (character, role, content, language, source, voice, time.time(), note or None))
         return int(cur.lastrowid)
 
     def active_messages(self, character: str) -> list[Message]:
         """Messages not yet folded into the summary, oldest first."""
         rows = self._query(
             "SELECT id, role, content, language, source, voice, created, replay_session, replay_offset, "
-            "replay_duration FROM messages WHERE character = ? AND summarized = 0 ORDER BY id", (character,))
+            "replay_duration, note FROM messages WHERE character = ? AND summarized = 0 ORDER BY id", (character,))
         return [Message(*r) for r in rows]
 
     def set_replay(self, message_id: int, session: str, offset: float, duration: float | None) -> None:

@@ -48,7 +48,7 @@ from .gguf_meta import GGUFError, model_info
 from .models import ContextProfile, ModelError, ModelManager, NoGGUFError
 from .paths import Paths
 from .pipeline import Conversation, ConversationConfig, SegmentEvent, SpeechAudio, TurnDone, TurnError
-from .prompts import DEFAULT_ASSISTANT_PERSONA, LANGUAGE_NAMES, user_context
+from .prompts import CONTINUE_TEXT, DEFAULT_ASSISTANT_PERSONA, LANGUAGE_NAMES, user_context
 from .recorder import CaptureBuffer, SessionItem, SessionRecorder, list_sessions, session_title, spoken_text
 from .resample import StreamingResampler
 from .sanitizer import split_segments
@@ -171,6 +171,7 @@ class Engine:
         self.memory = MemoryStore(paths.memory / "memory.db")
         self.character: Character | None = None
         self.resume: dict[str, Any] | None = None  # an unfinished chat that was loaded from memory
+        self.pending_note = ""                     # director's note for the next reply
         self.replaying = False                     # a recorded message is playing in the browser
         self._msg_seq = 0                          # ids of transcript items (for replay buttons)
         self._replay_lock = threading.Lock()
@@ -215,6 +216,21 @@ class Engine:
         self.c.server.stop()
         self.recorder.close()  # writes what is still queued
         self.memory.close()
+
+    # -- director's notes ---------------------------------------------------------------------
+    def set_pending_note(self, text: str) -> None:
+        """A director's note for the next reply, however it is started (typed, spoken, Continue)."""
+        self._commands.put(("pending_note", " ".join(text.split())[:300]))
+
+    def pin_note(self, text: str) -> None:
+        self._commands.put(("pin_note", text))
+
+    def unpin_note(self, index: int) -> None:
+        self._commands.put(("unpin_note", index))
+
+    def continue_story(self) -> None:
+        """The character goes on by itself (with the pending director's note, if any)."""
+        self._commands.put(("continue", None))
 
     def submit_text(self, text: str) -> None:
         text = text.strip()
@@ -328,6 +344,7 @@ class Engine:
             "gpu": self.gpu_summary(),
             "transcript": self.transcript,
             "deletable_from": self._deletable_from(),
+            "director": self.director_view(),
             "components": self.components_status(),
             "voice_info": self.voice_info(),
             "character": self.character.to_dict() if self.character else None,
@@ -655,6 +672,10 @@ class Engine:
             "delete_from": self._handle_delete_from,
             "regenerate": self._handle_regenerate,
             "edit_last": self._handle_edit_last,
+            "pending_note": self._handle_pending_note,
+            "pin_note": self._handle_pin_note,
+            "unpin_note": self._handle_unpin_note,
+            "continue": lambda _: self._turn("", self.last_language, "director"),
         }
         while True:
             name, arg = self._commands.get()
@@ -981,18 +1002,27 @@ class Engine:
 
     def _turn(self, text: str, language: str | None, source: str, stt_ms: int | None = None,
               audio: np.ndarray | None = None, audio_sr: int = 0, user: dict[str, Any] | None = None) -> None:
-        """One exchange. ``user`` is an existing message to answer again (Regenerate)."""
+        """One exchange. ``user`` is an existing message to answer again (Regenerate).
+
+        ``source`` "director": the user only gave a director's note; the character goes on by itself.
+        """
         self._recover_llm()
         if self.fatal_error or not self.c.server.running:
             raise UserError(self.fatal_error or "The language model is not loaded.")
+        if source == "director" and user is None and not self.pending_note and not self.transcript:
+            raise UserError("Nothing to continue yet.")
         self._set_state(State.THINKING, "")
         self.resume = None  # talking on continues the chat
         recording = self._ensure_session()
         if user is None:
+            note, self.pending_note = self.pending_note, ""
             user = {"id": self._new_id(), "role": "user", "text": text, "language": language, "source": source}
+            if note:
+                user["note"] = note
             self.transcript.append(user)
             self._emit({"type": "user_message", **user, "stt_ms": stt_ms})
-            if recording:  # encoded in the background while the model answers
+            self._emit_director()
+            if recording and source != "director":  # encoded in the background while the model answers
                 tags = ["spoken", language] if source == "voice" and language else [
                     "spoken" if source == "voice" else "typed"]
                 self.recorder.add(SessionItem(user["id"], "user", self._user_label(), text, tags,
@@ -1010,7 +1040,8 @@ class Engine:
         chunks = 0
         audio_seconds = 0.0
         reply_text = ""
-        for event in self.conversation.run_turn(text, language):
+        llm_text = text or CONTINUE_TEXT  # a director's note alone: "(continue)"
+        for event in self.conversation.run_turn(llm_text, language, user.get("note", "")):
             if isinstance(event, SegmentEvent):
                 seg = event.segment
                 _append_segment(reply["segments"], seg.kind, seg.text)
@@ -1113,6 +1144,42 @@ class Engine:
             first = item["id"]
         return first
 
+    def director_view(self) -> dict[str, Any]:
+        c = self.character
+        return {"pending": self.pending_note, "pinned": list(c.director_notes) if c else []}
+
+    def _emit_director(self) -> None:
+        self._emit({"type": "director", **self.director_view()})
+
+    def _handle_pending_note(self, text: str) -> None:
+        self.pending_note = text
+        self._emit_director()
+
+    def _handle_pin_note(self, text: str) -> None:
+        from .characters import MAX_NOTES
+
+        c = self._memory_character()
+        text = " ".join(str(text).split())[:300]
+        if not text:
+            return
+        if len(c.director_notes) >= MAX_NOTES:
+            raise UserError(f"{c.name} already has {MAX_NOTES} pinned notes. Remove one first.")
+        self._save_director_notes([*c.director_notes, text])
+
+    def _handle_unpin_note(self, index: int) -> None:
+        c = self._memory_character()
+        notes = list(c.director_notes)
+        if 0 <= int(index) < len(notes):
+            del notes[int(index)]
+            self._save_director_notes(notes)
+
+    def _save_director_notes(self, notes: list[str]) -> None:
+        c = self._memory_character()
+        self.character = self.characters.save({**c.to_dict(), "director_notes": notes}, c.id)
+        self.conversation.config.director = list(self.character.director_notes)
+        self._emit({"type": "characters", "characters": self.list_characters(), "character": self.character.to_dict()})
+        self._emit_director()
+
     def _emit_editable(self) -> None:
         self._emit({"type": "editable", "deletable_from": self._deletable_from()})
 
@@ -1178,7 +1245,7 @@ class Engine:
         self._emit_transcript()
         if user.get("language"):
             self.last_language = user["language"]
-        self._turn(user["text"], self.last_language, user.get("source") or "text", user=user)
+        self._turn(user["text"], self.last_language, user.get("source") or "text", user=user)  # keeps its note
 
     def _handle_edit_last(self, text: str) -> None:
         index = next((i for i in range(len(self.transcript) - 1, -1, -1)
@@ -1241,6 +1308,7 @@ class Engine:
             raise UserError("No characters found. Create one with + New character.")
         if self.character is not None and self.character.id != char.id:
             self._end_session()
+            self.pending_note = ""  # a note was meant for the other character
         self.character = char
         s = self.store.settings
         s.character = char.id
@@ -1257,6 +1325,7 @@ class Engine:
         cfg = self.conversation.config
         cfg.persona = char.system_prompt or char.persona or DEFAULT_ASSISTANT_PERSONA
         cfg.roleplay = char.kind == "roleplay"
+        cfg.director = list(char.director_notes)
         self._refresh_memory_context()
         self._load_history()
         self._sync_tts()
@@ -1285,8 +1354,11 @@ class Engine:
                                         "offset": m.replay_offset, "duration": m.replay_duration,
                                         "in_history": True}
                 if m.role == "user":
-                    item.update({"role": "user", "text": m.content, "language": m.language,
+                    director = m.source == "director"
+                    item.update({"role": "user", "text": "" if director else m.content, "language": m.language,
                                  "source": m.source or "text"})
+                    if m.note:
+                        item["note"] = m.note
                 else:
                     item.update({"role": "assistant", "voice": m.voice,
                                  "greeting": m.voice is None and m.content == c.greeting,
@@ -1314,7 +1386,8 @@ class Engine:
     def _emit_character_state(self) -> None:
         self._emit({"type": "character", "character": self.character.to_dict() if self.character else None,
                     "characters": self.list_characters(), "transcript": self.transcript,
-                    "deletable_from": self._deletable_from(), "memory": self.memory_view(), "resume": self.resume})
+                    "deletable_from": self._deletable_from(), "memory": self.memory_view(), "resume": self.resume,
+                    "director": self.director_view()})
         self._emit({"type": "settings", "settings": asdict(self.store.settings)})
         self._emit({"type": "voice_info", **self.voice_info()})
 
@@ -1378,7 +1451,8 @@ class Engine:
         if c is None or not c.memory_enabled or not reply_text:
             self._trim_history()
             return
-        user_db = self.memory.add_message(c.id, "user", user["text"], language, source)
+        user_db = self.memory.add_message(c.id, "user", user["text"] or CONTINUE_TEXT, language, source,
+                                          note=user.get("note"))
         reply_db = self.memory.add_message(c.id, "assistant", reply_text, language, None, reply["voice"])
         for item, db_id in ((user, user_db), (reply, reply_db)):
             with self._replay_lock:  # the recorder may already have finished this message

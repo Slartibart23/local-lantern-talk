@@ -160,6 +160,21 @@
           <svg aria-hidden="true"><use href="#i-send"/></svg><span>Send</span>
         </button>
       </form>
+      <div class="director" id="director">
+        <div class="director-chips" id="director-chips" aria-live="polite"></div>
+        <form id="director-form" class="director-form">
+          <span class="director-icon" aria-hidden="true">🎬</span>
+          <label for="director-input" class="sr-only">Director's note</label>
+          <input id="director-input" type="text" maxlength="300" autocomplete="off"
+                 placeholder="Director's note: steer the scene, e.g. A stranger walks into the tavern"
+                 title="A stage direction for the character. It is never said out loud and the character does not answer it — it just follows it.">
+          <button type="submit" class="secondary" title="Use this note for the next reply only (Enter). It goes with whatever you say or type next.">Next reply</button>
+          <button type="button" id="director-pin" class="secondary"
+                  title="Pin this note: the character follows it in every reply, also after End chat and a restart, until you remove it.">Pin</button>
+          <button type="button" id="director-continue" class="secondary"
+                  title="Let the character go on by itself, without you saying anything (with the note, if there is one).">Continue ▶</button>
+        </form>
+      </div>
     </main>
 
     <aside class="panel right" id="right-panel" aria-label="Settings">

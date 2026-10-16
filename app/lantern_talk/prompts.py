@@ -34,6 +34,26 @@ user explicitly asks out of character (OOC).
 - Keep each reply to a few spoken sentences and leave the user something to react to."""
 
 
+DIRECTOR_RULES = """\
+Director's notes from the user follow. They are stage directions for you, not words the user says in \
+the conversation: follow them in what you say and do, but never mention, quote or answer them, and \
+stay in character."""
+CONTINUE_TEXT = "(continue)"   # the user's turn when they only gave a director's note
+
+
+def director_context(pinned: list[str], note: str = "") -> str:
+    """Pinned notes (always) and a one-time note for the next reply (Director field in the chat)."""
+    lines = [f"- {n}" for n in pinned if n.strip()]
+    parts = []
+    if lines:
+        parts.append("Always:\n" + "\n".join(lines))
+    if note.strip():
+        parts.append(f"For your next reply: {note.strip()}")
+    if not parts:
+        return ""
+    return DIRECTOR_RULES + "\n" + "\n".join(parts)
+
+
 def user_context(name: str, about: str) -> str:
     """What the user wrote about themselves in their profile (Settings → Your profile)."""
     lines = []
@@ -45,7 +65,7 @@ def user_context(name: str, about: str) -> str:
 
 
 def build_system_prompt(persona: str, reply_language: str | None = None, *,
-                        roleplay: bool = False, memory: str = "", user: str = "") -> str:
+                        roleplay: bool = False, memory: str = "", user: str = "", director: str = "") -> str:
     """Combine the character persona, roleplay rules, memory and the voice-friendly output rules."""
     parts = [persona.strip()]
     if user:
@@ -54,6 +74,8 @@ def build_system_prompt(persona: str, reply_language: str | None = None, *,
         parts.append(ROLEPLAY_RULES)
     if memory:
         parts.append(memory.strip())
+    if director:
+        parts.append(director.strip())
     parts.append(VOICE_RULES)
     name = language_name(reply_language)
     if name:

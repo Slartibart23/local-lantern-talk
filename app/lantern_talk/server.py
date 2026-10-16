@@ -11,7 +11,8 @@ Browser → server, JSON: ``text``, ``mic_format`` (sample_rate), ``playback_end
 ``add_custom_model`` (source, quant, variant), ``remove_custom_model`` (id),
 ``set_model_label`` (file, variant), ``preview_voice`` (voice), ``rename_voice`` (voice, name),
 ``delete_voice`` (voice), ``regenerate_builtin_voices``, ``delete_from`` (id), ``regenerate``,
-``edit_last`` (text), ``stop_reply``, ``talk_start``, ``talk_end`` (send). Binary: microphone PCM
+``edit_last`` (text), ``stop_reply``, ``talk_start``, ``talk_end`` (send), ``director_note`` (text),
+``pin_note`` (text), ``unpin_note`` (index), ``continue``. Binary: microphone PCM
 (int16 mono at the announced sample rate).
 
 Server → browser, JSON: ``hello`` (full snapshot), ``state``, ``user_message``,
@@ -58,7 +59,7 @@ from .settings import SettingsStore
 log = logging.getLogger(__name__)
 
 # WebSocket messages with personal content (chat text, characters, facts) never go to the log.
-PRIVATE_MESSAGES = {"text", "save_character", "add_fact", "update_fact", "edit_last"}
+PRIVATE_MESSAGES = {"text", "save_character", "add_fact", "update_fact", "edit_last", "director_note", "pin_note"}
 
 HOST = "127.0.0.1"
 DEFAULT_PORT = 7865
@@ -271,6 +272,14 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
                     engine.edit_last(str(data.get("text", ""))[:4000])
                 elif kind == "stop_reply":
                     engine.stop_reply()
+                elif kind == "director_note":
+                    engine.set_pending_note(str(data.get("text", "")))
+                elif kind == "pin_note":
+                    engine.pin_note(str(data.get("text", ""))[:300])
+                elif kind == "unpin_note":
+                    engine.unpin_note(int(data.get("index", -1)))
+                elif kind == "continue":
+                    engine.continue_story()
                 elif kind == "talk_start":
                     engine.talk_start()
                 elif kind == "talk_end":

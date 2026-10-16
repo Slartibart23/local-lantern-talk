@@ -557,3 +557,25 @@ body.busy .msg-actions { display: none; }
   animation: pulse 2s ease-in-out infinite; }
 .status { min-width: 240px; }
 @media (max-width: 820px) { .talk-mode { padding: 6px 9px; } }
+
+/* ---- director's notes ------------------------------------------------------------------- */
+.director { padding: 0 24px 16px; margin-top: -10px; }
+.director-form { display: flex; align-items: center; gap: 6px; }
+.director-icon { font-size: 15px; opacity: .8; }
+.director-form input { flex: 1; min-width: 0; padding: 6px 10px; border-radius: 8px; border: 1px dashed var(--line);
+  background: transparent; font-size: 13px; color: var(--text-dim); }
+.director-form input:focus { border-style: solid; border-color: var(--amber); outline: none; color: var(--text); }
+.director-form .secondary { padding: 5px 10px; font-size: 12px; white-space: nowrap; }
+.director-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.director-chips[hidden] { display: none; }
+.director-chip { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; padding: 2px 4px 2px 9px;
+  border-radius: 999px; font-size: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--text-dim); }
+.director-chip.pinned { border-color: color-mix(in srgb, var(--amber) 55%, var(--line)); }
+.director-chip.pending { border-color: var(--blue); }
+.director-chip strong { font-weight: 600; color: var(--text); margin-right: 3px; }
+.director-chip button { border: 0; background: none; color: var(--text-faint); cursor: pointer; padding: 0 4px; font-size: 11px; }
+.director-chip button:hover { color: var(--red); }
+.director-line { font-size: 12px; font-style: italic; color: var(--text-faint); margin: 0 4px 4px; text-align: right; }
+.msg.director-only .director-line { margin-bottom: 0; }
+.viewing-session .director { display: none; }
+@media (max-width: 820px) { .director { padding: 0 14px 14px; } .director-form .secondary { padding: 5px 7px; } }

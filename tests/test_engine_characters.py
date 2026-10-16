@@ -358,3 +358,43 @@ def test_your_profile_reaches_every_character(setup) -> None:  # noqa: ANN001
     system = comps.llm.requests[-1][0].content
     assert "The user's name is Alex Example." in system and "I love sci-fi." in system
     assert engine._user_label() == "Alex Example"
+
+
+
+def test_director_notes(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup()
+    start = len(rec.events)
+    engine.pin_note("It is a stormy night.")
+    engine.set_pending_note("  Lena gets suspicious.  ")
+    _wait(rec, "director", start, lambda e: e["pending"] == "Lena gets suspicious.")
+    _turn(engine, rec, "Hello!")
+    chat = [r for r in comps.llm.requests if r[-1].content == "Hello!"][0]
+    system = chat[0].content
+    assert "Always:\n- It is a stormy night." in system and "For your next reply: Lena gets suspicious." in system
+    assert "Lena gets suspicious." not in " ".join(m.content for m in chat[1:])  # never part of the history
+    assert engine.pending_note == "" and engine.transcript[-2]["note"] == "Lena gets suspicious."
+    # The next reply only has the pinned note.
+    _turn(engine, rec, "And now?")
+    chat = [r for r in comps.llm.requests if r[-1].content == "And now?"][0]
+    assert "stormy night" in chat[0].content and "For your next reply" not in chat[0].content
+    # A note alone lets the character go on.
+    engine.set_pending_note("A stranger walks in.")
+    start = len(rec.events)
+    engine.continue_story()
+    rec.wait_for(lambda ev: any(e["type"] == "turn_done" for e in ev[start:]))
+    engine.playback_ended()
+    _wait(rec, "editable", start)
+    chat = [r for r in comps.llm.requests if r[-1].content == "(continue)"][0]
+    assert "For your next reply: A stranger walks in." in chat[0].content
+    assert engine.transcript[-2]["source"] == "director" and engine.transcript[-2]["text"] == ""
+    # Pinned notes belong to the character and survive a restart, the note of a message too.
+    assert engine.characters.get("lena").director_notes == ["It is a stormy night."]
+    engine.shutdown()
+    engine2, comps2, rec2 = setup()
+    notes = [t.get("note") for t in engine2.transcript if t["role"] == "user"]
+    assert notes == ["Lena gets suspicious.", None, "A stranger walks in."]
+    assert engine2.snapshot()["director"]["pinned"] == ["It is a stormy night."]
+    start = len(rec2.events)
+    engine2.unpin_note(0)
+    _wait(rec2, "director", start)
+    assert engine2.characters.get("lena").director_notes == []
