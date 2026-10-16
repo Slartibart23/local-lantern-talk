@@ -214,8 +214,8 @@ def messages_to_summarize(messages: list[Message], context: int) -> list[Message
     return out
 
 
-def transcript_text(messages: list[Message], character_name: str) -> str:
-    who = {"user": "User", "assistant": character_name}
+def transcript_text(messages: list[Message], character_name: str, user_name: str = "User") -> str:
+    who = {"user": user_name or "User", "assistant": character_name}
     return "\n".join(f"{who.get(m.role, m.role)}: {m.content}" for m in messages)
 
 

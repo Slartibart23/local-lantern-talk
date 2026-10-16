@@ -210,3 +210,31 @@ def test_session_files_are_served_only_to_the_app(tmp_path: Path) -> None:
         foreign = {"sec-fetch-site": "cross-site"}
         assert c.get("/api/sessions/2026-10-13_1538_lena.mp3", headers=foreign).status_code == 403
         assert c.get("/api/sessions", headers=foreign).status_code == 403
+
+
+def test_pictures_are_uploaded_and_served_only_to_the_app(tmp_path: Path) -> None:
+    import shutil
+
+    from lantern_talk.images import ImageStore
+
+    root = tmp_path / "root"
+    shutil.copytree(ROOT / "app" / "web", root / "app" / "web")
+    paths = Paths(root)
+    store = ImageStore(paths.images)
+
+    class PictureEngine(FakeEngine):
+        def add_image(self, kind: str, data: bytes) -> dict[str, str]:
+            return {"name": store.save(kind, data)}
+
+    app = create_app(paths, PORT, engine_factory=lambda emit: PictureEngine(emit))
+    webp = b"RIFF\x10\x00\x00\x00WEBPVP8 " + b"\x00" * 64
+    with TestClient(app, base_url=BASE) as c:
+        assert c.post("/api/images", params={"kind": "avatar"}, content=webp,
+                      headers={"origin": "http://evil.example"}).status_code == 403
+        r = c.post("/api/images", params={"kind": "avatar"}, content=webp, headers=GOOD_ORIGIN)
+        name = r.json()["name"]
+        assert r.status_code == 200 and name.startswith("avatar-") and name.endswith(".webp")
+        got = c.get(f"/api/images/{name}")
+        assert got.status_code == 200 and got.content == webp and got.headers["content-type"] == "image/webp"
+        assert c.get(f"/api/images/{name}", headers={"sec-fetch-site": "cross-site"}).status_code == 403
+        assert c.get("/api/images/..%5Csettings.json").status_code == 404

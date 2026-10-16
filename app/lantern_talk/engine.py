@@ -30,10 +30,12 @@ from typing import Any
 import numpy as np
 
 from .audio_prep import VOICE_EXTENSIONS
-from .characters import Character, CharacterError, CharacterStore
+from .characters import TEXT_COLORS, Character, CharacterError, CharacterStore
 from .downloads import DownloadJob
 from .errors import describe as describe_error
 from .gpu import query_gpu
+from .images import ImageError, ImageStore
+from .images import valid_name as valid_image_name
 from . import __version__
 from .hardware import PROFILES, effective_profile, select_profile
 from .llm import NO_THINKING_ARGS, ChatMessage, LlamaServer, LLMClient, SamplingConfig, ServerConfig
@@ -46,7 +48,7 @@ from .gguf_meta import GGUFError, model_info
 from .models import ContextProfile, ModelError, ModelManager, NoGGUFError
 from .paths import Paths
 from .pipeline import Conversation, ConversationConfig, SegmentEvent, SpeechAudio, TurnDone, TurnError
-from .prompts import DEFAULT_ASSISTANT_PERSONA, LANGUAGE_NAMES
+from .prompts import DEFAULT_ASSISTANT_PERSONA, LANGUAGE_NAMES, user_context
 from .recorder import CaptureBuffer, SessionItem, SessionRecorder, list_sessions, session_title, spoken_text
 from .resample import StreamingResampler
 from .sanitizer import split_segments
@@ -156,6 +158,9 @@ class Engine:
             self.c.llm, self.c.tts if s.voice_output else None, self.c.voices,
             ConversationConfig(persona=persona, voice=None, match_language=s.match_language),
         )
+        self.conversation.config.user = user_context(s.user_name, s.user_about)
+        self.images = ImageStore(paths.images)
+        self._fresh_images: dict[str, float] = {}  # uploaded, maybe not saved yet (editor still open)
         self.characters = CharacterStore(paths.characters, paths.config / "default_characters")
         self.characters.load()
         self.memory = MemoryStore(paths.memory / "memory.db")
@@ -293,6 +298,26 @@ class Engine:
             "version": __version__,
             "recording": self.recorder.files(),
         }
+
+    # ------------------------------------------------------------------ pictures
+    def add_image(self, kind: str, data: bytes) -> dict[str, str]:
+        """Store an avatar or background the browser has already cropped and shrunk."""
+        try:
+            name = self.images.save(kind, data)
+        except ImageError as exc:
+            raise UserError(str(exc)) from exc
+        self._fresh_images[name] = time.monotonic()
+        return {"name": name}
+
+    def _cleanup_images(self) -> None:
+        """Pictures no character and no profile uses any more are removed (uploads of the last hour stay)."""
+        s = self.store.settings
+        keep = {s.user_avatar}
+        for c in self.characters.list():
+            keep.update((c.avatar, c.background))
+        now = time.monotonic()
+        self._fresh_images = {n: t for n, t in self._fresh_images.items() if now - t < 3600}
+        self.images.cleanup(keep | set(self._fresh_images))
 
     # ------------------------------------------------------------------ voices
     def add_voice(self, filename: str, data: bytes) -> dict[str, Any]:
@@ -810,7 +835,7 @@ class Engine:
         if recording:  # encoded in the background while the model answers
             tags = ["spoken", language] if source == "voice" and language else [
                 "spoken" if source == "voice" else "typed"]
-            self.recorder.add(SessionItem(user["id"], "user", "You", text, tags,
+            self.recorder.add(SessionItem(user["id"], "user", self._user_label(), text, tags,
                                           audio if source == "voice" else None, audio_sr or SAMPLE_RATE))
 
         voice = self.conversation.voice_for(language)
@@ -1058,12 +1083,17 @@ class Engine:
             self._activate_character(char.id)  # a new or edited active character takes effect now
             self._prepare_voice()
             self._ensure_llm()
+        self._cleanup_images()
         self._emit_character_state()
         self._enter_idle()
 
     def _handle_duplicate_character(self, char_id: str) -> None:
         try:
-            self.characters.duplicate(char_id)
+            copy = self.characters.duplicate(char_id)
+            if copy.avatar or copy.background:  # the copy gets its own pictures
+                data = copy.to_dict()
+                data["avatar"], data["background"] = self.images.copy(copy.avatar), self.images.copy(copy.background)
+                self.characters.save(data, copy.id)
         except CharacterError as exc:
             raise UserError(str(exc)) from exc
         self._emit_character_state()
@@ -1074,6 +1104,7 @@ class Engine:
         except CharacterError as exc:
             raise UserError(str(exc)) from exc
         self.memory.reset(char_id)  # its history and facts go with it
+        self._cleanup_images()
         if self.character is not None and self.character.id == char_id:
             self._activate_character(None)
             self._prepare_voice()
@@ -1133,7 +1164,8 @@ class Engine:
         summary = self._llm_text(
             SUMMARY_SYSTEM.format(name=c.name),
             SUMMARY_PROMPT.format(summary=self.memory.summary(c.id) or "(none)",
-                                  transcript=transcript_text(old, c.name), words=words),
+                                  transcript=transcript_text(old, c.name, self.store.settings.user_name),
+                                  words=words),
             max_tokens=max(400, words * 2))
         if summary:
             self.memory.set_summary(c.id, summary)
@@ -1147,7 +1179,8 @@ class Engine:
         reply = self._llm_text(
             FACTS_SYSTEM.format(name=c.name),
             FACTS_PROMPT.format(facts="\n".join(f"- {f.text}" for f in facts) or "(none)",
-                                transcript=transcript_text(recent, c.name)), max_tokens=300)
+                                transcript=transcript_text(recent, c.name, self.store.settings.user_name)),
+            max_tokens=300)
         add, remove = parse_fact_update(reply)
         self.memory.remove_facts_by_text(c.id, remove)
         for text in add:
@@ -1188,6 +1221,10 @@ class Engine:
     def _new_id(self) -> int:
         self._msg_seq += 1
         return self._msg_seq
+
+    def _user_label(self) -> str:
+        """The user's name in the session transcript ("You" without a profile name)."""
+        return " ".join(self.store.settings.user_name.split()) or "You"
 
     def _recording_on(self) -> bool:
         c = self.character
@@ -1388,6 +1425,11 @@ class Engine:
             self.segmenter.config.neg_threshold = max(0.1, s.vad_threshold - 0.15)
         if "match_language" in changed:
             self.conversation.config.match_language = s.match_language
+        if changed.keys() & {"user_name", "user_about"}:
+            s.user_name, s.user_about = " ".join(s.user_name.split()), s.user_about.strip()
+            self.conversation.config.user = user_context(s.user_name, s.user_about)
+        if "user_avatar" in changed:
+            self._cleanup_images()
         if "num_step" in changed:
             if not 8 <= s.num_step <= 96:
                 raise UserError("Speech quality steps must be between 8 and 96.")
@@ -1419,7 +1461,7 @@ class Engine:
             self._end_session()
         if self.character is not None and changed.keys() & {"voice", "show_actions", "voice_output"}:
             self._save_character_from_settings(changed)
-        if changed.keys() - {"show_actions"}:
+        if changed.keys() - {"show_actions", "user_name", "user_about", "user_avatar", "user_color"}:
             self._enter_idle()
 
     def _validate(self, changed: dict[str, Any]) -> None:
@@ -1435,6 +1477,10 @@ class Engine:
             "session_gap_ms": (0 <= s.session_gap_ms <= 3000, "The pause between turns must be 0 to 3000 ms."),
             "hardware_profile_override": (s.hardware_profile_override in ("", *PROFILES),
                                           f"Unknown hardware profile {s.hardware_profile_override}."),
+            "user_name": (len(s.user_name) <= 60, "Your name is too long (60 characters at most)."),
+            "user_about": (len(s.user_about) <= 1000, "The text about you is too long (1000 characters at most)."),
+            "user_avatar": (s.user_avatar == "" or valid_image_name(s.user_avatar), "Unknown picture."),
+            "user_color": (s.user_color in ("", *TEXT_COLORS), f"Unknown colour {s.user_color}."),
         }
         for key, (ok, message) in checks.items():
             if key in changed and not ok:

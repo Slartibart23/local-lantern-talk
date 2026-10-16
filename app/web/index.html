@@ -65,12 +65,13 @@
     </aside>
 
     <main class="center" aria-label="Conversation">
+      <div class="chat-bg" id="chat-bg" aria-hidden="true"></div>
       <div class="scene-fx" aria-hidden="true"></div>
       <header class="chat-header">
         <button type="button" class="icon-btn narrow-only" id="toggle-left" aria-label="Show characters" aria-controls="left-panel" aria-expanded="false">
           <svg aria-hidden="true"><use href="#i-menu"/></svg>
         </button>
-        <span class="avatar" id="header-avatar">LA</span>
+        <span class="avatar header-avatar" id="header-avatar" title="The character you are talking to">LA</span>
         <div class="chat-title">
           <div class="chat-name" id="header-name">Lantern</div>
           <div class="chat-sub"><span id="header-role">Assistant</span> · <span id="header-voice">—</span></div>
@@ -82,6 +83,9 @@
         <button type="button" class="icon-btn" id="edit-active-char" aria-label="Edit this character" title="Edit this character">
           <svg aria-hidden="true"><use href="#i-edit"/></svg>
         </button>
+        <button type="button" class="avatar header-avatar user-avatar" id="user-avatar" hidden
+                title="You — change your name, picture and text colour in Settings → Your profile"
+                aria-label="Your profile"></button>
         <button type="button" class="icon-btn narrow-only" id="toggle-right" aria-label="Show settings panel" aria-controls="right-panel" aria-expanded="false">
           <svg aria-hidden="true"><use href="#i-sliders"/></svg>
         </button>
@@ -346,6 +350,35 @@
         <option value="red-lantern">Red lantern — red light, rose and cocktail</option>
         <option value="study">Study — parchment, books and globe</option>
       </select>
+      <div class="editor-look">
+        <div>
+          <span class="field-label">Avatar</span>
+          <div class="look-row">
+            <span class="avatar big" id="ce-avatar-preview" aria-hidden="true"></span>
+            <div class="look-buttons">
+              <button type="button" class="secondary" id="ce-avatar-pick"
+                      title="Choose a picture (JPG, PNG, WebP…). You can move and zoom it to fit the circle; it is shrunk automatically.">Choose picture…</button>
+              <button type="button" class="secondary" id="ce-avatar-remove" title="Show the initials instead of a picture">Remove</button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <span class="field-label">Chat background</span>
+          <div class="look-row">
+            <span class="bg-thumb" id="ce-bg-preview" aria-hidden="true"></span>
+            <div class="look-buttons">
+              <button type="button" class="secondary" id="ce-bg-pick"
+                      title="Choose a picture for the chat background. It is shown washed out so the text stays readable, and shrunk automatically.">Choose picture…</button>
+              <button type="button" class="secondary" id="ce-bg-remove" title="Use the scene's background again">Remove</button>
+            </div>
+          </div>
+          <label class="field-label" for="ce-bg-fade">Washed out <output id="ce-bg-fade-out" for="ce-bg-fade"></output></label>
+          <input type="range" id="ce-bg-fade" min="40" max="95" step="5"
+                 title="How faint the background picture is. More washed out keeps the text easier to read.">
+        </div>
+      </div>
+      <span class="field-label" id="ce-colors-label">Text colour of the character's messages</span>
+      <div class="swatches" id="ce-colors" role="radiogroup" aria-labelledby="ce-colors-label"></div>
       <div class="editor-grid two">
         <div>
           <label class="field-label" for="ce-voice">Voice</label>
@@ -383,6 +416,33 @@
       </header>
 
       <div class="settings-grid">
+        <section aria-labelledby="set-you-title" class="wide" id="settings-profile">
+          <h2 id="set-you-title">Your profile</h2>
+          <div class="profile-grid">
+            <div class="look-row">
+              <span class="avatar big" id="you-avatar-preview" aria-hidden="true"></span>
+              <div class="look-buttons">
+                <button type="button" class="secondary" id="you-avatar-pick"
+                        title="Your own picture, shown at the top right of the chat. You can move and zoom it to fit the circle.">Choose picture…</button>
+                <button type="button" class="secondary" id="you-avatar-remove" title="Remove your picture">Remove</button>
+              </div>
+            </div>
+            <div>
+              <label class="field-label" for="you-name">Your name</label>
+              <input id="you-name" type="text" maxlength="60" autocomplete="off" placeholder="e.g. Tom"
+                     title="The characters address you by this name. It also replaces &quot;You&quot; in session transcripts.">
+              <label class="field-label" for="you-about">About you <span class="muted">(optional)</span></label>
+              <textarea id="you-about" rows="3" maxlength="1000"
+                        placeholder="e.g. I'm 34, I live in Hamburg, I love science fiction and I'm learning Spanish."
+                        title="A few sentences every character knows about you. Leave it empty if you prefer."></textarea>
+            </div>
+          </div>
+          <span class="field-label" id="you-colors-label">Text colour of your messages</span>
+          <div class="swatches" id="you-colors" role="radiogroup" aria-labelledby="you-colors-label"></div>
+          <p class="hint">Your name and the text about you are sent to every character with each message, so they can
+            address you personally. Everything stays on this computer (<code>user_data\settings.json</code>).</p>
+        </section>
+
         <section aria-labelledby="set-audio-title">
           <h2 id="set-audio-title">Audio devices</h2>
           <label class="field-label" for="input-device">Microphone</label>
@@ -503,6 +563,25 @@
           <input type="range" id="session-gap" min="0" max="2000" step="100">
           <p class="hint">Applies to new recordings; waiting time is never recorded.</p>
         </section>
+      </div>
+    </div>
+  </div>
+
+  <div id="crop-dialog" class="catalog" role="dialog" aria-modal="true" aria-labelledby="crop-title" hidden>
+    <div class="catalog-panel crop-panel">
+      <header class="catalog-head">
+        <h1 id="crop-title">Fit the picture</h1>
+        <button type="button" id="crop-close" class="icon-btn" aria-label="Cancel">✕</button>
+      </header>
+      <p class="hint">Drag the picture to move it, use the slider or the mouse wheel to zoom.</p>
+      <canvas id="crop-canvas" class="crop-canvas" width="300" height="300"
+              title="Drag to move the picture; scroll to zoom"></canvas>
+      <label class="field-label" for="crop-zoom">Zoom</label>
+      <input type="range" id="crop-zoom" min="1" max="4" step="0.01" value="1">
+      <div class="editor-actions">
+        <span class="spacer"></span>
+        <button type="button" id="crop-cancel" class="secondary">Cancel</button>
+        <button type="button" id="crop-ok" class="primary">Use picture</button>
       </div>
     </div>
   </div>

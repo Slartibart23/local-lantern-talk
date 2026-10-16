@@ -137,6 +137,10 @@ class Paths:
         return self.user_data / "sessions"
 
     @property
+    def images(self) -> Path:
+        return self.user_data / "images"
+
+    @property
     def settings_file(self) -> Path:
         return self.user_data / "settings.json"
 
@@ -173,7 +177,7 @@ class Paths:
         for d in (
             self.cache, self.tmp, self.llm_models, self.whisper_models,
             self.omnivoice_model, self.vad_models, self.builtin_voices,
-            self.voices, self.characters, self.memory, self.sessions, self.logs,
+            self.voices, self.characters, self.memory, self.sessions, self.images, self.logs,
         ):
             d.mkdir(parents=True, exist_ok=True)
 

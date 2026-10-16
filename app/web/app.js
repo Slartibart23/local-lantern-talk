@@ -818,6 +818,8 @@ function applySettings() {
   $("messages").classList.toggle("hide-actions", !s.show_actions);
   renderHeader();
   renderCurrentModel();
+  applyLook();
+  renderProfile();
   if (app.started) {
     if (s.mic_enabled) startMic(); else stopMic();
   }
@@ -954,7 +956,7 @@ function renderCharacters() {
     const active = c.id === activeId;
     const btn = el("button", { type: "button", class: "char" + (active ? " active" : ""),
                                title: c.persona || c.name, onclick: () => selectCharacter(c.id) },
-      el("span", { class: "avatar", "aria-hidden": "true" }, c.avatar_initials),
+      setAvatar(el("span", { class: "avatar", "aria-hidden": "true" }), c.avatar, c.avatar_initials),
       el("span", { class: "char-text" },
         el("span", { class: "char-name" }, c.name),
         el("span", { class: "char-role" }, KIND_LABEL[c.kind] || c.kind)));
@@ -970,7 +972,7 @@ function renderCharacters() {
 
 function renderHeader() {
   const c = app.character;
-  $("header-avatar").textContent = c ? c.avatar_initials : "LA";
+  setAvatar($("header-avatar"), c && c.avatar, c ? c.avatar_initials : "LA");
   $("header-name").textContent = c ? c.name : "Lantern";
   $("header-role").textContent = c ? (KIND_LABEL[c.kind] || c.kind) : "Assistant";
   $("edit-active-char").hidden = !c;
@@ -1018,7 +1020,11 @@ function openEditor(id) {
   app.editingId = c ? c.id : null;
   const d = c || { name: "", avatar_initials: "", kind: "roleplay", persona: "", system_prompt: "", greeting: "",
                    voice: app.settings.voice, model: "", voice_output: true, show_actions_as_text: true,
-                   memory_enabled: true, recording_enabled: true };
+                   memory_enabled: true, recording_enabled: true, avatar: "", background: "", background_fade: 80,
+                   text_color: "", director_notes: [] };
+  app.editLook = { avatar: d.avatar || "", background: d.background || "", text_color: d.text_color || "",
+                   director_notes: d.director_notes || [] };
+  $("ce-bg-fade").value = d.background_fade ?? 80;
   $("char-editor-title").textContent = c ? `Edit ${c.name}` : "New character";
   $("ce-name").value = d.name;
   $("ce-initials").value = c ? d.avatar_initials : "";
@@ -1035,6 +1041,7 @@ function openEditor(id) {
   $("ce-scene").value = SCENES[d.scene] ? d.scene : "plain";
   $("ce-delete").hidden = !c;
   $("ce-duplicate").hidden = !c;
+  renderEditorLook();
   $("app").classList.remove("show-left");
   $("char-editor").hidden = false;
   $("ce-name").focus();
@@ -1062,6 +1069,11 @@ function saveEditor(ev) {
     memory_enabled: $("ce-memory").checked,
     recording_enabled: $("ce-recording").checked,
     scene: $("ce-scene").value,
+    avatar: app.editLook.avatar,
+    background: app.editLook.background,
+    background_fade: Number($("ce-bg-fade").value),
+    text_color: app.editLook.text_color,
+    director_notes: app.editLook.director_notes,
   };
   send({ type: "save_character", id: app.editingId, character });
   closeEditor();
@@ -1119,6 +1131,7 @@ function applyCharacterState(msg) {
   renderResume();
   renderRecording();
   applyDecorations();
+  applyLook();
 }
 
 // ---------------------------------------------------------------- end chat / continue last chat
@@ -1506,6 +1519,209 @@ function drawGarland() {
   box.append(svg);
 }
 
+// ---------------------------------------------------------------- pictures, colours and your profile
+
+// 16 clearly different text colours, all readable on the dark chat (same keys as characters.TEXT_COLORS).
+const TEXT_COLORS = {
+  white: ["White", "#f4f2ee"], silver: ["Silver", "#c5cad3"], yellow: ["Yellow", "#f7e463"], gold: ["Gold", "#f0c24b"],
+  orange: ["Orange", "#f7a14a"], coral: ["Coral", "#ff8f7e"], red: ["Red", "#ff6262"], pink: ["Pink", "#ff92c9"],
+  magenta: ["Magenta", "#ec7cf6"], lavender: ["Lavender", "#cdbcff"], violet: ["Violet", "#a98cff"],
+  sky: ["Sky blue", "#7fd6fb"], blue: ["Blue", "#8fb0ff"], turquoise: ["Turquoise", "#4fe3cf"], mint: ["Mint", "#8ff0b3"],
+  lime: ["Lime", "#b8e64c"],
+};
+const MAX_PICTURE_FILE = 40 * 2 ** 20;
+
+function imageUrl(name) {
+  return `/api/images/${encodeURIComponent(name)}`;
+}
+
+function setAvatar(node, picture, initials) {
+  node.textContent = "";
+  node.classList.toggle("has-img", !!picture);
+  if (picture) node.append(el("img", { src: imageUrl(picture), alt: "" }));
+  else node.textContent = initials || "";
+  return node;
+}
+
+function userInitials(name) {
+  const words = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "";
+  return (words.length === 1 ? words[0].slice(0, 2) : words[0][0] + words[words.length - 1][0]).toUpperCase();
+}
+
+function renderSwatches(box, selected, onPick) {
+  box.innerHTML = "";
+  const options = [["", "Default", ""], ...Object.entries(TEXT_COLORS).map(([k, [label, hex]]) => [k, label, hex])];
+  for (const [key, label, hex] of options) {
+    const btn = el("button", { type: "button", class: "swatch" + (key ? "" : " default"), role: "radio",
+                               "aria-checked": String(key === selected), title: label, "aria-label": label });
+    if (hex) btn.style.setProperty("--swatch", hex);
+    else btn.textContent = "Aa";
+    btn.onclick = () => onPick(key);
+    box.append(btn);
+  }
+}
+
+// The active character's picture, background and colours, and your own picture and colour.
+function applyLook() {
+  const c = app.character;
+  const s = app.settings || {};
+  const you = $("user-avatar");
+  const initials = userInitials(s.user_name);
+  you.hidden = !(s.user_avatar || initials);
+  setAvatar(you, s.user_avatar, initials);
+  if (s.user_name) you.title = `${s.user_name} — change your name, picture and text colour in Settings → Your profile`;
+  const bg = $("chat-bg");
+  if (c && c.background) {
+    bg.style.backgroundImage = `url("${imageUrl(c.background)}")`;
+    bg.style.opacity = String(Math.max(0.05, (100 - (c.background_fade ?? 80)) / 100));
+    bg.hidden = false;
+  } else {
+    bg.style.backgroundImage = "";
+    bg.hidden = true;
+  }
+  const body = document.body;
+  const ai = c && TEXT_COLORS[c.text_color];
+  const user = TEXT_COLORS[s.user_color];
+  body.classList.toggle("colored-ai", !!ai);
+  body.classList.toggle("colored-user", !!user);
+  body.style.setProperty("--ai-text", ai ? ai[1] : "");
+  body.style.setProperty("--user-text", user ? user[1] : "");
+}
+
+function renderEditorLook() {
+  const look = app.editLook;
+  const name = $("ce-name").value.trim();
+  setAvatar($("ce-avatar-preview"), look.avatar, $("ce-initials").value.trim().toUpperCase() || userInitials(name) || "?");
+  $("ce-avatar-remove").disabled = !look.avatar;
+  const thumb = $("ce-bg-preview");
+  thumb.style.backgroundImage = look.background ? `url("${imageUrl(look.background)}")` : "";
+  thumb.classList.toggle("empty", !look.background);
+  $("ce-bg-remove").disabled = !look.background;
+  $("ce-bg-fade").disabled = !look.background;
+  $("ce-bg-fade-out").textContent = `${$("ce-bg-fade").value} %`;
+  $("ce-colors-label").textContent = `Text colour of ${name || "the character"}'s messages`;
+  renderSwatches($("ce-colors"), look.text_color, (key) => { look.text_color = key; renderEditorLook(); });
+}
+
+function renderProfile() {
+  const s = app.settings || {};
+  if (document.activeElement !== $("you-name")) $("you-name").value = s.user_name || "";
+  if (document.activeElement !== $("you-about")) $("you-about").value = s.user_about || "";
+  setAvatar($("you-avatar-preview"), s.user_avatar, userInitials(s.user_name) || "?");
+  $("you-avatar-remove").disabled = !s.user_avatar;
+  renderSwatches($("you-colors"), s.user_color || "", (key) => changeSetting("user_color", key));
+}
+
+function pickFile() {
+  return new Promise((resolve) => {
+    const input = el("input", { type: "file", accept: "image/*" });
+    input.onchange = () => resolve(input.files[0] || null);
+    input.click();
+  });
+}
+
+function canvasBlob(canvas) {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => {
+      if (blob && blob.type === "image/webp") resolve(blob);
+      else canvas.toBlob(resolve, "image/jpeg", 0.88);  // a browser without WebP encoding
+    }, "image/webp", 0.86);
+  });
+}
+
+// Backgrounds are only shrunk (the chat shows them "cover"); avatars are cropped to a square.
+async function chooseImage(kind) {
+  const file = await pickFile();
+  if (!file) return null;
+  if (file.size > MAX_PICTURE_FILE) { toast("This picture is very large. Please choose one under 40 MB."); return null; }
+  let bitmap;
+  try { bitmap = await createImageBitmap(file); } catch {
+    toast("This picture could not be read. Please use a JPG, PNG or WebP picture.");
+    return null;
+  }
+  const blob = kind === "background" ? await shrinkImage(bitmap, 1920) : await cropDialog(bitmap);
+  bitmap.close();
+  if (!blob) return null;
+  try {
+    const r = await fetch(`/api/images?kind=${encodeURIComponent(kind)}`, {
+      method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: blob,
+    });
+    const result = await r.json();
+    if (!r.ok) { toast(result.error || "The picture could not be saved."); return null; }
+    return result.name;
+  } catch {
+    toast("The picture could not be saved — is the app still running?");
+    return null;
+  }
+}
+
+function shrinkImage(bitmap, maxSide) {
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const canvas = el("canvas", { width: Math.round(bitmap.width * scale), height: Math.round(bitmap.height * scale) });
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return canvasBlob(canvas);
+}
+
+// Move and zoom the picture inside a circle; the result is a 512 × 512 square.
+function cropDialog(bitmap) {
+  return new Promise((resolve) => {
+    const dialog = $("crop-dialog");
+    const canvas = $("crop-canvas");
+    const zoomInput = $("crop-zoom");
+    const ctx = canvas.getContext("2d");
+    const size = canvas.width;
+    const base = Math.max(size / bitmap.width, size / bitmap.height);
+    let zoom = 1;
+    let cx = bitmap.width / 2;   // picture point shown in the centre
+    let cy = bitmap.height / 2;
+    let drag = null;
+    const draw = (target = ctx, out = size) => {
+      const scale = base * zoom * out / size;
+      const half = out / 2 / scale;
+      cx = Math.min(Math.max(cx, half), bitmap.width - half);
+      cy = Math.min(Math.max(cy, half), bitmap.height - half);
+      target.clearRect(0, 0, out, out);
+      target.drawImage(bitmap, out / 2 - cx * scale, out / 2 - cy * scale, bitmap.width * scale, bitmap.height * scale);
+    };
+    const setZoom = (z) => { zoom = Math.min(4, Math.max(1, z)); zoomInput.value = zoom; draw(); };
+    canvas.onpointerdown = (e) => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); };
+    canvas.onpointermove = (e) => {
+      if (!drag) return;
+      const scale = base * zoom * canvas.clientWidth / size;
+      cx -= (e.clientX - drag.x) / scale;
+      cy -= (e.clientY - drag.y) / scale;
+      drag = { x: e.clientX, y: e.clientY };
+      draw();
+    };
+    canvas.onpointerup = () => { drag = null; };
+    canvas.onwheel = (e) => { e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.08 : 1 / 1.08)); };
+    zoomInput.oninput = () => setZoom(Number(zoomInput.value));
+    const finish = async (ok) => {
+      dialog.hidden = true;
+      document.removeEventListener("keydown", onKey, true);
+      if (!ok) { resolve(null); return; }
+      const out = el("canvas", { width: 512, height: 512 });
+      draw(out.getContext("2d"), 512);
+      resolve(await canvasBlob(out));
+    };
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); finish(false); } };
+    document.addEventListener("keydown", onKey, true);
+    $("crop-ok").onclick = () => finish(true);
+    $("crop-cancel").onclick = () => finish(false);
+    $("crop-close").onclick = () => finish(false);
+    setZoom(1);
+    dialog.hidden = false;
+    $("crop-ok").focus();
+  });
+}
+
+function openProfileSettings() {
+  openSettings();
+  $("settings-profile").scrollIntoView({ block: "start" });
+  $("you-name").focus();
+}
+
 // ---------------------------------------------------------------- misc UI
 
 let toastTimer = null;
@@ -1654,6 +1870,27 @@ function init() {
   $("tts-precision").onchange = (e) => changeSetting("tts_precision", e.target.value);
   $("voice-file").onchange = (e) => uploadVoice(e.target);
   $("new-char").onclick = () => openEditor(null);
+  $("ce-avatar-pick").onclick = async () => {
+    const name = await chooseImage("avatar");
+    if (name) { app.editLook.avatar = name; renderEditorLook(); }
+  };
+  $("ce-avatar-remove").onclick = () => { app.editLook.avatar = ""; renderEditorLook(); };
+  $("ce-bg-pick").onclick = async () => {
+    const name = await chooseImage("background");
+    if (name) { app.editLook.background = name; renderEditorLook(); }
+  };
+  $("ce-bg-remove").onclick = () => { app.editLook.background = ""; renderEditorLook(); };
+  $("ce-bg-fade").oninput = renderEditorLook;
+  $("ce-name").addEventListener("input", () => { if (app.editLook) renderEditorLook(); });
+  $("ce-initials").addEventListener("input", () => { if (app.editLook) renderEditorLook(); });
+  $("user-avatar").onclick = openProfileSettings;
+  $("you-avatar-pick").onclick = async () => {
+    const name = await chooseImage("user-avatar");
+    if (name) changeSetting("user_avatar", name);
+  };
+  $("you-avatar-remove").onclick = () => changeSetting("user_avatar", "");
+  $("you-name").onchange = (e) => changeSetting("user_name", e.target.value.trim());
+  $("you-about").onchange = (e) => changeSetting("user_about", e.target.value.trim());
   $("quit-app").onclick = quitApp;
   $("open-settings").onclick = openSettings;
   $("set-decorations").onchange = (e) => setDecorations(e.target.checked);

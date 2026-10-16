@@ -7,15 +7,22 @@ import logging
 import os
 import re
 import shutil
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
+
+from .images import valid_name as valid_image_name
 
 log = logging.getLogger(__name__)
 
 KINDS = ("assistant", "roleplay")
 SCENES = ("plain", "tavern", "space", "red-lantern", "study")  # look of the chat (web UI decorations)
 MAX_TEXT = 8000
+MAX_NOTE = 300     # characters per director's note
+MAX_NOTES = 8      # pinned notes per character
+# Chat text colours (web UI): 16 clearly different colours that are all readable on the dark chat.
+TEXT_COLORS = ("white", "silver", "yellow", "gold", "orange", "coral", "red", "pink", "magenta", "lavender",
+               "violet", "sky", "blue", "turquoise", "mint", "lime")
 
 
 class CharacterError(ValueError):
@@ -38,6 +45,11 @@ class Character:
     memory_enabled: bool = True
     recording_enabled: bool = True
     scene: str = "plain"              # one of SCENES
+    avatar: str = ""                  # picture in user_data\images; "" = the initials
+    background: str = ""              # chat background picture in user_data\images; "" = the scene's
+    background_fade: int = 80         # how washed out the background is shown, 0-95 %
+    text_color: str = ""              # one of TEXT_COLORS for the character's messages; "" = default
+    director_notes: list[str] = field(default_factory=list)   # pinned director's notes (always active)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -94,6 +106,19 @@ def validate(data: dict[str, Any], char_id: str) -> Character:
     if scene not in SCENES:
         raise CharacterError(f"Unknown scene {scene}.")
     values["scene"] = scene
+    for key in ("avatar", "background"):
+        name = str(values.get(key) or "")
+        values[key] = name if valid_image_name(name) else ""
+    try:
+        values["background_fade"] = max(0, min(95, int(values.get("background_fade", 80))))
+    except (TypeError, ValueError):
+        values["background_fade"] = 80
+    color = str(values.get("text_color") or "")
+    values["text_color"] = color if color in TEXT_COLORS else ""
+    notes = values.get("director_notes") or []
+    if not isinstance(notes, list):
+        notes = []
+    values["director_notes"] = [" ".join(str(n).split())[:MAX_NOTE] for n in notes if str(n).strip()][:MAX_NOTES]
     return Character(**values)
 
 

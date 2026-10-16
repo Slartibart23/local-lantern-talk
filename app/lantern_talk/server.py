@@ -21,7 +21,9 @@ message with int16 PCM), ``turn_done``, ``settings``, ``components``, ``voices``
 ``cleared``, ``error``, ``replaced``.
 
 HTTP: ``POST /api/voices?filename=…`` with the raw audio file as body adds a
-custom voice to ``user_data/voices``.
+custom voice to ``user_data/voices``. ``POST /api/images?kind=avatar|background|user-avatar``
+stores a picture the browser has cropped and shrunk (``user_data/images``);
+``GET /api/images/<name>`` serves it to the app's own page.
 """
 
 from __future__ import annotations
@@ -46,6 +48,7 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .engine import MAX_VOICE_UPLOAD_BYTES, Engine, UserError, build_components
 from .gpu import query_gpu
+from .images import MAX_IMAGE_BYTES, ImageStore
 from .logging_setup import setup_logging
 from .paths import Paths, apply_portable_env, get_paths, path_warnings
 from .recorder import SessionRecorder, list_sessions, load_session
@@ -153,6 +156,35 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
     def same_site(request: Request) -> bool:
         # Recordings are personal: another web page must not even embed them (spec §12).
         return request.headers.get("sec-fetch-site", "same-origin") in ("same-origin", "none")
+
+    @app.post("/api/images")
+    async def upload_image(request: Request, kind: str) -> JSONResponse:
+        if request.headers.get("origin") not in allowed_origins:
+            return JSONResponse({"error": "Forbidden"}, status_code=403)
+        body = bytearray()
+        async for chunk in request.stream():
+            body += chunk
+            if len(body) > MAX_IMAGE_BYTES:
+                return JSONResponse({"error": "The picture is too large."}, status_code=413)
+        assert hub.engine is not None
+        try:
+            result = await asyncio.to_thread(hub.engine.add_image, kind, bytes(body))
+        except UserError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return JSONResponse(result)
+
+    images = ImageStore(paths.images)
+
+    @app.get("/api/images/{name}")
+    async def image(name: str, request: Request) -> Any:
+        if not same_site(request):  # personal pictures: no other web page may embed them
+            return JSONResponse({"error": "Forbidden"}, status_code=403)
+        path = images.path(name)
+        if path is None:
+            return JSONResponse({"error": "Not found"}, status_code=404)
+        media = {".webp": "image/webp", ".png": "image/png", ".jpg": "image/jpeg"}[path.suffix]
+        # Every new picture gets a new name, so a cached copy is never outdated.
+        return FileResponse(path, media_type=media, headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
     def session_file(name: str, suffix: str) -> Any:
         if not SessionRecorder.valid_name(name):

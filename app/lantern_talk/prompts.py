@@ -34,10 +34,22 @@ user explicitly asks out of character (OOC).
 - Keep each reply to a few spoken sentences and leave the user something to react to."""
 
 
+def user_context(name: str, about: str) -> str:
+    """What the user wrote about themselves in their profile (Settings → Your profile)."""
+    lines = []
+    if name.strip():
+        lines.append(f"The user's name is {name.strip()}.")
+    if about.strip():
+        lines.append(f"About the user, in their own words: {about.strip()}")
+    return "\n".join(lines)
+
+
 def build_system_prompt(persona: str, reply_language: str | None = None, *,
-                        roleplay: bool = False, memory: str = "") -> str:
+                        roleplay: bool = False, memory: str = "", user: str = "") -> str:
     """Combine the character persona, roleplay rules, memory and the voice-friendly output rules."""
     parts = [persona.strip()]
+    if user:
+        parts.append(user.strip())
     if roleplay:
         parts.append(ROLEPLAY_RULES)
     if memory:

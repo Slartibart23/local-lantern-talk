@@ -112,6 +112,7 @@ class ConversationConfig:
     match_language: bool = True   # swap built-in voices to the spoken language (spec §7.3)
     roleplay: bool = False        # add the roleplay rules to the system prompt
     memory: str = ""              # remembered facts and summary of earlier conversations
+    user: str = ""                # the user's profile (name, a few words about them)
 
 
 class Conversation:
@@ -140,7 +141,8 @@ class Conversation:
 
     def build_messages(self, user_text: str, language: str | None) -> list[ChatMessage]:
         prompt = build_system_prompt(
-            self.config.persona, language, roleplay=self.config.roleplay, memory=self.config.memory)
+            self.config.persona, language, roleplay=self.config.roleplay, memory=self.config.memory,
+            user=self.config.user)
         recent = list(self.history[-self.config.max_history_messages:])
         # Many chat templates (Mistral, Gemma) require user / assistant turns to alternate,
         # starting with the user: an opening greeting goes into the system prompt instead.

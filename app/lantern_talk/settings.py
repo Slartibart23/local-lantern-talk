@@ -35,6 +35,10 @@ class Settings:
     hardware_profile_override: str = "" # user's choice; "" = use the detected profile
     gpu_name: str = ""
     gpu_vram_mib: int = 0
+    user_name: str = ""                 # your profile: how the characters address you
+    user_about: str = ""                # a few sentences about you, sent to every character
+    user_avatar: str = ""               # picture in user_data\images
+    user_color: str = ""                # text colour of your messages (characters.TEXT_COLORS)
 
     def update(self, values: dict[str, Any]) -> dict[str, Any]:
         """Apply known keys with type coercion; returns the keys that changed."""

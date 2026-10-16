@@ -429,7 +429,7 @@ body.decorated .brand-icon { color: #e5533d; filter: drop-shadow(0 0 6px rgba(22
 
 /* ---- scenes (per character; Settings → Appearance) ---------------------------------------- */
 .center { position: relative; }
-.center > :not(.scene-fx) { position: relative; z-index: 1; }
+.center > :not(.scene-fx):not(.chat-bg) { position: relative; z-index: 1; }
 .center > .garland { z-index: 3; }
 .scene-fx { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 .side-art { margin-top: auto; padding: 12px 0 4px; display: flex; justify-content: center; pointer-events: none; }
@@ -480,3 +480,45 @@ body.scene-study .msg.ai .action .ns { border-color: #b9ad90; }
 @keyframes scene-flicker { 0%, 100% { opacity: 1; } 30% { opacity: .75; } 55% { opacity: .95; } 70% { opacity: .7; } }
 @keyframes scene-twinkle { 50% { opacity: .55; } }
 @keyframes scene-drift { to { transform: translateY(-10px); } }
+
+/* ---- pictures, text colours and your profile ------------------------------------------- */
+.avatar.has-img { overflow: hidden; background: var(--panel-2); }
+.avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.chat-header .header-avatar { width: 48px; height: 48px; font-size: 15px; }
+.user-avatar { border: 0; padding: 0; cursor: pointer; color: var(--text-dim); }
+.user-avatar[hidden] { display: none; }
+.user-avatar:hover { box-shadow: 0 0 0 2px var(--amber); }
+.avatar.big { width: 64px; height: 64px; font-size: 18px; }
+.chat-bg { position: absolute; inset: 0; z-index: 0; pointer-events: none; background-size: cover;
+  background-position: center; filter: saturate(.85); transition: opacity .3s; }
+.chat-bg[hidden] { display: none; }
+.editor-look { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.look-row { display: flex; align-items: center; gap: 12px; }
+.look-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.look-buttons .secondary { padding: 6px 12px; font-size: 13px; }
+.bg-thumb { width: 96px; height: 54px; flex: none; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--panel-2) center / cover no-repeat; }
+.bg-thumb.empty { background-image: repeating-linear-gradient(45deg, var(--panel-2) 0 6px, var(--panel) 6px 12px); }
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.swatch { width: 28px; height: 28px; padding: 0; border-radius: 50%; border: 2px solid var(--line); cursor: pointer;
+  background: var(--swatch); }
+.swatch.default { background: var(--panel-2); color: var(--text); font-size: 11px; font-weight: 600; }
+.swatch[aria-checked="true"] { border-color: var(--text); box-shadow: 0 0 0 2px var(--amber); }
+.swatch:hover { border-color: var(--text-dim); }
+.profile-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px; align-items: start; }
+.profile-grid .look-row { flex-direction: column; align-items: flex-start; margin-top: 12px; }
+.profile-grid input[type="text"], .profile-grid textarea { width: 100%; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--panel-2); resize: vertical; }
+.profile-grid input[type="text"]:focus, .profile-grid textarea:focus { border-color: var(--amber); outline: none; }
+.settings-grid section.wide { grid-column: 1 / -1; }
+body.colored-ai .msg.ai .bubble { color: var(--ai-text); }
+body.colored-ai .msg.ai .action { color: color-mix(in srgb, var(--ai-text) 60%, var(--panel)); }
+body.colored-user .msg.user .bubble { color: var(--user-text); }
+body.colored-user .msg.user .action { color: color-mix(in srgb, var(--user-text) 60%, var(--panel)); }
+body.scene-study.colored-ai .msg.ai .bubble { background: rgba(44, 38, 28, .94); }  /* light colours need a dark page */
+.crop-panel { width: min(380px, 96vw); text-align: center; }
+.crop-panel .hint { text-align: left; }
+.crop-canvas { width: 300px; height: 300px; max-width: 100%; margin: 12px auto 0; display: block; border-radius: 50%;
+  background: var(--panel-2); cursor: grab; touch-action: none; box-shadow: 0 0 0 1px var(--line); }
+.crop-canvas:active { cursor: grabbing; }
+@media (max-width: 640px) { .editor-look, .profile-grid { grid-template-columns: 1fr; } }

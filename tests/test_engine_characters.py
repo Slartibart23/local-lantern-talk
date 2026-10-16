@@ -318,3 +318,43 @@ def test_settings_screen_values_apply(setup) -> None:  # noqa: ANN001
     assert engine.segmenter.config.neg_threshold == pytest.approx(0.45)
     assert engine.gpu_summary()["profile"] == "mid"
     assert {p["name"] for p in engine.snapshot()["profiles"]} == {"ultra", "high", "mid", "low", "unsupported"}
+
+
+def test_pictures_belong_to_their_character(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup()
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+    avatar = engine.add_image("avatar", png)["name"]
+    background = engine.add_image("background", png)["name"]
+    with pytest.raises(Exception, match="JPG, PNG or WebP"):
+        engine.add_image("avatar", b"GIF89a")
+    data = {**engine.characters.get("max").to_dict(), "avatar": avatar, "background": background,
+            "background_fade": 120, "text_color": "mint"}
+    start = len(rec.events)
+    engine.save_character(data, "max")
+    _wait(rec, "character", start)
+    saved = engine.characters.get("max")
+    assert (saved.avatar, saved.background, saved.background_fade, saved.text_color) == (avatar, background, 95, "mint")
+    # A duplicate gets copies, so deleting one character never breaks the other.
+    start = len(rec.events)
+    engine.duplicate_character("max")
+    _wait(rec, "character", start)
+    copy = next(c for c in engine.characters.list() if c.name == "Max (copy)")
+    assert copy.avatar and copy.avatar != avatar and engine.images.path(copy.avatar)
+    # Replaced pictures disappear once they are older than an hour.
+    engine._fresh_images.clear()
+    start = len(rec.events)
+    engine.save_character({**saved.to_dict(), "avatar": ""}, "max")
+    _wait(rec, "character", start)
+    assert engine.images.path(avatar) is None and engine.images.path(background) is not None
+
+
+def test_your_profile_reaches_every_character(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup()
+    start = len(rec.events)
+    engine.update_settings({"user_name": "  Alex   Example ", "user_about": "I love sci-fi."})
+    rec.wait_for(lambda ev: any(e["type"] == "settings" for e in ev[start:]))
+    assert engine.store.settings.user_name == "Alex Example"
+    _turn(engine, rec, "Hi!")
+    system = comps.llm.requests[-1][0].content
+    assert "The user's name is Alex Example." in system and "I love sci-fi." in system
+    assert engine._user_label() == "Alex Example"
