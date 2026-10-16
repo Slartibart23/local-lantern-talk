@@ -54,6 +54,47 @@ class FitResult:
 
 
 _LLAMA_FREE = re.compile(r"projected to use \d+ MiB of device memory vs\. (\d+) MiB of free device memory")
+# "| - CUDA0 (RTX 5090) | 32579 = 29744 + (9168 = 8008 + 608 + 551) + -6333 |":
+# total = free + (self = model + context + compute) + unaccounted, for the initial (all on GPU) parameters.
+_BREAKDOWN = re.compile(r"CUDA0 \([^)]*\)\s*\|\s*\d+\s*=\s*-?\d+\s*\+\s*\((\d+)\s*=")
+CONTEXT_PROBES = (4096, 16384, 65536)   # contexts measured to interpolate the memory need of any other
+
+
+@dataclass(frozen=True)
+class ContextProfile:
+    """GPU memory a model needs completely on the GPU, depending on the context length."""
+
+    points: tuple[tuple[int, int], ...]   # (context, MiB: weights + context cache + compute buffers)
+    max_context: int                      # context the model was trained for (0 = unknown)
+
+    def need_mib(self, context: int) -> int:
+        """Piecewise linear between the measured points, extrapolated beyond them."""
+        pts = self.points
+        if len(pts) == 1:
+            return pts[0][1]
+        for (c0, m0), (c1, m1) in zip(pts, pts[1:]):
+            if context <= c1 or (c1, m1) == pts[-1]:
+                return round(m0 + (m1 - m0) * (context - c0) / (c1 - c0))
+        return pts[-1][1]
+
+    def largest_fitting(self, available_mib: float, low: int, high: int, step: int = 1024) -> int | None:
+        """The largest context in ``[low, high]`` (multiples of ``step``) that fits, or None."""
+        best = None
+        context = low
+        while context <= high:
+            if self.need_mib(context) <= available_mib:
+                best = context
+            context += step
+        return best
+
+    def public(self) -> dict[str, Any]:
+        return {"points": [list(p) for p in self.points], "max_context": self.max_context}
+
+
+def parse_memory_need_mib(stderr: str) -> int | None:
+    """GPU memory llama.cpp projects for the model with everything on the GPU."""
+    m = _BREAKDOWN.search(stderr)
+    return int(m.group(1)) if m else None
 
 
 def parse_llama_free_mib(stderr: str) -> int | None:
@@ -253,6 +294,30 @@ class ModelManager:
         except (OSError, ValueError, subprocess.TimeoutExpired):
             log.warning("llama-fit-params failed for %s; letting llama.cpp decide", file_name)
             return FitResult(args=[], gpu_layers=total, total_layers=total, cpu_blocks=0, known=False)
+
+    def context_profile(self, file_name: str) -> ContextProfile | None:
+        """Measure how the model's GPU memory grows with the context (three quick llama-fit-params runs)."""
+        path = self.paths.llm_models / file_name
+        try:
+            trained = model_info(path).context_length
+        except (OSError, GGUFError):
+            trained = 0
+        probes = [c for c in CONTEXT_PROBES if not trained or c <= trained] or [min(CONTEXT_PROBES[0], trained)]
+        if trained and trained not in probes and len(probes) < len(CONTEXT_PROBES):
+            probes.append(trained)  # a short-context model: measure its maximum too
+        points = []
+        try:
+            for context in probes:
+                need = parse_memory_need_mib(self._run_fit(path, context, 1024)[1])
+                if need is None:
+                    return None
+                points.append((context, need))
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            log.warning("Could not measure the context memory of %s", file_name)
+            return None
+        profile = ContextProfile(tuple(points), trained)
+        log.info("Context memory of %s: %s (trained for %d)", file_name, points, trained)
+        return profile
 
     def _run_fit(self, path: Path, context: int, margin_mib: int) -> tuple[str, str]:
         exe = self.paths.runtime / "llama.cpp" / "llama-fit-params.exe"

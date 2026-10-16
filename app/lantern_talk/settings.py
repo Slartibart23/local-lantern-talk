@@ -26,7 +26,8 @@ class Settings:
     vad_threshold: float = 0.5
     num_step: int = 32              # OmniVoice diffusion steps (16 fast ... 64 best)
     tts_precision: str = "fp16"     # OmniVoice precision: fp16 | bf16 | fp32
-    context: int = 8192
+    context: int = 8192             # used when context_auto is off (multiple of 1024)
+    context_auto: bool = True       # pick the largest context that fits on the GPU (up to the profile's limit)
     record_sessions: bool = True        # session recording (spec §12); characters can opt out
     session_gap_ms: int = 500           # pause between turns in the session MP3
     session_bitrate_kbps: int = 64      # mono MP3, about 29 MB per hour

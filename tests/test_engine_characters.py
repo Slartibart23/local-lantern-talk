@@ -161,7 +161,7 @@ def test_facts_are_updated_every_few_turns_and_reach_the_prompt(setup) -> None: 
 
 def test_long_history_is_summarized(setup) -> None:  # noqa: ANN001
     engine, comps, rec = setup()
-    engine.store.settings.context = 256  # tiny budget: a few turns overflow it
+    engine._loaded_context = 256  # tiny budget: a few turns overflow it
     for i in range(6):
         _turn(engine, rec, f"Erzähl mir etwas, Nummer {i}.")
     view = engine.memory_view()
@@ -317,4 +317,4 @@ def test_settings_screen_values_apply(setup) -> None:  # noqa: ANN001
     assert engine.segmenter.config.threshold == 0.6
     assert engine.segmenter.config.neg_threshold == pytest.approx(0.45)
     assert engine.gpu_summary()["profile"] == "mid"
-    assert {p["name"] for p in engine.snapshot()["profiles"]} == {"high", "mid", "low", "unsupported"}
+    assert {p["name"] for p in engine.snapshot()["profiles"]} == {"ultra", "high", "mid", "low", "unsupported"}

@@ -13,7 +13,8 @@ from lantern_talk.hardware import PROFILES, GpuInfo, effective_profile, select_p
 @pytest.mark.parametrize(
     "vram_mib, expected",
     [
-        (32_607, "high"),       # RTX 5090
+        (32_607, "ultra"),      # RTX 5090
+        (30_000, "ultra"),
         (24_564, "high"),       # RTX 4090
         (24_463, "high"),       # RTX 5090 Laptop GPU reports 23.9 GiB
         (16_376, "mid"),        # 16 GB cards (4080, 5080, 4060 Ti 16 GB)
@@ -29,7 +30,9 @@ def test_select_profile(vram_mib: int | None, expected: str) -> None:
 
 
 def test_profiles_follow_spec_table() -> None:
+    assert PROFILES["ultra"].default_quant == "Q6_K"
     assert PROFILES["high"].default_quant == "Q5_K_M"
+    assert [p.max_auto_context for p in PROFILES.values()] == [32768, 32768, 16384, 8192, 4096]
     assert PROFILES["mid"].default_quant == PROFILES["low"].default_quant == "Q4_K_M"
     assert PROFILES["mid"].whisper_compute.startswith("int8")
     assert PROFILES["low"].max_model_billions == 12
@@ -53,7 +56,7 @@ def test_write_profile_keeps_user_choices(tmp_path: Path) -> None:
     settings_file.write_text(json.dumps(data))
     write_profile(settings_file, GpuInfo("RTX 5090", 32_607, "616.92"), select_profile(32_607))
     data = json.loads(settings_file.read_text())
-    assert data["hardware_profile"] == "high" and data["num_step"] == 64
+    assert data["hardware_profile"] == "ultra" and data["num_step"] == 64
 
 
 def test_installer_uses_the_same_high_profile_threshold() -> None:

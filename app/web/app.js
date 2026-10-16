@@ -45,6 +45,7 @@ const app = {
   viewing: null,        // a past session opened read-only
   replay: null,         // the message being replayed
   profiles: [],         // hardware profiles for the settings screen
+  contextInfo: null,    // memory need per context of the selected model (context slider)
   version: "",
   speakerOut: null,     // Web Audio node that reaches the chosen speaker (Firefox)
   endingChat: false,
@@ -95,6 +96,7 @@ function handleEvent(msg) {
       renderVoiceInfo(msg.voice_info);
       applyCharacterState(msg);
       app.profiles = msg.profiles || [];
+      app.contextInfo = msg.context_info || null;
       app.version = msg.version || "";
       app.sessions = msg.sessions || [];
       app.recording = msg.recording || null;
@@ -156,6 +158,11 @@ function handleEvent(msg) {
       break;
     case "model_status":
       app.modelStatus = msg;
+      renderCurrentModel();
+      break;
+    case "context_info":
+      app.contextInfo = msg;
+      renderContext();
       renderCurrentModel();
       break;
     case "download":
@@ -540,6 +547,114 @@ function renderCurrentModel() {
   const notice = $("model-notice");
   notice.hidden = !(st.partial && st.file === file);
   notice.textContent = st.notice || "";
+  const ci = app.contextInfo;
+  $("model-context").textContent = ci && ci.loaded
+    ? `Context ${fmtTokens(ci.loaded)} tokens${ci.auto ? " (automatic)" : ""} · about ${fmtTokens(wordsFor(ci.loaded))} words of conversation`
+    : "";
+}
+
+// ---------------------------------------------------------------- context length (Settings → Language model)
+
+function fmtTokens(n) {
+  return Number(n).toLocaleString("en-US").replace(/,/g, " ");
+}
+
+// Half of the context holds the conversation; ~3.5 characters per token and ~7 per word (incl. space).
+function wordsFor(context) {
+  return Math.round(context * 0.5 * 3.5 / 7 / 100) * 100;
+}
+
+// GPU memory the model needs with ``context`` (piecewise linear between the measured points).
+function contextNeed(profile, context) {
+  const pts = profile.points;
+  if (pts.length === 1) return pts[0][1];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [c0, m0] = pts[i];
+    const [c1, m1] = pts[i + 1];
+    if (context <= c1 || i === pts.length - 2) return m0 + (m1 - m0) * (context - c0) / (c1 - c0);
+  }
+  return pts[pts.length - 1][1];
+}
+
+function contextZone(ci, context) {
+  if (!ci || !ci.profile) return null;
+  const need = contextNeed(ci.profile, context);
+  if (need <= ci.available_mib) return "fits";
+  if (need <= ci.available_mib * ci.partial_factor) return "partial";
+  return "too_big";
+}
+
+function renderContext() {
+  const ci = app.contextInfo;
+  if (!ci) return;
+  const range = $("context-range");
+  const max = Math.max(ci.min, Math.min(ci.max, 131072));
+  range.min = ci.min;
+  range.max = max;
+  range.step = ci.step;
+  if (document.activeElement !== range) range.value = Math.min(ci.auto ? (ci.loaded || ci.value) : ci.value, max);
+  range.disabled = ci.auto;
+  $("context-auto").checked = ci.auto;
+  $("context-min-label").textContent = `${ci.min / 1024}k`;
+  $("context-max-label").textContent = `${Math.round(max / 1024)}k`;
+  showContextValue(Number(range.value));
+  // The bar under the slider: green fits on the GPU, yellow partly on the CPU, red too big.
+  const bar = $("context-zones");
+  if (!ci.profile) {
+    bar.style.background = "var(--line)";
+    $("context-zone-text").textContent = "The coloured zones appear once a model is loaded.";
+    return;
+  }
+  const colour = { fits: "var(--green)", partial: "var(--amber)", too_big: "var(--red)" };
+  const steps = Math.max(1, Math.round((max - ci.min) / ci.step));
+  const stops = [];
+  let lastFit = null;
+  let lastPartial = null;
+  for (let i = 0; i <= steps; i++) {
+    const c = ci.min + i * ci.step;
+    const z = contextZone(ci, c);
+    if (z === "fits") lastFit = c;
+    if (z !== "too_big") lastPartial = c;
+    stops.push(`${colour[z]} ${(100 * i / (steps + 1)).toFixed(2)}% ${(100 * (i + 1) / (steps + 1)).toFixed(2)}%`);
+  }
+  bar.style.background = `linear-gradient(90deg, ${stops.join(", ")})`;
+  const parts = [lastFit ? `Fits on the GPU up to ${fmtTokens(lastFit)} tokens`
+                         : "Even the shortest context does not fit completely on the GPU"];
+  if (lastPartial && lastPartial !== lastFit) parts.push(`partly on the CPU (slower) up to ${fmtTokens(lastPartial)}`);
+  if (lastPartial !== max) parts.push("above that too big");
+  let text = parts.join(", ") + ".";
+  if (ci.auto) text += ` Automatic uses up to ${fmtTokens(Math.min(ci.auto_max, max))} tokens with this hardware profile.`;
+  $("context-zone-text").textContent = text;
+}
+
+function showContextValue(context) {
+  const zone = contextZone(app.contextInfo, context);
+  const label = { fits: "fits on the GPU", partial: "partly on the CPU, slower", too_big: "too big for the free GPU memory" };
+  const out = $("context-out");
+  out.textContent = `${fmtTokens(context)} tokens` + (zone ? ` · ${label[zone]}` : "");
+  out.className = zone ? `zone-text ${zone}` : "";
+  const words = wordsFor(context);
+  $("context-meaning").textContent =
+    `About ${fmtTokens(words)} words of conversation (roughly ${Math.max(1, Math.round(words / 150))}–` +
+    `${Math.max(2, Math.round(words / 100))} exchanges) stay in the character's memory word for word; ` +
+    "older parts live on in the summary and the facts.";
+}
+
+function renderProfileTable() {
+  const table = $("profile-table");
+  table.innerHTML = "";
+  table.append(el("tr", {}, el("th", {}, "Profile"), el("th", {}, "GPU memory"), el("th", {}, "Quantization"),
+                  el("th", {}, "Whisper"), el("th", {}, "Automatic context")));
+  for (const p of app.profiles) {
+    table.append(el("tr", {}, el("td", {}, p.name), el("td", {}, p.description.split(":")[0]), el("td", {}, p.quant || ""),
+                    el("td", {}, p.whisper || ""), el("td", {}, p.auto_context ? `up to ${fmtTokens(p.auto_context)}` : "")));
+  }
+}
+
+function toggleInfo(btn) {
+  const box = $(btn.dataset.info);
+  box.hidden = !box.hidden;
+  btn.setAttribute("aria-expanded", String(!box.hidden));
 }
 
 function filteredModels() {
@@ -1231,7 +1346,8 @@ function renderSettings() {
   $("set-voice-output").checked = !!s.voice_output;
   $("vad-threshold").value = s.vad_threshold;
   $("vad-threshold-out").textContent = Number(s.vad_threshold).toFixed(2);
-  setSelect($("context-size"), String(s.context), `${s.context} tokens`);
+  renderContext();
+  renderProfileTable();
   $("set-record-sessions").checked = !!s.record_sessions;
   setSelect($("session-bitrate"), String(s.session_bitrate_kbps), `${s.session_bitrate_kbps} kbit/s`);
   $("session-gap").value = s.session_gap_ms;
@@ -1551,7 +1667,15 @@ function init() {
   $("set-record-sessions").onchange = (e) => changeSetting("record_sessions", e.target.checked);
   $("vad-threshold").oninput = (e) => { $("vad-threshold-out").textContent = Number(e.target.value).toFixed(2); };
   $("vad-threshold").onchange = (e) => changeSetting("vad_threshold", Number(e.target.value));
-  $("context-size").onchange = (e) => changeSetting("context", Number(e.target.value));
+  $("context-range").oninput = (e) => showContextValue(Number(e.target.value));
+  $("context-range").onchange = (e) => changeSetting("context", Number(e.target.value));
+  $("context-auto").onchange = (e) => {
+    const values = { context_auto: e.target.checked };
+    // Switching to a fixed value starts from what Automatic had chosen.
+    if (!e.target.checked && app.contextInfo && app.contextInfo.loaded) values.context = app.contextInfo.loaded;
+    send({ type: "settings", values });
+  };
+  document.querySelectorAll(".info-btn").forEach((btn) => { btn.onclick = () => toggleInfo(btn); });
   $("hardware-profile").onchange = (e) => changeSetting("hardware_profile_override", e.target.value);
   $("session-bitrate").onchange = (e) => changeSetting("session_bitrate_kbps", Number(e.target.value));
   $("session-gap").oninput = (e) => { $("session-gap-out").textContent = `${(e.target.value / 1000).toFixed(1)} s`; };

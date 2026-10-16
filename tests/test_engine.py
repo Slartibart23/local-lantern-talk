@@ -667,3 +667,36 @@ def test_custom_voice_language_can_be_chosen(setup) -> None:  # noqa: ANN001
     start = len(rec.events)
     engine.set_voice_language("builtin:de_female", "fr")
     rec.wait_for(lambda ev: any(e["type"] == "error" and "fixed language" in e["message"] for e in ev[start:]))
+
+
+def test_automatic_context_fills_the_free_gpu_memory(setup) -> None:  # noqa: ANN001
+    from lantern_talk.models import ContextProfile
+
+    engine, comps, rec = setup
+    # 24 GB fake GPU, 6 GB in use, 3.5 GB kept for speech: about 14.1 GB for the language model.
+    profile = ContextProfile(((4096, 10_000), (16384, 12_000), (65536, 20_000)), 131072)
+    engine._context_profiles["test-model-Q4_K_M.gguf"] = profile
+    assert engine._target_context("test-model-Q4_K_M.gguf") == 27648
+    engine.store.settings.hardware_profile_override = "mid"   # the profile caps "Automatic"
+    assert engine._target_context("test-model-Q4_K_M.gguf") == 16384
+    engine.store.settings.context_auto = False                # a fixed value is used as it is
+    engine.store.settings.context = 40960
+    assert engine._target_context("test-model-Q4_K_M.gguf") == 40960
+    info = engine.context_info()
+    assert info["profile"]["points"][0] == [4096, 10_000] and info["max"] == 131072
+    assert info["available_mib"] == 14416 and info["auto_max"] == 16384
+
+
+def test_context_setting_reloads_the_model(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    assert comps.server.last_config.context == 8192   # llama-fit-params unavailable: the old default
+    start = len(rec.events)
+    engine.update_settings({"context_auto": False, "context": 12288})
+    rec.wait_for(lambda ev: any(e["type"] == "model_status" for e in ev[start:]))
+    assert comps.server.last_config.context == 12288 and engine.context == 12288
+    status = [e for e in rec.events[start:] if e["type"] == "model_status"][-1]
+    assert status["context"] == 12288 and status["context_auto"] is False
+    start = len(rec.events)
+    engine.update_settings({"context": 5000})
+    rec.wait_for(lambda ev: any(e["type"] == "error" for e in ev[start:]))
+    assert engine.store.settings.context == 12288   # rolled back

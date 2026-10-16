@@ -369,6 +369,28 @@ input[type="range"] { width: 100%; accent-color: var(--amber); }
 .settings-grid h2 { font-size: 11px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--text-faint); margin: 0 0 6px; }
 .settings-grid .secondary { margin-top: 12px; }
 .range-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-faint); }
+.field-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.field-head .field-label { margin-bottom: 6px; }
+.info-btn { flex: none; width: 20px; height: 20px; margin-top: 6px; padding: 0; border: 1px solid var(--line); border-radius: 50%;
+  background: var(--panel-2); color: var(--text-dim); font: italic 600 12px/1 Georgia, serif; cursor: pointer; }
+.info-btn:hover, .info-btn[aria-expanded="true"] { border-color: var(--amber); color: var(--amber); }
+.info-box { margin: 10px 0 4px; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--amber);
+  border-radius: 8px; background: var(--panel-2); font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
+.info-box[hidden] { display: none; }
+.info-box p { margin: 0 0 6px; }
+.info-box ul { margin: 0; padding-left: 18px; }
+.info-box li { margin: 3px 0; }
+.info-box strong { color: var(--text); font-weight: 600; }
+.context-slider { position: relative; padding-top: 2px; }
+.zone-bar { height: 6px; border-radius: 3px; background: var(--line); margin: 6px 0 -2px; opacity: .8; }
+.context-slider input[type="range"]:disabled { opacity: .55; }
+.zone-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: 0; }
+.zone-dot.fits { background: var(--green); } .zone-dot.partial { background: var(--amber); } .zone-dot.too_big { background: var(--red); }
+.zone-text.fits { color: var(--green); } .zone-text.partial { color: var(--amber); } .zone-text.too_big { color: var(--red); }
+.model-context { margin-top: 6px; font-size: 12px; color: var(--text-faint); }
+.profile-table { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 12px; }
+.profile-table th, .profile-table td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); }
+.profile-table th { color: var(--text); font-weight: 600; }
 .quit-area .settings-btn { margin-bottom: 8px; }
 @media (max-width: 720px) { .settings-grid { grid-template-columns: 1fr; } }
 

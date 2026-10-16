@@ -35,13 +35,15 @@ from .downloads import DownloadJob
 from .errors import describe as describe_error
 from .gpu import query_gpu
 from . import __version__
-from .hardware import PROFILES, effective_profile
+from .hardware import PROFILES, effective_profile, select_profile
 from .llm import NO_THINKING_ARGS, ChatMessage, LlamaServer, LLMClient, SamplingConfig, ServerConfig
 from .memory import (
     FACT_UPDATE_EVERY, FACTS_PROMPT, FACTS_SYSTEM, SUMMARY_PROMPT, SUMMARY_SYSTEM, MemoryStore, estimate_tokens,
     history_budget, memory_context, messages_to_summarize, parse_fact_update, summary_words, transcript_text,
 )
-from .models import ModelError, ModelManager, NoGGUFError
+from .catalog import PARTIAL_FACTOR
+from .gguf_meta import GGUFError, model_info
+from .models import ContextProfile, ModelError, ModelManager, NoGGUFError
 from .paths import Paths
 from .pipeline import Conversation, ConversationConfig, SegmentEvent, SpeechAudio, TurnDone, TurnError
 from .prompts import DEFAULT_ASSISTANT_PERSONA, LANGUAGE_NAMES
@@ -84,7 +86,9 @@ class State(str, Enum):
 
 
 IDLE_STATES = {State.LISTENING, State.PAUSED, State.MIC_OFF}
-CONTEXT_SIZES = (2048, 4096, 8192, 16384, 32768, 65536)
+CONTEXT_MIN, CONTEXT_MAX, CONTEXT_STEP = 2048, 131072, 1024
+AUTO_CONTEXT_MIN = 4096          # "Automatic" never goes below this, even if it does not fit completely
+AUTO_CONTEXT_RESERVE_MIB = 512   # extra room "Automatic" leaves on the GPU
 SESSION_BITRATES = (32, 48, 64, 96, 128)
 
 
@@ -139,6 +143,9 @@ class Engine:
         self.vram_mb: dict[str, int] = {}          # measured VRAM per component (spec §5)
         self.model_status: dict[str, Any] = {}     # GPU layers of the loaded LLM
         s = store.settings
+        if s.gpu_vram_mib and s.hardware_profile != select_profile(s.gpu_vram_mib).name:
+            s.hardware_profile = select_profile(s.gpu_vram_mib).name  # e.g. "ultra", added after installing
+            store.save()
         self.state = State.LOADING
         self.detail = "Starting…"
         self.fatal_error: str | None = None
@@ -175,6 +182,8 @@ class Engine:
         self._threads: list[threading.Thread] = []
         self._loaded_model: str | None = None
         self._loaded_context: int | None = None
+        self._loaded_auto = False                  # the loaded context was chosen automatically
+        self._context_profiles: dict[str, ContextProfile | None] = {}
 
     # ------------------------------------------------------------------ public API
     def start(self) -> None:
@@ -277,7 +286,10 @@ class Engine:
             "memory": self.memory_view(),
             "resume": self.resume,
             "sessions": list_sessions(self.paths.sessions),
-            "profiles": [{"name": p.name, "description": p.description} for p in PROFILES.values()],
+            "profiles": [{"name": p.name, "description": p.description, "quant": p.default_quant,
+                          "whisper": p.whisper_compute, "auto_context": p.max_auto_context}
+                         for p in PROFILES.values()],
+            "context_info": self.context_info(),
             "version": __version__,
             "recording": self.recorder.files(),
         }
@@ -649,13 +661,70 @@ class Engine:
             self.store.save()
         return self.paths.llm_models / name
 
+    # -- context length -----------------------------------------------------------------
+    @property
+    def context(self) -> int:
+        """Context length of the loaded model (the setting until a model is loaded)."""
+        return self._loaded_context or self.store.settings.context
+
+    def _context_profile(self, file_name: str) -> ContextProfile | None:
+        """How the model's GPU memory grows with the context; measured once per model file."""
+        if file_name not in self._context_profiles:
+            self._context_profiles[file_name] = self.models.context_profile(file_name)
+        return self._context_profiles[file_name]
+
+    def _model_max_context(self, file_name: str, profile: ContextProfile | None) -> int:
+        trained = profile.max_context if profile else 0
+        if not trained:
+            try:
+                trained = model_info(self.paths.llm_models / file_name).context_length
+            except (OSError, GGUFError):
+                trained = 0
+        return min(trained or CONTEXT_MAX, CONTEXT_MAX)
+
+    def _target_context(self, file_name: str) -> int:
+        """The setting, or with "Automatic" the largest context that fits completely on the GPU."""
+        s = self.store.settings
+        profile = self._context_profile(file_name)
+        top = self._model_max_context(file_name, profile)
+        if not s.context_auto:
+            return max(CONTEXT_MIN, min(s.context, top))
+        cap = min(effective_profile(asdict(s)).max_auto_context, top)
+        if profile is None:  # llama-fit-params did not run: the old default
+            return min(8192, cap)
+        available = self.available_llm_gb() * 1024 - AUTO_CONTEXT_RESERVE_MIB
+        return profile.largest_fitting(available, AUTO_CONTEXT_MIN, cap, CONTEXT_STEP) or min(AUTO_CONTEXT_MIN, cap)
+
+    def context_info(self) -> dict[str, Any]:
+        """For the context slider: memory need per context of the selected model and what is free."""
+        s = self.store.settings
+        file_name = self._loaded_model or s.model
+        profile = self._context_profiles.get(file_name) if file_name else None
+        return {
+            "auto": s.context_auto, "value": s.context, "loaded": self._loaded_context if self._loaded_model else None,
+            "min": CONTEXT_MIN, "max": self._model_max_context(file_name, profile) if file_name else 32768,
+            "step": CONTEXT_STEP, "auto_max": effective_profile(asdict(s)).max_auto_context,
+            "available_mib": round(self.available_llm_gb() * 1024), "reserve_mib": AUTO_CONTEXT_RESERVE_MIB,
+            "partial_factor": PARTIAL_FACTOR, "profile": profile.public() if profile else None,
+        }
+
+    def _emit_context_info(self) -> None:
+        self._emit({"type": "context_info", **self.context_info()})
+
     def _ensure_llm(self) -> None:
         path = self._model_path()
-        ctx = self.store.settings.context
-        if self.c.server.running and self._loaded_model == path.name and self._loaded_context == ctx:
-            return
+        s = self.store.settings
+        running = self.c.server.running and self._loaded_model == path.name
+        if running and s.context_auto and self._loaded_auto:
+            return  # chosen when it was loaded; free memory measured now would differ a little
         entry = self.models.entry_for_file(path.name)
         label = entry.display_name if entry else path.name
+        if path.name not in self._context_profiles:
+            self._set_state(State.LOADING, f"Checking how much context fits for {label}…")
+        ctx = self._target_context(path.name)
+        if running and self._loaded_context == ctx:
+            self._loaded_auto = s.context_auto
+            return
         self._set_state(State.LOADING, f"Loading model {label}…")
         # Stop the old model first so the fit check sees the memory it frees.
         was_running = self.c.server.running
@@ -687,7 +756,7 @@ class Engine:
             self._measured("llm", lambda: self.c.server.start(config))
         except Exception as exc:
             raise UserError(f"Could not load {label}: {exc}") from exc
-        self._loaded_model, self._loaded_context = path.name, ctx
+        self._loaded_model, self._loaded_context, self._loaded_auto = path.name, ctx, s.context_auto
         if fit.cpu_blocks:
             notice = (f"Part of the model (the experts of {fit.cpu_blocks} of {fit.total_layers} blocks) runs on "
                       "the CPU to leave room for speech, so replies are a little slower. Mixture-of-experts "
@@ -700,9 +769,11 @@ class Engine:
         self.model_status = {
             "file": path.name, "name": label, "gpu_layers": fit.gpu_layers, "total_layers": fit.total_layers,
             "cpu_blocks": fit.cpu_blocks, "partial": fit.partial, "notice": notice,
+            "context": ctx, "context_auto": s.context_auto,
         }
         self._emit({"type": "model_status", **self.model_status})
         self._emit({"type": "models", "models": self.list_models()})
+        self._emit_context_info()
 
     # -- turns ---------------------------------------------------------------------
     def _handle_utterance(self, utt: Utterance) -> None:
@@ -1028,7 +1099,7 @@ class Engine:
     def _trim_history(self) -> None:
         """Without memory the oldest exchanges drop out once the history outgrows its context share."""
         history = self.conversation.history
-        budget = history_budget(self.store.settings.context)
+        budget = history_budget(self.context)
         while len(history) > 2 and sum(estimate_tokens(m.content) for m in history) > budget:
             del history[:2]
 
@@ -1044,7 +1115,7 @@ class Engine:
         if c is None or not c.memory_enabled or not self.c.server.running:
             return
         try:
-            old = messages_to_summarize(self.memory.active_messages(c.id), self.store.settings.context)
+            old = messages_to_summarize(self.memory.active_messages(c.id), self.context)
             if old:
                 self._summarize(c, old)
             turns = int(self.memory.get_meta(c.id, "turns_since_facts", "0") or 0) + 1
@@ -1058,7 +1129,7 @@ class Engine:
         self._emit({"type": "memory", **self.memory_view()})
 
     def _summarize(self, c: Character, old: list[Any]) -> None:
-        words = summary_words(self.store.settings.context)
+        words = summary_words(self.context)
         summary = self._llm_text(
             SUMMARY_SYSTEM.format(name=c.name),
             SUMMARY_PROMPT.format(summary=self.memory.summary(c.id) or "(none)",
@@ -1303,6 +1374,7 @@ class Engine:
         finally:
             self._emit({"type": "settings", "settings": asdict(s)})
             self._emit({"type": "components", "components": self.components_status()})
+            self._emit_context_info()  # free memory changes with the microphone and voice output
             if self.state is State.LOADING:
                 self._enter_idle()
 
@@ -1340,7 +1412,7 @@ class Engine:
                 self.c.tts.unload()  # replies as text only, OmniVoice leaves VRAM (spec §7.4)
         elif "voice" in changed:
             self._prepare_voice()
-        if "model" in changed or "context" in changed:
+        if changed.keys() & {"model", "context", "context_auto", "hardware_profile_override"}:
             self._ensure_llm()
             self.fatal_error = None
         if "record_sessions" in changed and not s.record_sessions:
@@ -1356,7 +1428,8 @@ class Engine:
         checks = {
             "vad_threshold": (0.2 <= s.vad_threshold <= 0.9, "Speech detection must be between 0.2 and 0.9."),
             "end_silence_ms": (200 <= s.end_silence_ms <= 3000, "End of speech must be between 200 and 3000 ms."),
-            "context": (s.context in CONTEXT_SIZES, f"Context length must be one of {', '.join(map(str, CONTEXT_SIZES))}."),
+            "context": (CONTEXT_MIN <= s.context <= CONTEXT_MAX and s.context % CONTEXT_STEP == 0,
+                        f"Context length must be {CONTEXT_MIN} to {CONTEXT_MAX} tokens in steps of {CONTEXT_STEP}."),
             "session_bitrate_kbps": (s.session_bitrate_kbps in SESSION_BITRATES,
                                      f"MP3 quality must be one of {', '.join(map(str, SESSION_BITRATES))} kbit/s."),
             "session_gap_ms": (0 <= s.session_gap_ms <= 3000, "The pause between turns must be 0 to 3000 ms."),

@@ -16,7 +16,9 @@ import sys
 from dataclasses import asdict, dataclass
 
 # Cards report a little less than their marketing size (an RTX 5090 Laptop GPU
-# "24 GB" reports 24 463 MiB = 23.9 GiB), so the limits sit just below it.
+# "24 GB" reports 24 463 MiB = 23.9 GiB, the desktop RTX 5090 32 607 MiB), so the
+# limits sit just below it.
+ULTRA_MIN_MIB = 30_000  # "32 GB+"
 HIGH_MIN_MIB = 22_500   # "24 GB+"
 MID_MIN_MIB = 15_000    # "16 GB"
 LOW_MIN_MIB = 9_500     # "10 GB"
@@ -32,15 +34,18 @@ class Profile:
     max_model_billions: int   # largest model enabled by default
     tts_precision: str
     tts_steps: int
+    max_auto_context: int     # largest context length "Automatic" picks (it also has to fit)
 
 
 PROFILES: dict[str, Profile] = {
-    "high": Profile("high", "24 GB+ VRAM: all catalog models", "cuda", "float16", "Q5_K_M", 32, "fp16", 32),
+    "ultra": Profile("ultra", "32 GB+ VRAM: best quantizations (Q6) and long contexts",
+                     "cuda", "float16", "Q6_K", 32, "fp16", 32, 32768),
+    "high": Profile("high", "24-31 GB VRAM: all catalog models", "cuda", "float16", "Q5_K_M", 32, "fp16", 32, 32768),
     "mid": Profile("mid", "16-23 GB VRAM: 24-30B models may need reduced context",
-                   "cuda", "int8_float16", "Q4_K_M", 30, "fp16", 32),
-    "low": Profile("low", "10-15 GB VRAM: models up to 12B", "cuda", "int8_float16", "Q4_K_M", 12, "fp16", 32),
+                   "cuda", "int8_float16", "Q4_K_M", 30, "fp16", 32, 16384),
+    "low": Profile("low", "10-15 GB VRAM: models up to 12B", "cuda", "int8_float16", "Q4_K_M", 12, "fp16", 32, 8192),
     "unsupported": Profile("unsupported", "Less than 10 GB VRAM: best effort, text-only recommended",
-                           "cpu", "int8", "Q4_K_M", 8, "fp16", 16),
+                           "cpu", "int8", "Q4_K_M", 8, "fp16", 16, 4096),
 }
 
 
@@ -48,6 +53,8 @@ def select_profile(vram_mib: int | None) -> Profile:
     """Profile for a GPU with ``vram_mib`` MiB of VRAM (``None`` = no NVIDIA GPU)."""
     if vram_mib is None or vram_mib < LOW_MIN_MIB:
         return PROFILES["unsupported"]
+    if vram_mib >= ULTRA_MIN_MIB:
+        return PROFILES["ultra"]
     if vram_mib >= HIGH_MIN_MIB:
         return PROFILES["high"]
     if vram_mib >= MID_MIN_MIB:

@@ -196,6 +196,7 @@
             <span class="badge" id="model-size">—</span>
           </div>
           <p id="model-notice" class="notice" hidden></p>
+          <div id="model-context" class="model-context" title="How many tokens the model sees at once. Change it in Settings → Language model."></div>
         </div>
         <div class="row">
           <button type="button" id="open-catalog" class="secondary">Change model…</button>
@@ -424,17 +425,61 @@
 
         <section aria-labelledby="set-llm-title">
           <h2 id="set-llm-title">Language model</h2>
-          <label class="field-label" for="context-size">Context length</label>
-          <select id="context-size">
-            <option value="4096">4096 tokens — least VRAM</option>
-            <option value="8192">8192 tokens — default</option>
-            <option value="16384">16384 tokens</option>
-            <option value="32768">32768 tokens — most VRAM</option>
-          </select>
-          <p class="hint">How much of the conversation the model sees at once. Longer chats are summarized into the character's memory anyway. A longer context needs more GPU memory; the model is reloaded when you change it.</p>
-          <label class="field-label" for="hardware-profile">Hardware profile</label>
-          <select id="hardware-profile"></select>
-          <p class="hint" id="profile-hint">Sets the recommended quantization in the model catalog and how speech recognition runs. Speech recognition changes after a restart.</p>
+          <div class="field-head">
+            <span class="field-label">Context length <output id="context-out"></output></span>
+            <button type="button" class="info-btn" data-info="context-explain" aria-expanded="false"
+                    aria-label="What is the context length?" title="What is the context length?">i</button>
+          </div>
+          <label class="switch" title="Uses the largest context that fits completely on your GPU, up to the limit of your hardware profile. Recommended.">
+            <input type="checkbox" id="context-auto"><span>Automatic (recommended)</span>
+          </label>
+          <div class="context-slider">
+            <div class="zone-bar" id="context-zones" aria-hidden="true"></div>
+            <input type="range" id="context-range" min="2048" max="32768" step="1024" aria-describedby="context-meaning"
+                   title="Drag to choose how many tokens the model sees at once. Green fits on the GPU, yellow is slower, red does not fit.">
+          </div>
+          <div class="range-labels"><span id="context-min-label">2k</span><span id="context-max-label">32k</span></div>
+          <p class="hint" id="context-meaning"></p>
+          <p class="hint" id="context-zone-text"></p>
+          <div class="info-box" id="context-explain" hidden>
+            <p><strong>The context is the model's short-term memory:</strong> everything it can see at once — the
+              character's description, the rules, its memory (facts and summary) and the recent conversation. About half
+              of it is kept for the conversation itself.</p>
+            <ul>
+              <li><strong>When a chat outgrows it</strong>, the oldest part is summarized automatically. Nothing breaks;
+                the character just remembers older details only from the summary and the facts.</li>
+              <li><strong>More context</strong> means the character remembers more of the conversation word for word, but
+                it needs more GPU memory and long chats take a little longer before each reply starts.</li>
+              <li><span class="zone-dot fits"></span> <strong>Green</strong>: fits completely on the GPU (fast).
+                <span class="zone-dot partial"></span> <strong>Yellow</strong>: part of the model moves to the CPU
+                (noticeably slower). <span class="zone-dot too_big"></span> <strong>Red</strong>: too big.</li>
+              <li>The zones are measured for the loaded model and change with the model, its quantization and whether
+                the microphone and voice output are on.</li>
+              <li><strong>Automatic</strong> picks the largest value in the green zone, up to the limit of your hardware
+                profile. Changing the value reloads the model, which takes a few seconds.</li>
+            </ul>
+          </div>
+          <div class="field-head">
+            <label class="field-label" for="hardware-profile">Hardware profile</label>
+            <button type="button" class="info-btn" data-info="profile-explain" aria-expanded="false"
+                    aria-label="What does the hardware profile do?" title="What does the hardware profile do?">i</button>
+          </div>
+          <select id="hardware-profile" title="Chosen from your GPU memory. Pick another one only to trade quality for memory."></select>
+          <p class="hint" id="profile-hint">Sets the recommended quantization in the model catalog, how speech recognition runs and how long the automatic context may get. Speech recognition changes after a restart.</p>
+          <div class="info-box" id="profile-explain" hidden>
+            <p><strong>The hardware profile adapts the app to your GPU memory (VRAM).</strong> It is detected
+              automatically; you only change it to trade quality for memory, for example when another program needs
+              part of the GPU.</p>
+            <ul>
+              <li><strong>Quantization</strong>: how finely a language model is stored. Higher numbers (Q6) sound more
+                natural and make fewer mistakes but need more memory; Q4 is smaller and a little less precise. The
+                catalog recommends the one in the table below.</li>
+              <li><strong>Speech recognition</strong>: Whisper runs in full precision (float16) on big GPUs and in a
+                compact form (int8) on smaller ones, which saves about 1 GB.</li>
+              <li><strong>Automatic context</strong>: the longest context the app chooses by itself.</li>
+            </ul>
+            <table class="profile-table" id="profile-table"></table>
+          </div>
         </section>
 
         <section aria-labelledby="set-look-title">
