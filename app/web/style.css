@@ -543,3 +543,17 @@ body.busy .msg-actions { display: none; }
 .edit-bar[hidden] { display: none; }
 .edit-bar .link-btn { margin: 0; }
 @media (max-width: 820px) { .edit-bar { margin: 4px 14px 0; } }
+
+/* ---- talk modes (Auto / Smart / Push to talk) and Hold on / Talk ------------------------- */
+.controls { flex-wrap: wrap; }
+.talk-modes { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); }
+.talk-mode { border: 0; border-radius: 999px; padding: 6px 12px; background: none; color: var(--text-dim); font-size: 13px;
+  cursor: pointer; white-space: nowrap; }
+.talk-mode:hover { color: var(--text); }
+.talk-mode[aria-checked="true"] { background: var(--amber-soft); color: var(--amber); font-weight: 600; }
+.talk-btn { min-width: 108px; user-select: none; touch-action: none; }
+.talk-btn:disabled { opacity: .45; cursor: not-allowed; }
+.talk-btn.collecting { background: var(--amber); border-color: var(--amber); color: var(--amber-text); font-weight: 600;
+  animation: pulse 2s ease-in-out infinite; }
+.status { min-width: 240px; }
+@media (max-width: 820px) { .talk-mode { padding: 6px 9px; } }

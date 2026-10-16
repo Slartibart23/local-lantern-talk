@@ -6,6 +6,7 @@ Run with: ``python -m lantern_talk.setup_models``
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import urllib.request
@@ -54,6 +55,27 @@ def download_vad(paths: Paths, pins: dict) -> Path:
     return target
 
 
+def fetch_smart_turn(paths: Paths, spec: dict) -> Path:
+    """Smart Turn v3 (talk mode "Smart"), checked against its pinned SHA-256."""
+    from huggingface_hub import hf_hub_download
+
+    target = paths.vad_models / spec["file"]
+    if target.exists():
+        return target
+    path = Path(hf_hub_download(repo_id=spec["repo"], filename=spec["file"], revision=spec["revision"],
+                                local_dir=paths.vad_models))
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if digest != spec["sha256"]:
+        path.unlink(missing_ok=True)
+        raise RuntimeError(f"{spec['file']} has the wrong checksum ({digest}).")
+    return path
+
+
+def download_smart_turn(paths: Paths, pins: dict) -> Path:
+    print("  Smart Turn v3 (end-of-turn detection)")
+    return fetch_smart_turn(paths, pins["models"]["smart_turn"])
+
+
 def download_starter_llm(paths: Paths, pins: dict, quant: str) -> Path:
     """Optional starter model, offered by the installer until the model catalog (M4) exists."""
     from huggingface_hub import hf_hub_download
@@ -87,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         download_fonts(paths, pins)
         download_vad(paths, pins)
+        download_smart_turn(paths, pins)
         download_whisper(paths, pins)
         download_omnivoice(paths, pins)
         if args.starter_llm:

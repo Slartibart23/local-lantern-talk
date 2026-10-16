@@ -242,7 +242,7 @@ Add-Plan "ffmpeg $($Pins.ffmpeg.version)" $Pins.ffmpeg.download_mb (-not (Test-P
 if (-not $UpdateOnly) {
     Add-Plan 'Whisper large-v3-turbo (speech recognition)' $Pins.models.whisper.'large-v3-turbo'.download_mb (-not (Test-Path -LiteralPath (Join-Path $Models 'whisper\large-v3-turbo\model.bin')))
     Add-Plan 'OmniVoice (speech synthesis)' $Pins.models.omnivoice.download_mb (-not (Test-Path -LiteralPath (Join-Path $Models 'omnivoice\model.safetensors')))
-    Add-Plan 'Silero VAD + fonts' ($Pins.models.vad.download_mb + $Pins.fonts.download_mb) (-not (Test-Path -LiteralPath (Join-Path $Models 'vad\silero_vad.jit')))
+    Add-Plan 'Silero VAD, Smart Turn + fonts' ($Pins.models.vad.download_mb + $Pins.models.smart_turn.download_mb + $Pins.fonts.download_mb) (-not (Test-Path -LiteralPath (Join-Path $Models 'vad\silero_vad.jit')))
 }
 
 # Starter language model: offered when no language model is installed yet.
@@ -353,7 +353,7 @@ Write-Step 'Hardware profile'
 Invoke-Python @('-m', 'lantern_talk.hardware', '--write') 'Hardware detection'
 
 # ============================================================================ 6. models
-Write-Step 'Models (Whisper, OmniVoice, Silero VAD) and fonts'
+Write-Step 'Models (Whisper, OmniVoice, Silero VAD, Smart Turn) and fonts'
 $modelArgs = @('-m', 'lantern_talk.setup_models')
 if ($WantStarter) { $modelArgs += @('--starter-llm', $StarterQuant) }
 Invoke-Python $modelArgs 'Model download'

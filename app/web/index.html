@@ -119,6 +119,14 @@
       </div>
 
       <div class="controls">
+        <div class="talk-modes" role="radiogroup" aria-label="Talk mode">
+          <button type="button" class="talk-mode" data-mode="auto" role="radio" aria-checked="true"
+                  title="Automatic: your turn ends after a short pause (End of speech in the side panel). Quick, but it may answer while you are still thinking.">Auto</button>
+          <button type="button" class="talk-mode" data-mode="smart" role="radio" aria-checked="false"
+                  title="Smart: listens to how you speak. It answers quickly when you sound finished and waits when you pause in the middle of a thought (Smart Turn model, runs on the CPU).">Smart</button>
+          <button type="button" class="talk-mode" data-mode="ptt" role="radio" aria-checked="false"
+                  title="Push to talk: only listens while you hold the Talk button or the Space bar. A short click starts, a second click sends, for long thoughts.">Push to talk</button>
+        </div>
         <button type="button" id="status-btn" class="status" data-state="loading" aria-describedby="status-detail">
           <span class="status-icon"><svg aria-hidden="true"><use href="#i-mic"/></svg></span>
           <span class="status-text">
@@ -126,6 +134,10 @@
             <span id="status-detail" class="status-detail"></span>
           </span>
           <span class="meter" aria-hidden="true"><span id="meter-fill"></span></span>
+        </button>
+        <button type="button" id="talk-btn" class="icon-btn labeled talk-btn"
+                title="Hold on: I'm still thinking. Everything you say is collected until you click Send (Esc cancels).">
+          <svg aria-hidden="true"><use href="#i-mic"/></svg><span>Hold on</span>
         </button>
         <button type="button" id="pause-btn" class="icon-btn labeled" aria-pressed="false"
                 title="Pause or resume listening (the microphone stays muted while paused)">

@@ -13,6 +13,7 @@ this project. Each is used under its own license.
 | **OmniVoice** — pre-trained model weights | [k2-fsa/OmniVoice](https://huggingface.co/k2-fsa/OmniVoice) | **CC BY-NC (non-commercial)**, because of its training data (e.g. Emilia) |
 | Whisper large-v3-turbo (CTranslate2 conversion) | [dropbox-dash/faster-whisper-large-v3-turbo](https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo), based on [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) | MIT |
 | Silero VAD | [snakers4/silero-vad](https://github.com/snakers4/silero-vad) | MIT |
+| Smart Turn v3.2 (end-of-turn detection, talk mode "Smart") | [pipecat-ai/smart-turn-v3](https://huggingface.co/pipecat-ai/smart-turn-v3) | BSD-2-Clause |
 | Language models (catalog, starter model, your own) | Hugging Face, see `config\model_catalog.yaml` | Each model's own license (e.g. Gemma terms of use, Apache-2.0, Mistral licenses), shown in the model catalog. You accept it when you download the model. |
 
 The 8 built-in voice clips in `config\builtin_voices\` were generated with OmniVoice
@@ -45,6 +46,8 @@ Installed into `runtime\venv\` from PyPI / the PyTorch index (exact versions in 
 | faster-whisper | MIT |
 | CTranslate2 | MIT |
 | huggingface-hub | Apache-2.0 |
+| onnxruntime (runs Smart Turn; installed with faster-whisper) | MIT |
+| transformers (Whisper feature extractor for Smart Turn; installed with omnivoice) | Apache-2.0 |
 | NumPy | BSD-3-Clause |
 | soundfile | BSD-3-Clause (bundles libsndfile, LGPL-2.1) |
 | sounddevice | MIT (bundles PortAudio, MIT) |

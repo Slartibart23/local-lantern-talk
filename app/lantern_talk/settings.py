@@ -23,6 +23,7 @@ class Settings:
     match_language: bool = True
     show_actions: bool = True
     end_silence_ms: int = 700
+    talk_mode: str = "auto"         # auto (pause ends the turn) | smart (Smart Turn model) | ptt (push-to-talk)
     vad_threshold: float = 0.5
     num_step: int = 32              # OmniVoice diffusion steps (16 fast ... 64 best)
     tts_precision: str = "fp16"     # OmniVoice precision: fp16 | bf16 | fp32

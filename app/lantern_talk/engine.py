@@ -56,7 +56,9 @@ from .settings import Settings, SettingsStore
 from .stt import WhisperSTT
 from .textlang import guess_language
 from .tts import PRECISIONS, OmniVoiceTTS, VoiceLibrary
-from .vad import SAMPLE_RATE, SegmenterConfig, SileroVAD, Utterance, UtteranceSegmenter
+from .turn import MODEL_FILE as SMART_TURN_FILE
+from .turn import SmartTurn
+from .vad import FRAME_MS, FRAME_SAMPLES, SAMPLE_RATE, SegmenterConfig, SileroVAD, Utterance, UtteranceSegmenter
 
 log = logging.getLogger(__name__)
 
@@ -73,6 +75,8 @@ POST_PLAYBACK_MUTE_S = 0.3        # ignore the mic briefly after playback (room 
 PLAYBACK_WAIT_MARGIN_S = 15.0     # safety timeout if the browser never reports playback end
 LANGUAGE_CONFIDENCE = 0.6         # below this, keep the previously detected language
 MAX_VOICE_UPLOAD_BYTES = 50 * 2**20
+TALK_MODES = ("auto", "smart", "ptt")
+MAX_COLLECT_S = 120.0             # push-to-talk / "Hold on" end by themselves after this
 
 EmitFn = Callable[[dict[str, Any], bytes | None], None]
 
@@ -104,6 +108,7 @@ class Components:
     voices: Any
     server: Any
     llm: Any
+    turn: Any = None   # Smart Turn model (talk mode "smart")
 
 
 def build_components(paths: Paths, settings: Settings) -> Components:
@@ -119,7 +124,7 @@ def build_components(paths: Paths, settings: Settings) -> Components:
     server = LlamaServer(paths.llama_server, paths.logs, env=dict(os.environ))
     return Components(
         stt=stt, vad=SileroVAD(paths.vad_models / "silero_vad.jit"), tts=tts,
-        voices=voices, server=server, llm=LLMClient(server),
+        voices=voices, server=server, llm=LLMClient(server), turn=SmartTurn(paths.vad_models / SMART_TURN_FILE),
     )
 
 
@@ -169,7 +174,8 @@ class Engine:
         self.replaying = False                     # a recorded message is playing in the browser
         self._msg_seq = 0                          # ids of transcript items (for replay buttons)
         self._replay_lock = threading.Lock()
-        self.capture = CaptureBuffer()             # full-quality microphone audio (spec §12.1)
+        self.capture = CaptureBuffer(keep_s=MAX_COLLECT_S + 10)  # full-quality microphone audio (spec §12.1)
+        self._collect: dict[str, Any] | None = None  # push-to-talk / "Hold on": audio collected until "send"
         self.recorder = SessionRecorder(
             paths.sessions, paths.ffmpeg, self._on_recorded,
             gap_ms=lambda: self.store.settings.session_gap_ms,
@@ -178,12 +184,14 @@ class Engine:
             self._activate_character(s.character)
         self.segmenter = UtteranceSegmenter(
             self.c.vad, SegmenterConfig(threshold=s.vad_threshold, end_silence_ms=s.end_silence_ms))
+        if s.talk_mode not in TALK_MODES:
+            s.talk_mode = "auto"
         self._resampler: StreamingResampler | None = None
         self._reset_audio = threading.Event()
         self._playback_done = threading.Event()
         self._state_lock = threading.Lock()
         self._commands: queue.Queue[tuple[str, Any]] = queue.Queue()
-        self._audio: queue.Queue[tuple[np.ndarray, int] | None] = queue.Queue(maxsize=500)
+        self._audio: queue.Queue[tuple[np.ndarray, int] | str | None] = queue.Queue(maxsize=500)
         self._threads: list[threading.Thread] = []
         self._loaded_model: str | None = None
         self._loaded_context: int | None = None
@@ -225,6 +233,20 @@ class Engine:
 
     def playback_ended(self) -> None:
         self._playback_done.set()
+
+    # -- push-to-talk and "Hold on" ------------------------------------------------------------
+    def talk_start(self) -> None:
+        """Collect everything said from now on (incl. a sentence in progress) until :meth:`talk_end`."""
+        self._audio_marker("talk_start")
+
+    def talk_end(self, send: bool = True) -> None:
+        self._audio_marker("talk_end" if send else "talk_cancel")
+
+    def _audio_marker(self, marker: str) -> None:
+        try:
+            self._audio.put_nowait(marker)  # in order with the microphone audio before it
+        except queue.Full:
+            log.warning("Audio queue full; dropping %s", marker)
 
     def set_paused(self, paused: bool) -> None:
         self._commands.put(("pause", paused))
@@ -494,12 +516,22 @@ class Engine:
             if item is None:
                 return
             if self._reset_audio.is_set():
+                # Listening (again): forget the audio queued meanwhile. Button presses still count.
                 self._reset_audio.clear()
+                self._stop_collecting()
                 self.segmenter.reset()
                 self.capture.reset()
                 if self._resampler is not None:
                     self._resampler.reset()
+                if isinstance(item, str):
+                    self._talk_marker(item)
                 self._drain_audio()
+                continue
+            if isinstance(item, str):
+                try:
+                    self._talk_marker(item)
+                except Exception:  # noqa: BLE001
+                    log.exception("Push-to-talk failed")
                 continue
             if self.state is not State.LISTENING:
                 continue
@@ -510,7 +542,14 @@ class Engine:
                     self.segmenter.reset()
                     self.capture.reset()
                 self.capture.feed(samples, sr)
-                for utt in self.segmenter.feed(self._resampler.feed(samples)):
+                audio16 = self._resampler.feed(samples)
+                if self._collect is not None:
+                    self._collect_feed(audio16)
+                    continue
+                if self.store.settings.talk_mode == "ptt":
+                    self.segmenter.skip(audio16)  # push-to-talk: nothing is heard until the button is held
+                    continue
+                for utt in self.segmenter.feed(audio16):
                     utt.raw = self.capture.slice_16k(utt.start, utt.end)
                     utt.raw_sr = self.capture.sample_rate
                     # Stop listening right away; the worker transcribes the utterance.
@@ -523,11 +562,65 @@ class Engine:
     def _drain_audio(self) -> None:
         while True:
             try:
-                if self._audio.get_nowait() is None:
-                    self._audio.put(None)  # keep the stop signal
-                    return
+                item = self._audio.get_nowait()
             except queue.Empty:
                 return
+            if item is None:
+                self._audio.put(None)  # keep the stop signal
+                return
+            if isinstance(item, str):
+                self._talk_marker(item)  # a button press is never lost
+
+    # -- push-to-talk / "Hold on" (audio thread) ----------------------------------------------
+    def _talk_marker(self, marker: str) -> None:
+        if marker == "talk_start":
+            if self._collect is None and self.state is State.LISTENING:
+                prefill = self.segmenter.take_speech()  # a sentence in progress belongs to it
+                self._collect = {"chunks": [prefill], "start": self.segmenter.position - len(prefill),
+                                 "samples": len(prefill), "pending": np.zeros(0, np.float32),
+                                 "speech_frames": len(prefill) // FRAME_SAMPLES}
+                self._emit({"type": "talk", "collecting": True})
+        elif marker in ("talk_end", "talk_cancel"):
+            self._finish_collecting(send=marker == "talk_end")
+
+    def _collect_feed(self, audio16: np.ndarray) -> None:
+        col = self._collect
+        assert col is not None
+        col["chunks"].append(audio16)
+        col["samples"] += len(audio16)
+        self.segmenter.skip(audio16)
+        # Count speech frames, so that a press without speaking sends nothing.
+        pending = np.concatenate([col["pending"], audio16])
+        while len(pending) >= FRAME_SAMPLES:
+            frame, pending = pending[:FRAME_SAMPLES], pending[FRAME_SAMPLES:]
+            if self.c.vad.speech_probability(frame) >= self.segmenter.config.threshold:
+                col["speech_frames"] += 1
+        col["pending"] = pending
+        if col["samples"] >= MAX_COLLECT_S * SAMPLE_RATE:
+            self._finish_collecting(send=True)
+
+    def _stop_collecting(self) -> None:
+        if self._collect is not None:
+            self._collect = None
+            self._emit({"type": "talk", "collecting": False})
+
+    def _finish_collecting(self, send: bool) -> None:
+        col = self._collect
+        self._stop_collecting()
+        if col is None or not send:
+            return
+        audio = np.concatenate(col["chunks"]) if col["chunks"] else np.zeros(0, np.float32)
+        if col["speech_frames"] * FRAME_MS < self.segmenter.config.min_speech_ms or not len(audio):
+            self._emit({"type": "notice", "message": "Nothing was heard, so nothing was sent."})
+            return
+        start = max(0, col["start"])
+        utt = Utterance(audio=audio, duration_s=len(audio) / SAMPLE_RATE, start=start, end=start + len(audio),
+                        collected=True)
+        utt.raw = self.capture.slice_16k(utt.start, utt.end)
+        utt.raw_sr = self.capture.sample_rate
+        self.c.vad.reset()
+        self._set_state(State.THINKING, "Transcribing…")
+        self._commands.put(("utterance", utt))
 
     # ------------------------------------------------------------------ worker thread
     def _worker(self) -> None:
@@ -657,6 +750,46 @@ class Engine:
     def _load_mic(self) -> None:
         self._set_state(State.LOADING, "Loading speech recognition…")
         self._measured("whisper", lambda: (self.c.stt.load(), self.c.vad.load()))
+        if self.store.settings.talk_mode == "smart":
+            try:
+                self._apply_talk_mode()
+            except UserError as exc:
+                log.warning("Smart talk mode is not available: %s", exc)
+                self.store.settings.talk_mode = "auto"
+                self.store.save()
+                self._emit({"type": "notice", "message": f"{exc} Talk mode is Automatic for now."})
+
+    def _apply_talk_mode(self) -> None:
+        """Smart mode asks the Smart Turn model at every pause; the other modes do not need it."""
+        turn = self.c.turn
+        if self.store.settings.talk_mode != "smart" or turn is None:
+            self.segmenter.turn_check = None
+            return
+        if not turn.available:
+            self._download_smart_turn()
+        self._set_state(State.LOADING, "Loading the Smart turn model…")
+        try:
+            turn.load()
+        except Exception as exc:  # noqa: BLE001
+            log.exception("Smart Turn could not be loaded")
+            raise UserError(f"The Smart turn model could not be loaded ({exc}).") from exc
+        self.segmenter.turn_check = turn.is_complete
+        self.segmenter.config.smart_max_silence_ms = max(2500, self.store.settings.end_silence_ms * 2)
+
+    def _download_smart_turn(self) -> None:
+        """Smart Turn ships with new installations; older ones fetch the 9 MB model once."""
+        import json
+
+        spec = json.loads((self.paths.config / "runtime_pins.json").read_text(encoding="utf-8"))["models"]["smart_turn"]
+        self._set_state(State.LOADING, f"Downloading the Smart turn model ({spec['download_mb']} MB)…")
+        try:
+            from .setup_models import fetch_smart_turn
+
+            fetch_smart_turn(self.paths, spec)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("Smart Turn download failed")
+            raise UserError("The Smart turn model could not be downloaded. Check the internet connection and "
+                            "try again, or use Automatic or Push-to-talk.") from exc
 
     def _unload_mic(self) -> None:
         self.c.stt.unload()
@@ -828,7 +961,7 @@ class Engine:
     # -- turns ---------------------------------------------------------------------
     def _handle_utterance(self, utt: Utterance) -> None:
         self._set_state(State.THINKING, "Transcribing…")
-        tr = self.c.stt.transcribe(utt.audio)
+        tr = self.c.stt.transcribe(utt.audio, long_pauses=True) if utt.collected else self.c.stt.transcribe(utt.audio)
         text = tr.text.strip()
         if not text or not text.strip(" .,!?…"):
             self._enter_idle()
@@ -1546,6 +1679,8 @@ class Engine:
         self._validate(changed)
         if "end_silence_ms" in changed:
             self.segmenter.config.end_silence_ms = s.end_silence_ms
+        if "talk_mode" in changed:
+            self._apply_talk_mode()
         if "vad_threshold" in changed:
             self.segmenter.config.threshold = s.vad_threshold
             self.segmenter.config.neg_threshold = max(0.1, s.vad_threshold - 0.15)
@@ -1596,6 +1731,7 @@ class Engine:
         checks = {
             "vad_threshold": (0.2 <= s.vad_threshold <= 0.9, "Speech detection must be between 0.2 and 0.9."),
             "end_silence_ms": (200 <= s.end_silence_ms <= 3000, "End of speech must be between 200 and 3000 ms."),
+            "talk_mode": (s.talk_mode in TALK_MODES, f"Unknown talk mode {s.talk_mode}."),
             "context": (CONTEXT_MIN <= s.context <= CONTEXT_MAX and s.context % CONTEXT_STEP == 0,
                         f"Context length must be {CONTEXT_MIN} to {CONTEXT_MAX} tokens in steps of {CONTEXT_STEP}."),
             "session_bitrate_kbps": (s.session_bitrate_kbps in SESSION_BITRATES,

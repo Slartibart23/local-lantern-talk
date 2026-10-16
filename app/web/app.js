@@ -54,6 +54,8 @@ const app = {
   editingId: null,      // character open in the editor (null = new)
   deletableFrom: null,  // id of the oldest message that can still be deleted
   editingLast: false,   // the message box holds the last user message for editing
+  collecting: false,    // push-to-talk / "Hold on": the app collects what you say until "Send"
+  talkPress: null,      // when the Talk button / Space went down (push-to-talk)
 };
 
 // ---------------------------------------------------------------- WebSocket
@@ -122,6 +124,10 @@ function handleEvent(msg) {
     case "transcript":
       app.deletableFrom = msg.deletable_from ?? null;
       renderTranscript(msg.transcript);
+      break;
+    case "talk":
+      app.collecting = !!msg.collecting;
+      setState(app.state, app.detail);
       break;
     case "editable":
       app.deletableFrom = msg.deletable_from ?? null;
@@ -235,12 +241,21 @@ function setState(state, detail) {
     label = "Mic blocked";
     hint = "Allow the microphone for this page and reload — you can type meanwhile";
   }
+  const mode = app.settings.talk_mode || "auto";
+  if (state === "listening" && !app.micError) {
+    if (app.collecting) label = "Listening — take your time";
+    else if (mode === "ptt") label = "Ready";
+  }
   $("status-label").textContent = label;
   if (!hint) {
-    if (state === "listening") hint = "Speak now — click to pause";
+    if (state === "listening" && app.collecting) hint = "Click Send when you are done (Esc cancels)";
+    else if (state === "listening" && mode === "ptt") hint = "Hold the Talk button or Space to speak";
+    else if (state === "listening" && mode === "smart") hint = "Speak now — I answer when you sound finished";
+    else if (state === "listening") hint = "Speak now — click to pause";
     else if (state === "paused") hint = "Click to resume listening";
     else if (state === "mic_off") hint = "Click to turn the microphone on, or type below";
   }
+  renderTalkControls(state);
   $("status-detail").textContent = hint;
   const paused = state === "paused";
   $("pause-btn").setAttribute("aria-pressed", String(paused));
@@ -492,6 +507,65 @@ function cancelEditLast() {
   $("edit-bar").hidden = true;
   $("text-input").value = "";
   autoGrow($("text-input"));
+}
+
+// ---------------------------------------------------------------- talk modes: Auto, Smart, Push to talk, Hold on
+
+function renderTalkControls(state) {
+  const mode = app.settings.talk_mode || "auto";
+  document.querySelectorAll(".talk-mode").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.mode === mode)));
+  const btn = $("talk-btn");
+  const label = btn.querySelector("span");
+  const micOk = app.settings.mic_enabled && !app.micError;
+  btn.disabled = !micOk || !(state === "listening" || app.collecting);
+  btn.classList.toggle("collecting", app.collecting);
+  if (app.collecting) {
+    label.textContent = "Send";
+    btn.title = "Send what you said (Esc cancels)";
+  } else if (mode === "ptt") {
+    label.textContent = "Talk";
+    btn.title = "Hold to talk and release to send — or click once to start and again to send. The Space bar works too.";
+  } else {
+    label.textContent = "Hold on";
+    btn.title = "Hold on: I'm still thinking. Everything you say is collected until you click Send (Esc cancels).";
+  }
+}
+
+function setTalkMode(mode) {
+  if (mode === app.settings.talk_mode) return;
+  if (app.collecting) send({ type: "talk_end", send: false });
+  changeSetting("talk_mode", mode);
+}
+
+// Push to talk: hold (longer than HOLD_MS) = talk while held; a short click = start, a second click = send.
+const HOLD_MS = 400;
+
+function talkDown() {
+  if ($("talk-btn").disabled) return;
+  if (app.collecting) {            // second click (or Space) after a short one: send
+    send({ type: "talk_end", send: true });
+    app.talkPress = null;
+    return;
+  }
+  send({ type: "talk_start" });
+  app.talkPress = performance.now();
+}
+
+function talkUp() {
+  const pressed = app.talkPress;
+  app.talkPress = null;
+  const mode = app.settings.talk_mode || "auto";
+  if (pressed != null && mode === "ptt" && performance.now() - pressed >= HOLD_MS) {
+    send({ type: "talk_end", send: true });  // released after holding: send
+  }
+}
+
+function cancelTalk() {
+  if (app.collecting) send({ type: "talk_end", send: false });
+}
+
+function typingTarget(node) {
+  return node && (node.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(node.tagName));
 }
 
 function stopReply() {
@@ -1892,6 +1966,24 @@ function init() {
   $("status-btn").onclick = togglePause;
   $("pause-btn").onclick = togglePause;
   $("stop-btn").onclick = stopReply;
+  document.querySelectorAll(".talk-mode").forEach((b) => { b.onclick = () => setTalkMode(b.dataset.mode); });
+  const talk = $("talk-btn");
+  talk.onpointerdown = (e) => { if (e.button === 0) { talk.setPointerCapture(e.pointerId); talkDown(); } };
+  talk.onpointerup = () => talkUp();
+  talk.onkeydown = (e) => { if ((e.key === "Enter" || e.key === " ") && !e.repeat) { e.preventDefault(); talkDown(); } };
+  talk.onkeyup = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); talkUp(); } };
+  // Space bar = Talk button in push-to-talk, as long as you are not typing.
+  const dialogOpen = () => !$("char-editor").hidden || !$("settings").hidden || !$("catalog").hidden || !$("crop-dialog").hidden;
+  document.addEventListener("keydown", (e) => {
+    if (e.code !== "Space" || e.repeat || typingTarget(document.activeElement) || dialogOpen() || !app.started) return;
+    if ((app.settings.talk_mode || "auto") !== "ptt" && !app.collecting) return;
+    e.preventDefault();
+    talkDown();
+  });
+  document.addEventListener("keyup", (e) => {
+    if (e.code !== "Space" || typingTarget(document.activeElement) || dialogOpen()) return;
+    if (app.talkPress != null) { e.preventDefault(); talkUp(); }
+  });
   $("edit-cancel").onclick = cancelEditLast;
 
   const input = $("text-input");
@@ -2053,6 +2145,7 @@ function init() {
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
       if (["thinking", "speaking"].includes(app.state) && $("char-editor").hidden && $("settings").hidden) stopReply();
+      else if (app.collecting) cancelTalk();
       else if (app.editingLast) cancelEditLast();
       else if (!$("char-editor").hidden) closeEditor();
       else if (!$("settings").hidden) closeSettings();

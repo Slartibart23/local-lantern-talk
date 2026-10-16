@@ -81,6 +81,14 @@
       "url": "https://raw.githubusercontent.com/snakers4/silero-vad/v6.2.3/src/silero_vad/data/silero_vad.jit",
       "file": "silero_vad.jit",
       "download_mb": 3
+    },
+    "smart_turn": {
+      "_comment": "Smart Turn v3.2 (pipecat-ai, BSD-2-Clause): semantic end-of-turn detection for the talk mode Smart, int8 ONNX for the CPU.",
+      "repo": "pipecat-ai/smart-turn-v3",
+      "revision": "f766f81d3cfdf7737ac64aad813d91bbfd56bf93",
+      "file": "smart-turn-v3.2-cpu.onnx",
+      "sha256": "2bb026316b14a660486a75b1733cd3fbab8c2fd0314dc9af7be49f8cca967e4f",
+      "download_mb": 9
     }
   },
   "fonts": {

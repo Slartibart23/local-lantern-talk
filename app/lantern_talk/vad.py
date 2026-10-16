@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -63,6 +64,8 @@ class SegmenterConfig:
     min_speech_ms: int = 250         # shorter bursts are ignored (clicks, coughs)
     pre_roll_ms: int = 300           # audio kept from before speech start
     max_utterance_s: float = 30.0    # force an end for very long monologues
+    smart_check_ms: int = 300        # Smart mode: pause after which the turn model is asked
+    smart_max_silence_ms: int = 3000  # Smart mode: a pause this long ends the turn anyway
 
 
 @dataclass
@@ -73,6 +76,7 @@ class Utterance:
     end: int = 0
     raw: np.ndarray | None = None    # the same audio at the capture rate (for session recording)
     raw_sr: int = 0
+    collected: bool = False          # push-to-talk / "Hold on": may contain long pauses
 
 
 @dataclass
@@ -81,8 +85,11 @@ class UtteranceSegmenter:
 
     vad: SileroVAD
     config: SegmenterConfig = field(default_factory=SegmenterConfig)
+    # Smart mode: called with the utterance so far when the speaker pauses; True = they are done.
+    turn_check: Callable[[np.ndarray], bool] | None = None
 
     def __post_init__(self) -> None:
+        self._asked = False  # the turn model was asked during the current pause
         self._pending = np.zeros(0, dtype=np.float32)
         self._pre_roll: deque[np.ndarray] = deque(maxlen=max(1, self.config.pre_roll_ms // FRAME_MS))
         self._speech: list[np.ndarray] = []
@@ -97,7 +104,25 @@ class UtteranceSegmenter:
     def in_speech(self) -> bool:
         return self._in_speech
 
+    def skip(self, samples: np.ndarray) -> None:
+        """Count audio that is not listened to (push-to-talk), so positions stay in step with the capture."""
+        self._pos += len(samples)
+
+    @property
+    def position(self) -> int:
+        """16 kHz samples received since the last reset (processed and pending)."""
+        return self._pos + len(self._pending)
+
+    def take_speech(self) -> np.ndarray:
+        """The utterance in progress (ending at :attr:`position`), and forget it; positions keep counting."""
+        audio = np.concatenate(self._speech) if self._in_speech and self._speech else np.zeros(0, np.float32)
+        pos, pending = self._pos, self._pending
+        self.reset()
+        self._pos, self._pending = pos, pending
+        return np.concatenate([audio, pending])
+
     def reset(self) -> None:
+        self._asked = False
         self._pending = np.zeros(0, dtype=np.float32)
         self._pre_roll.clear()
         self._speech = []
@@ -140,9 +165,24 @@ class UtteranceSegmenter:
         else:
             self._silence_frames = 0
             self._speech_frames += 1
+            self._asked = False
 
         total_s = len(self._speech) * FRAME_MS / 1000
-        ended = self._silence_frames * FRAME_MS >= cfg.end_silence_ms or total_s >= cfg.max_utterance_s
+        silence_ms = self._silence_frames * FRAME_MS
+        if self.turn_check is None:
+            ended = silence_ms >= cfg.end_silence_ms
+        else:
+            # Smart: a short pause ends the turn if the speaker sounds finished; while they
+            # sound unfinished ("and then ...", "uhm"), only a long pause does.
+            ended = silence_ms >= cfg.smart_max_silence_ms
+            if not ended and not self._asked and silence_ms >= cfg.smart_check_ms:
+                self._asked = True
+                try:
+                    ended = bool(self.turn_check(np.concatenate(self._speech)))
+                except Exception:  # noqa: BLE001 - fall back to the plain pause rule
+                    log.exception("Smart turn check failed")
+                    ended = silence_ms >= cfg.end_silence_ms
+        ended = ended or total_s >= cfg.max_utterance_s
         if not ended:
             return None
 
@@ -156,6 +196,7 @@ class UtteranceSegmenter:
         self._in_speech = False
         self._silence_frames = 0
         self._speech_frames = 0
+        self._asked = False
         self.vad.reset()
         if speech_ms < cfg.min_speech_ms:
             return None

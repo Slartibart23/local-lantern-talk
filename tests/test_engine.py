@@ -45,8 +45,10 @@ class FakeSTT(Loadable):
         super().__init__()
         self.calls = 0
 
-    def transcribe(self, audio: np.ndarray, language: str | None = None) -> FakeTranscript:
+    def transcribe(self, audio: np.ndarray, language: str | None = None, long_pauses: bool = False) -> FakeTranscript:
         self.calls += 1
+        self.last_audio_s = len(audio) / 16_000
+        self.long_pauses = long_pauses
         return FakeTranscript("Hallo, wie geht es dir?")
 
 
@@ -723,3 +725,107 @@ def test_a_reply_can_be_stopped(setup) -> None:  # noqa: ANN001
     assert reply["stopped"] is True
     written = "".join(s["text"] for s in reply["segments"])
     assert written and len(written) < 200  # stopped long before the end of the story
+
+
+
+class FakeTurn:
+    """Smart Turn stand-in: says "finished" once it has heard enough speech."""
+
+    available = True
+    loaded = False
+
+    def __init__(self) -> None:
+        self.asked: list[float] = []
+
+    def load(self) -> None:
+        self.loaded = True
+
+    def is_complete(self, audio: np.ndarray) -> bool:
+        self.asked.append(len(audio) / 16_000)
+        return len(audio) / 16_000 > 1.5
+
+
+def _user_messages(rec: Recorder, start: int) -> list[dict]:
+    return [e for e in rec.events[start:] if e["type"] == "user_message"]
+
+
+def _settle(engine: Engine) -> None:
+    """After a state change the first audio chunk clears what was queued meanwhile (echo)."""
+    engine.on_audio(quiet(), 48_000)
+    time.sleep(0.15)
+
+
+def test_push_to_talk_hears_only_while_the_button_is_held(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    engine.update_settings({"talk_mode": "ptt"})
+    rec.wait_for(lambda ev: any(e["type"] == "settings" and e["settings"]["talk_mode"] == "ptt" for e in ev))
+    _settle(engine)
+    start = len(rec.events)
+    for _ in range(5):
+        engine.on_audio(loud(), 48_000)
+    for _ in range(12):
+        engine.on_audio(quiet(), 48_000)  # a pause that would end the turn in Automatic
+    time.sleep(0.3)
+    assert not _user_messages(rec, start)
+    engine.talk_start()
+    rec.wait_for(lambda ev: any(e["type"] == "talk" and e["collecting"] for e in ev[start:]))
+    for chunk in [loud()] * 5 + [quiet()] * 30 + [loud()] * 5:  # a 3 s thinking pause in between
+        engine.on_audio(chunk, 48_000)
+    time.sleep(0.3)
+    assert not _user_messages(rec, start)
+    engine.talk_end()
+    rec.wait_for(lambda ev: _user_messages(rec, start))
+    assert comps.stt.long_pauses is True and comps.stt.last_audio_s == pytest.approx(4.0, abs=0.1)
+    rec.wait_state("speaking", start)
+    engine.playback_ended()
+    rec.wait_state("listening", start)
+
+
+def test_push_to_talk_without_speech_sends_nothing(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    engine.update_settings({"talk_mode": "ptt"})
+    rec.wait_for(lambda ev: any(e["type"] == "settings" and e["settings"]["talk_mode"] == "ptt" for e in ev))
+    _settle(engine)
+    start = len(rec.events)
+    engine.talk_start()
+    for _ in range(10):
+        engine.on_audio(quiet(), 48_000)
+    engine.talk_end()
+    rec.wait_for(lambda ev: any(e["type"] == "notice" for e in ev[start:]))
+    assert not _user_messages(rec, start) and comps.stt.calls == 0
+
+
+def test_hold_on_keeps_the_sentence_in_progress(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup  # Automatic: "Hold on" during a sentence keeps what was said so far
+    _settle(engine)
+    start = len(rec.events)
+    for _ in range(5):
+        engine.on_audio(loud(), 48_000)        # 0.5 s speech, no pause yet
+    engine.talk_start()
+    for chunk in [quiet()] * 25 + [loud()] * 5:  # 2.5 s pause: Automatic would have answered
+        engine.on_audio(chunk, 48_000)
+    time.sleep(0.3)
+    assert not _user_messages(rec, start)
+    engine.talk_end()
+    rec.wait_for(lambda ev: _user_messages(rec, start))
+    assert comps.stt.last_audio_s > 3.2  # starts before "Hold on" was pressed
+    engine.playback_ended()
+
+
+def test_smart_mode_waits_while_the_speaker_sounds_unfinished(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    comps.turn = FakeTurn()
+    engine.update_settings({"talk_mode": "smart"})
+    rec.wait_for(lambda ev: any(e["type"] == "settings" and e["settings"]["talk_mode"] == "smart" for e in ev))
+    assert comps.turn.loaded and engine.segmenter.turn_check is not None
+    _settle(engine)
+    start = len(rec.events)
+    for chunk in [loud()] * 5 + [quiet()] * 10:   # 0.5 s, then a 1 s pause: sounds unfinished
+        engine.on_audio(chunk, 48_000)
+    time.sleep(0.3)
+    assert not _user_messages(rec, start) and len(comps.turn.asked) == 1
+    for chunk in [loud()] * 10 + [quiet()] * 6:   # more speech, then a short pause: finished
+        engine.on_audio(chunk, 48_000)
+    rec.wait_for(lambda ev: _user_messages(rec, start))
+    assert len(comps.turn.asked) == 2
+    engine.playback_ended()

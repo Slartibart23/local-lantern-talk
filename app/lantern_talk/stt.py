@@ -57,8 +57,12 @@ class WhisperSTT:
         self._model = None
         free_cuda_cache()
 
-    def transcribe(self, audio: np.ndarray, language: str | None = None) -> Transcript:
-        """Transcribe mono float32 audio at 16 kHz."""
+    def transcribe(self, audio: np.ndarray, language: str | None = None, long_pauses: bool = False) -> Transcript:
+        """Transcribe mono float32 audio at 16 kHz.
+
+        ``long_pauses``: audio collected with push-to-talk or "Hold on" may contain long
+        silences, which Whisper's own VAD filter removes (silence makes Whisper invent text).
+        """
         self.load()
         assert self._model is not None
         t0 = time.perf_counter()
@@ -66,7 +70,7 @@ class WhisperSTT:
             audio.astype(np.float32),
             language=language,
             beam_size=1,
-            vad_filter=False,  # Silero VAD already segmented the utterance
+            vad_filter=long_pauses,  # otherwise Silero VAD already segmented the utterance
             condition_on_previous_text=False,
             without_timestamps=True,
         )

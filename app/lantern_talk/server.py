@@ -11,7 +11,7 @@ Browser → server, JSON: ``text``, ``mic_format`` (sample_rate), ``playback_end
 ``add_custom_model`` (source, quant, variant), ``remove_custom_model`` (id),
 ``set_model_label`` (file, variant), ``preview_voice`` (voice), ``rename_voice`` (voice, name),
 ``delete_voice`` (voice), ``regenerate_builtin_voices``, ``delete_from`` (id), ``regenerate``,
-``edit_last`` (text), ``stop_reply``. Binary: microphone PCM
+``edit_last`` (text), ``stop_reply``, ``talk_start``, ``talk_end`` (send). Binary: microphone PCM
 (int16 mono at the announced sample rate).
 
 Server → browser, JSON: ``hello`` (full snapshot), ``state``, ``user_message``,
@@ -271,6 +271,10 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
                     engine.edit_last(str(data.get("text", ""))[:4000])
                 elif kind == "stop_reply":
                     engine.stop_reply()
+                elif kind == "talk_start":
+                    engine.talk_start()
+                elif kind == "talk_end":
+                    engine.talk_end(bool(data.get("send", True)))
                 elif kind == "download_model":
                     engine.download_model(str(data.get("id", "")), data.get("quant") or None)
                 elif kind == "cancel_download":
