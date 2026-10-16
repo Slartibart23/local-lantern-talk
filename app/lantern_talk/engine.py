@@ -305,6 +305,10 @@ class Engine:
     def set_premise(self, text: str) -> None:
         self._commands.put(("premise", text))
 
+    def new_story(self, text: str) -> None:
+        """Start the story over with this setup: the group forgets the old story (recordings stay)."""
+        self._commands.put(("new_story", text))
+
     def draft_character(self, data: dict[str, Any]) -> None:
         """Let the loaded model write instructions, speaking style and greeting from a profile."""
         self._commands.put(("draft_character", data))
@@ -874,6 +878,7 @@ class Engine:
             "story_next": self._handle_story_next,
             "next_speaker": self._handle_next_speaker,
             "premise": self._handle_premise,
+            "new_story": self._handle_new_story,
             "draft_character": self._handle_draft_character,
             "edit_message": lambda arg: self._handle_edit_message(*arg),
         }
@@ -1558,6 +1563,21 @@ class Engine:
             raise UserError("A story setup belongs to a group chat.")
         self.memory.set_meta(self._mem_key(), "premise", str(text).strip()[:MAX_RULES])
         self._emit_group()
+
+    def _handle_new_story(self, text: str) -> None:
+        if not self.in_group:
+            raise UserError("A story setup belongs to a group chat.")
+        pins = self._group_meta("pins")  # pinned notes stay
+        self._handle_reset_memory()
+        key = self._mem_key()
+        self.memory.set_meta(key, "premise", str(text).strip()[:MAX_RULES])
+        if pins:
+            self.memory.set_meta(key, "pins", pins)
+        self._emit_group()
+        self._emit_director()
+        self._emit({"type": "notice", "message": "A fresh story with the new setup: the group has forgotten the old "
+                                                 "one. Its recordings stay in the session folder."})
+        self._enter_idle()
 
     def _handle_group_mode(self, mode: str) -> None:
         if mode not in GROUP_MODES:

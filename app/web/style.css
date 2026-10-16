@@ -642,6 +642,7 @@ body.busy .msg-actions { display: none; }
   background: var(--panel-2); resize: vertical; line-height: 1.45; font-size: 13px; }
 .story-setup-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; }
 .story-setup-actions .secondary { padding: 5px 10px; font-size: 12px; white-space: nowrap; }
+.story-setup-buttons { display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .msg .speaker { display: flex; align-items: center; gap: 6px; margin: 0 4px 4px; font-size: 12px; font-weight: 600;
   color: var(--speaker-text, var(--amber)); }
 .msg[data-speaker] .bubble { color: var(--speaker-text, inherit); }

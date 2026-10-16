@@ -41,7 +41,15 @@ when it takes place, what is at stake, secrets or goals. Example:
 > A storm traps everyone in the Gilded Lantern overnight. Captain Vargas is secretly looking
 > for a stolen star chart; Elara knows who has it, but she wants a price.
 
-It is saved for the group and kept after *End chat*.
+The setup comes first for every character: it replaces the usual setting of their
+description (Elara's tavern rumors, Captain Vargas's mission) for this story, while they
+keep their personality and way of speaking. It is saved for the group and kept after
+*End chat*.
+
+**A new idea for a story?** Use **Start fresh with this setup**. The group remembers what
+happened in earlier stories (summary and facts), and that memory would pull the
+characters back into the old plot. *Start fresh* clears the chat and that memory; pinned
+notes and recordings stay. *Save setup* only changes the setup and the story goes on.
 
 ## Director's notes in a group
 

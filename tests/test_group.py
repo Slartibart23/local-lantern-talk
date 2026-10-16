@@ -74,7 +74,11 @@ def test_prompt_is_tailored_to_the_speaker() -> None:
     assert prompt.startswith("You are Vivienne")
     assert "How you speak: Slow and smoky." in prompt and "In a group: Owns the room." in prompt
     assert "With you in the scene:\n- Max: Age 33. Laid-back and quick-witted." in prompt
-    assert "Never repeat or paraphrase" in prompt and "A storm at night." in prompt
+    assert "Never repeat or paraphrase" in prompt and "No flowery metaphors" in prompt
+    # The setup comes right after the persona (before the usual setting wins) and again at the end.
+    assert prompt.index("THE SCENE OF THIS STORY") < prompt.index("In a group:")
+    assert prompt.index("THE SCENE OF THIS STORY") < prompt.index("A storm at night.") < prompt.index("In a group:")
+    assert "Stay in the scene: A storm at night." in prompt
     assert "Speak only as Vivienne" in prompt and "for Tom" in prompt and "Reply in English." in prompt
     chat = build_group_prompt(vivienne, [max_], default_persona="X", story=False, story_rules="CUSTOM")
     assert "group conversation" in chat and "CUSTOM" not in chat
@@ -228,6 +232,21 @@ def test_story_mode_plays_until_paused(group) -> None:  # noqa: ANN001
 
     time.sleep(0.3)
     assert len(engine.transcript) == count  # paused: nobody goes on
+
+
+def test_a_fresh_story_forgets_the_old_one(group) -> None:  # noqa: ANN001
+    engine, comps, rec = group()
+    _join(engine, rec, ["max"])
+    _say(engine, rec, "Hello Max!")
+    engine.pin_note("Keep it light.")
+    key = "group:lena+max"
+    engine.memory.add_fact(key, "The old story had a stolen star chart.")
+    start = len(rec.events)
+    engine.new_story("Lena and Max meet again after a long journey.")
+    _wait(rec, "notice", start, lambda e: "fresh story" in e["message"])
+    assert engine.transcript == [] and engine.memory.facts(key) == []
+    assert engine.memory.get_meta(key, "premise") == "Lena and Max meet again after a long journey."
+    assert engine.snapshot()["director"]["pinned"][0]["text"] == "Keep it light."
 
 
 def test_switching_to_story_mode_starts_the_story(group) -> None:  # noqa: ANN001

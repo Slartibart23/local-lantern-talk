@@ -2531,7 +2531,13 @@ function init() {
   };
   $("premise-save").onclick = () => {
     send({ type: "premise", text: $("premise-input").value.trim() });
-    toast("The story setup is saved for this group.", "info");
+    toast("The story setup is saved. The story goes on from where it is; for a new story use Start fresh.", "info");
+  };
+  $("premise-new").onclick = () => {
+    if (!confirm(`Start the story of ${chatTitle()} over with this setup?\n\nThe chat is cleared and the group forgets ` +
+                 "the earlier story (summary and facts). Recordings stay in the session folder.")) return;
+    renderTranscript([]);
+    send({ type: "new_story", text: $("premise-input").value.trim() });
   };
   $("edit-form").onsubmit = (ev) => { ev.preventDefault(); saveEditMessage(false); };
   $("edit-resend").onclick = () => saveEditMessage(true);

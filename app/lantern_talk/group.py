@@ -25,12 +25,14 @@ INTRO_CHARS = 240     # how much of a profile introduces a character to the othe
 DEFAULT_STORY_RULES = """\
 This is a story that you and the other characters tell together, line by line, while the user \
 listens and directs.
-- React to the line before yours, then move the story forward. Each line adds something new: a \
-decision, an action, a discovery, a secret, a conflict, a joke, a change of place or mood.
+- Play the scene of the story setup. React to the line before yours, then move the scene forward. \
+Each line adds something new: something you do, feel, want or decide, a discovery, a joke, a \
+change of mood.
+- Speak plainly and directly, like a real person in this situation: say what you feel, want and \
+do. No flowery metaphors, no riddles, no vague hints, no small talk that leads nowhere.
 - Never repeat or paraphrase what was already said, and never summarize. Vary how you begin your \
 sentences.
-- Stay true to your character: disagree, tease, hesitate or surprise when it fits you. Not everyone \
-has to get along.
+- Stay true to your character: tease, hesitate, disagree or surprise when it fits you and the scene.
 - Ask a question only when it matters, not in every line.
 - Keep each line to one to four spoken sentences.
 - When you speak to someone, use their name."""
@@ -45,11 +47,12 @@ agree, disagree or add something new, but never repeat what someone already said
 IMPULSES = (
     "Bring something unexpected into the scene.",
     "Reveal something about yourself that the others do not know yet.",
-    "Push back on what was just said.",
+    "Say plainly what you feel or want right now.",
     "Make a decision and act on it.",
     "Let a quiet, personal moment happen.",
-    "Raise the stakes.",
+    "Do something in the scene instead of only talking.",
 )
+SETUP_REMINDER_CHARS = 400   # the story setup is repeated at the end of the prompt, where models follow best
 IMPULSE_EVERY = 5     # lines without a director's note before a nudge
 
 OPENING_TEXT = "(The scene begins. You speak first.)"
@@ -141,6 +144,11 @@ def build_group_prompt(speaker: Any, others: Sequence[Any], *, default_persona: 
                        memory: str = "", director: str = "", reply_language: str | None = None) -> str:
     """The system prompt for ``speaker``'s next line in a group chat or a story."""
     parts = [persona_text(speaker, default_persona)]
+    setup = premise.strip() if story else ""
+    if setup:  # the scene comes first: it replaces the character's usual setting
+        parts.append("THE SCENE OF THIS STORY. It takes priority over the setting, the situation and the role of the "
+                     "user in your description above; keep your personality, your past and your way of speaking:\n"
+                     + setup)
     if speaker.group_style.strip():
         parts.append("In a group: " + speaker.group_style.strip())
     with_you = [f"- {o.name}" + (f": {intro(o)}" if intro(o) else "") for o in others]
@@ -148,13 +156,14 @@ def build_group_prompt(speaker: Any, others: Sequence[Any], *, default_persona: 
     if user:
         parts.append(user.strip())
     parts.append((story_rules.strip() or DEFAULT_STORY_RULES) if story else GROUP_CHAT_RULES)
-    if story and premise.strip():
-        parts.append("The story so far is set up like this: " + premise.strip())
     if memory:
         parts.append(memory.strip())
     if director:
         parts.append(director.strip())
     who = user_name.strip() or "the user"
+    if setup:
+        short = setup if len(setup) <= SETUP_REMINDER_CHARS else setup[:SETUP_REMINDER_CHARS].rsplit(" ", 1)[0] + " …"
+        parts.append(f"Stay in the scene: {short}")
     parts.append(f"Each message from someone else starts with their name. Speak only as {speaker.name}: "
                  f"never write lines for the others or for {who}, and never put your own name in front of "
                  "your reply. Stay in character.")

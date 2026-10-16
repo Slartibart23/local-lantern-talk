@@ -61,7 +61,7 @@ log = logging.getLogger(__name__)
 
 # WebSocket messages with personal content (chat text, characters, facts) never go to the log.
 PRIVATE_MESSAGES = {"text", "save_character", "add_fact", "update_fact", "edit_last", "director_note", "pin_note",
-                    "premise", "draft_character", "edit_message", "settings"}
+                    "premise", "new_story", "draft_character", "edit_message", "settings"}
 
 HOST = "127.0.0.1"
 DEFAULT_PORT = 7865
@@ -340,6 +340,8 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
                     engine.set_next_speaker(str(data.get("id", "")))
                 elif kind == "premise":
                     engine.set_premise(str(data.get("text", ""))[:3000])
+                elif kind == "new_story":
+                    engine.new_story(str(data.get("text", ""))[:3000])
                 elif kind == "draft_character":
                     values = data.get("character")
                     if isinstance(values, dict):
