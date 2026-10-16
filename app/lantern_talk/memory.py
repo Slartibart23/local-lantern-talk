@@ -21,6 +21,9 @@ KEEP_RECENT_MESSAGES = 6          # never summarized away: the immediate context
 HISTORY_SHARE_OF_CONTEXT = 0.5    # history may use half the context; the rest is prompt and reply
 FACT_UPDATE_EVERY = 4             # user turns between fact updates
 CHARS_PER_TOKEN = 3.5             # rough average for German / English text
+SUMMARY_WORDS_PER_TOKEN = 0.025   # summary length per token of context: 8k -> 200, 16k -> 400, 32k -> 800 words
+SUMMARY_MIN_WORDS = 150
+SUMMARY_MAX_WORDS = 1000
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
@@ -187,6 +190,11 @@ def history_budget(context: int) -> int:
     return int(context * HISTORY_SHARE_OF_CONTEXT)
 
 
+def summary_words(context: int) -> int:
+    """Length of the summary: a larger context keeps more of a long story (200 words at 8k)."""
+    return min(SUMMARY_MAX_WORDS, max(SUMMARY_MIN_WORDS, round(context * SUMMARY_WORDS_PER_TOKEN / 50) * 50))
+
+
 def messages_to_summarize(messages: list[Message], context: int) -> list[Message]:
     """Oldest messages to fold into the summary, or ``[]`` while the history fits."""
     total = sum(estimate_tokens(m.content) for m in messages)
@@ -219,7 +227,7 @@ SUMMARY_PROMPT = """Earlier summary (may be empty):
 Conversation to add:
 {transcript}
 
-Write an updated summary of the whole conversation so far in at most 200 words, in the language
+Write an updated summary of the whole conversation so far in at most {words} words, in the language
 the conversation is held in. Keep names, decisions, promises, open questions and story events.
 Plain text only, no lists or markdown."""
 

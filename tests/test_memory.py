@@ -130,3 +130,9 @@ def test_replay_info_and_migration_of_old_databases(tmp_path: Path) -> None:
     new = mem.active_messages("lena")[1]
     assert (new.replay_session, new.replay_offset, new.replay_duration) == ("2026-10-13_1538_lena", 12.5, 3.25)
     mem.close()
+
+
+def test_summary_grows_with_the_context() -> None:
+    from lantern_talk.memory import summary_words
+
+    assert [summary_words(c) for c in (2048, 4096, 8192, 16384, 32768, 65536)] == [150, 150, 200, 400, 800, 1000]

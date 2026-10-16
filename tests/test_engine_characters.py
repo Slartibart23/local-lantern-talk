@@ -90,7 +90,7 @@ def test_startup_activates_first_assistant_with_greeting(setup) -> None:  # noqa
     assert snap["character"]["id"] == "lena"  # assistants first, then by name
     assert [c["id"] for c in snap["characters"]][:2] == ["lena", "max"]
     assert engine.store.settings.character == "lena"
-    assert engine.store.settings.voice == "builtin:de_female"
+    assert engine.store.settings.voice == "builtin:en_female"
     first = snap["transcript"][0]
     assert first["role"] == "assistant" and "Lena" in first["segments"][0]["text"]
     assert "You are Lena" in engine.conversation.config.persona
@@ -112,7 +112,7 @@ def test_switching_character_switches_persona_voice_and_history(setup) -> None: 
     engine.select_character("captain-vargas")
     ev = _wait(rec, "character", start)
     assert ev["character"]["id"] == "captain-vargas"
-    assert engine.store.settings.voice == "builtin:de_male"
+    assert engine.store.settings.voice == "builtin:en_male"
     assert engine.conversation.config.roleplay is True
     assert "Vargas" in engine.conversation.config.persona
     assert [t["role"] for t in ev["transcript"]] == ["assistant"]  # only Vargas' greeting

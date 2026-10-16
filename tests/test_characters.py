@@ -25,7 +25,7 @@ def test_shipped_examples(store: CharacterStore) -> None:
     assert set(chars) == {"max", "lena", "elara", "captain-vargas"}
     assert chars["max"].kind == chars["lena"].kind == "assistant"
     assert chars["elara"].kind == chars["captain-vargas"].kind == "roleplay"
-    assert chars["max"].voice == "builtin:de_male" and chars["lena"].voice == "builtin:de_female"
+    assert chars["max"].voice == "builtin:en_male" and chars["lena"].voice == "builtin:en_female"
     assert [c.kind for c in store.list()][:2] == ["assistant", "assistant"]  # assistants first
     for c in chars.values():
         assert c.greeting and c.system_prompt and len(c.avatar_initials) == 2

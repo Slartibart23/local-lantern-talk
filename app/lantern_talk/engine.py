@@ -39,7 +39,7 @@ from .hardware import PROFILES, effective_profile
 from .llm import NO_THINKING_ARGS, ChatMessage, LlamaServer, LLMClient, SamplingConfig, ServerConfig
 from .memory import (
     FACT_UPDATE_EVERY, FACTS_PROMPT, FACTS_SYSTEM, SUMMARY_PROMPT, SUMMARY_SYSTEM, MemoryStore, estimate_tokens,
-    history_budget, memory_context, messages_to_summarize, parse_fact_update, transcript_text,
+    history_budget, memory_context, messages_to_summarize, parse_fact_update, summary_words, transcript_text,
 )
 from .models import ModelError, ModelManager, NoGGUFError
 from .paths import Paths
@@ -1058,10 +1058,12 @@ class Engine:
         self._emit({"type": "memory", **self.memory_view()})
 
     def _summarize(self, c: Character, old: list[Any]) -> None:
+        words = summary_words(self.store.settings.context)
         summary = self._llm_text(
             SUMMARY_SYSTEM.format(name=c.name),
             SUMMARY_PROMPT.format(summary=self.memory.summary(c.id) or "(none)",
-                                  transcript=transcript_text(old, c.name)))
+                                  transcript=transcript_text(old, c.name), words=words),
+            max_tokens=max(400, words * 2))
         if summary:
             self.memory.set_summary(c.id, summary)
             self.memory.mark_summarized(c.id, old[-1].id)

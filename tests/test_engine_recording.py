@@ -43,7 +43,7 @@ def test_typed_turn_records_greeting_and_reply(setup) -> None:  # noqa: F811
     # the replay view still shows the actions; the Markdown has only the spoken words
     assert reply["segments"][0] == {"kind": "action", "text": "lächelt"}
     md = mp3.with_suffix(".md").read_text(encoding="utf-8").split("\n\n", 1)[1]
-    assert md == ("Lena: Hi, ich bin Lena! Schön, dass du da bist. Was steht heute an?\n\n"
+    assert md == ("Lena: Hi, I'm Lena! Great to have you here. What's on your mind today?\n\n"
                   "You: Hallo Lena!\n\nLena: Mir geht es gut. Und dir?\n\n")
     # the browser learns where each message is
     recorded = [e for e in rec.events[start:] if e["type"] == "recorded"]
