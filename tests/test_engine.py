@@ -264,6 +264,7 @@ def test_text_turn_flow(setup) -> None:  # noqa: ANN001
                                          ("¿Hola, quién eres?", "builtin:es_female")])
 def test_typed_message_language_picks_voice(setup, text: str, voice: str) -> None:  # noqa: ANN001
     engine, comps, rec = setup
+    engine.store.settings.language = "auto"  # follow the speaker
     start = len(rec.events)
     engine.submit_text(text)
     rec.wait_for(lambda ev: any(e["type"] == "assistant_start" for e in ev[start:]))
@@ -273,6 +274,7 @@ def test_typed_message_language_picks_voice(setup, text: str, voice: str) -> Non
 
 def test_ambiguous_typed_message_keeps_last_language(setup) -> None:  # noqa: ANN001
     engine, comps, rec = setup
+    engine.store.settings.language = "auto"
     engine.last_language = "de"
     start = len(rec.events)
     engine.submit_text("ok")
@@ -291,6 +293,7 @@ def quiet(n: int = 4800) -> bytes:
 
 def test_voice_utterance_and_mic_muted_while_busy(setup) -> None:  # noqa: ANN001
     engine, comps, rec = setup
+    _settle(engine)
     start = len(rec.events)
     for _ in range(5):
         engine.on_audio(loud(), 48_000)       # 0.5 s speech
@@ -828,4 +831,40 @@ def test_smart_mode_waits_while_the_speaker_sounds_unfinished(setup) -> None:  #
         engine.on_audio(chunk, 48_000)
     rec.wait_for(lambda ev: _user_messages(rec, start))
     assert len(comps.turn.asked) == 2
+    engine.playback_ended()
+
+
+
+def test_conversation_language(setup) -> None:  # noqa: ANN001
+    engine, comps, rec = setup
+    assert engine.store.settings.language == "en"  # the default
+    start = len(rec.events)
+    engine.submit_text("Hallo! Wer bist du?")     # German text, but the conversation language is English
+    rec.wait_for(lambda ev: any(e["type"] == "assistant_start" for e in ev[start:]))
+    assert [e for e in rec.events[start:] if e["type"] == "assistant_start"][0]["voice"] == "builtin:en_female"
+    rec.wait_for(lambda ev: any(e["type"] == "turn_done" for e in ev[start:]))
+    assert "Reply in English." in comps.llm.requests[-1][0].content
+    engine.playback_ended()
+    rec.wait_state("listening", start)
+    # Automatic: an unsure first guess of Whisper (noise, one word) falls back to English, not Japanese.
+    engine.update_settings({"language": "auto"})
+    rec.wait_for(lambda ev: any(e["type"] == "settings" and e["settings"]["language"] == "auto" for e in ev[start:]))
+    comps.stt.transcribe = lambda audio, language=None, long_pauses=False: FakeTranscript("Hm.", "ja", 0.3)
+    from lantern_talk.vad import Utterance
+
+    start = len(rec.events)
+    engine._commands.put(("utterance", Utterance(audio=np.zeros(16000, np.float32), duration_s=1.0)))
+    rec.wait_for(lambda ev: any(e["type"] == "turn_done" for e in ev[start:]))
+    assert engine.last_language == "en" and "Reply in English." in comps.llm.requests[-1][0].content
+    engine.playback_ended()
+    # A fixed language is passed to Whisper.
+    engine.update_settings({"language": "de"})
+    seen: list[str | None] = []
+    comps.stt.transcribe = lambda audio, language=None, long_pauses=False: (
+        seen.append(language) or FakeTranscript("Hallo.", "de", 0.99))
+    rec.wait_state("listening", start)
+    start = len(rec.events)
+    engine._commands.put(("utterance", Utterance(audio=np.zeros(16000, np.float32), duration_s=1.0)))
+    rec.wait_for(lambda ev: any(e["type"] == "turn_done" for e in ev[start:]))
+    assert seen == ["de"]
     engine.playback_ended()

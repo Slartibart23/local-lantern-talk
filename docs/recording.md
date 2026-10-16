@@ -35,7 +35,7 @@ badge in the header shows that recording is active. *Open session folder* opens
 - Waiting time (while the model thinks) is not recorded. Turns are separated by a short
   pause of 0.5 s.
 - User and AI speech are brought to a common loudness.
-- Mono, 64 kbit/s, 24 kHz: about 29 MB per hour.
+- Mono, 128 kbit/s, 24 kHz: about 58 MB per hour (32–128 kbit/s in Settings).
 - Each utterance is appended as soon as it is complete. If the app or the computer
   crashes, the file is intact up to the last complete utterance.
 - Encoding runs in the background on the CPU and never delays the conversation.

@@ -21,6 +21,7 @@ class Settings:
     mic_enabled: bool = True
     voice_output: bool = True
     match_language: bool = True
+    language: str = "en"            # conversation language: a code (en, de, ...) or "auto" = follow the speaker
     show_actions: bool = True
     end_silence_ms: int = 700
     talk_mode: str = "auto"         # auto (pause ends the turn) | smart (Smart Turn model) | ptt (push-to-talk)
@@ -31,7 +32,7 @@ class Settings:
     context_auto: bool = True       # pick the largest context that fits on the GPU (up to the profile's limit)
     record_sessions: bool = True        # session recording (spec §12); characters can opt out
     session_gap_ms: int = 500           # pause between turns in the session MP3
-    session_bitrate_kbps: int = 64      # mono MP3, about 29 MB per hour
+    session_bitrate_kbps: int = 128     # mono MP3, about 58 MB per hour
     hardware_profile: str = ""          # detected by the installer (high | mid | low | unsupported)
     hardware_profile_override: str = "" # user's choice; "" = use the detected profile
     gpu_name: str = ""

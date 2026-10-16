@@ -189,6 +189,21 @@
       <section>
         <h2>Voice</h2>
         <label class="switch" title="Speak the replies aloud. Off: replies as text only, and the speech model leaves the GPU."><input type="checkbox" id="voice-output"><span>Voice output</span></label>
+        <label class="field-label" for="language-select">Conversation language</label>
+        <select id="language-select" title="The language you talk in and the character answers in. Automatic follows the language you speak or type.">
+          <option value="auto">Automatic — follow the language I speak</option>
+          <option value="en">English</option>
+          <option value="de">German</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="it">Italian</option>
+          <option value="nl">Dutch</option>
+          <option value="pt">Portuguese</option>
+          <option value="pl">Polish</option>
+          <option value="tr">Turkish</option>
+          <option value="ru">Russian</option>
+        </select>
+        <p class="hint">A fixed language also tells speech recognition what to expect, so a short word or background noise is never mistaken for another language. Built-in voices exist for English, German, Spanish and French.</p>
         <label class="field-label" for="voice-select">Voice</label>
         <select id="voice-select" title="The voice the character speaks with. Built-in voices follow the language you speak."></select>
         <div class="row wrap">
@@ -612,9 +627,9 @@
           <select id="session-bitrate" title="Sound quality and size of the recorded session MP3">
             <option value="32">32 kbit/s — about 15 MB per hour</option>
             <option value="48">48 kbit/s — about 22 MB per hour</option>
-            <option value="64">64 kbit/s — about 29 MB per hour (default)</option>
+            <option value="64">64 kbit/s — about 29 MB per hour</option>
             <option value="96">96 kbit/s — about 43 MB per hour</option>
-            <option value="128">128 kbit/s — about 58 MB per hour</option>
+            <option value="128">128 kbit/s — about 58 MB per hour (default)</option>
           </select>
           <label class="field-label" for="session-gap">Pause between turns <output id="session-gap-out" for="session-gap"></output></label>
           <input type="range" id="session-gap" min="0" max="2000" step="100" title="Silence between turns in the recording (the waiting time is never recorded)">

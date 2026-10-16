@@ -123,9 +123,15 @@ do not like the current ones; it takes about a minute and needs voice output to 
 To go back to the shipped voices, close the app and delete `models\builtin_voices\`.
 
 With **Match built-in voice to spoken language** (on by default), a built-in voice
-switches to the built-in voice of the same gender in the language you speak or type,
-so a German reply is never spoken with an English accent. Your own voices are never
+switches to the built-in voice of the same gender in the conversation language, so a
+German reply is never spoken with an English accent. Your own voices are never
 switched.
+
+The **conversation language** (right panel, above the voice) is English by default.
+Choose another language, or *Automatic* to follow the language you speak or type. A
+fixed language is also passed to speech recognition, so a short word or background
+noise is never mistaken for another language. In *Automatic*, an unsure first guess
+falls back to English.
 
 ## Speech quality
 

@@ -58,11 +58,12 @@ installs are needed, and deleting the folder removes the app completely.
 | Appearance | Decorations: scenes, fairy lights and lanterns (stored in the browser) | on |
 | Family mode | Hides uncensored and explicit models and characters marked *For adults only* | off |
 | Session recording | Record sessions | on |
-| | MP3 quality (32 … 128 kbit/s) | 64 kbit/s |
+| | MP3 quality (32 … 128 kbit/s) | 128 kbit/s |
 | | Pause between turns (0 … 2 s) | 0.5 s |
 
-The side panels hold the settings you change most often: voice, *Match built-in voice to
-spoken language*, language model, memory and session recording. The **talk mode**
+The side panels hold the settings you change most often: the **conversation language**
+(English by default, or *Automatic* to follow the language you speak), voice, *Match
+built-in voice to spoken language*, language model, memory and session recording. The **talk mode**
 (*Auto*, *Smart*, *Push to talk*) is switched with one click under the chat. Every field
 and button explains itself in a tooltip when you point at it; the **i** buttons open a
 longer explanation (context length, hardware profile).
@@ -78,6 +79,7 @@ closed; invalid values are ignored or rejected with a message.
 | `voice` | Active voice: `builtin:<id>` or `custom:<file name>` |
 | `model` | Active GGUF file in `models\llm\` |
 | `mic_enabled`, `voice_output` | Microphone and voice output on / off |
+| `language` | Conversation language: `en` (default), `de`, `es`, `fr`, `it`, `nl`, `pt`, `pl`, `tr`, `ru`, or `auto` (follow the speaker) |
 | `match_language` | Built-in voices follow the spoken language |
 | `show_actions` | Show actions as text (the active character's setting) |
 | `end_silence_ms`, `vad_threshold` | End of speech (200–3000 ms) and speech detection (0.2–0.9) |

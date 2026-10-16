@@ -74,6 +74,9 @@ PREVIEW_TEXT = {
 POST_PLAYBACK_MUTE_S = 0.3        # ignore the mic briefly after playback (room echo)
 PLAYBACK_WAIT_MARGIN_S = 15.0     # safety timeout if the browser never reports playback end
 LANGUAGE_CONFIDENCE = 0.6         # below this, keep the previously detected language
+FALLBACK_LANGUAGE = "en"          # Automatic, before a language is known (or when detection is unsure)
+# Conversation languages offered in the side panel (Whisper and the language models know many more).
+CONVERSATION_LANGUAGES = ("en", "de", "es", "fr", "it", "nl", "pt", "pl", "tr", "ru")
 MAX_VOICE_UPLOAD_BYTES = 50 * 2**20
 TALK_MODES = ("auto", "smart", "ptt")
 CHARACTER_FILE_FORMAT = "local-lantern-talk-character"
@@ -158,7 +161,7 @@ class Engine:
         self.detail = "Starting…"
         self.fatal_error: str | None = None
         self.paused = False
-        self.last_language: str | None = None
+        self.last_language: str | None = None if s.language == "auto" else s.language
         self.transcript: list[dict[str, Any]] = []
         self.conversation = Conversation(
             self.c.llm, self.c.tts if s.voice_output else None, self.c.voices,
@@ -746,7 +749,8 @@ class Engine:
             "pending_note": self._handle_pending_note,
             "pin_note": self._handle_pin_note,
             "unpin_note": self._handle_unpin_note,
-            "continue": lambda _: self._turn("", self.last_language, "director"),
+            "continue": lambda _: self._turn("", self._fixed_language() or self.last_language or FALLBACK_LANGUAGE,
+                                             "director"),
             "import_character": self._handle_import_character,
         }
         while True:
@@ -1052,24 +1056,39 @@ class Engine:
         self._emit_context_info()
 
     # -- turns ---------------------------------------------------------------------
+    def _fixed_language(self) -> str | None:
+        """The conversation language from the side panel; None = Automatic (follow the speaker)."""
+        language = self.store.settings.language
+        return None if language == "auto" else language
+
     def _handle_utterance(self, utt: Utterance) -> None:
         self._set_state(State.THINKING, "Transcribing…")
-        tr = self.c.stt.transcribe(utt.audio, long_pauses=True) if utt.collected else self.c.stt.transcribe(utt.audio)
+        fixed = self._fixed_language()
+        kwargs: dict[str, Any] = {"long_pauses": True} if utt.collected else {}
+        if fixed:
+            kwargs["language"] = fixed  # Whisper does not have to guess (and cannot guess wrong)
+        tr = self.c.stt.transcribe(utt.audio, **kwargs)
         text = tr.text.strip()
         if not text or not text.strip(" .,!?…"):
             self._enter_idle()
             return
-        if tr.language_probability >= LANGUAGE_CONFIDENCE or self.last_language is None:
+        if fixed:
+            self.last_language = fixed
+        elif tr.language_probability >= LANGUAGE_CONFIDENCE:
             self.last_language = tr.language
+        elif self.last_language is None:
+            self.last_language = FALLBACK_LANGUAGE  # an unsure first guess (noise, a short word) is not trusted
         raw = utt.raw if utt.raw is not None and len(utt.raw) else utt.audio
         self._turn(text, self.last_language, "voice", stt_ms=round(tr.seconds * 1000),
                    audio=raw, audio_sr=utt.raw_sr if raw is utt.raw else SAMPLE_RATE)
 
     def _handle_typed(self, text: str) -> None:
         # Typed text has no Whisper language; guess it so the reply voice matches.
-        language = guess_language(text)
+        language = self._fixed_language() or guess_language(text)
         if language:
             self.last_language = language
+        elif self.last_language is None:
+            self.last_language = FALLBACK_LANGUAGE
         self._turn(text, self.last_language, "text")
 
     def _turn(self, text: str, language: str | None, source: str, stt_ms: int | None = None,
@@ -1317,6 +1336,8 @@ class Engine:
         self._emit_transcript()
         if user.get("language"):
             self.last_language = user["language"]
+        if self._fixed_language():
+            self.last_language = self._fixed_language()
         self._turn(user["text"], self.last_language, user.get("source") or "text", user=user)  # keeps its note
 
     def _handle_edit_last(self, text: str) -> None:
@@ -1832,6 +1853,8 @@ class Engine:
             self.segmenter.config.neg_threshold = max(0.1, s.vad_threshold - 0.15)
         if "match_language" in changed:
             self.conversation.config.match_language = s.match_language
+        if "language" in changed:
+            self.last_language = self._fixed_language()  # the next reply already uses the new language
         if changed.keys() & {"user_name", "user_about"}:
             s.user_name, s.user_about = " ".join(s.user_name.split()), s.user_about.strip()
             self.conversation.config.user = user_context(s.user_name, s.user_about)
@@ -1868,7 +1891,7 @@ class Engine:
             self._end_session()
         if self.character is not None and changed.keys() & {"voice", "show_actions", "voice_output"}:
             self._save_character_from_settings(changed)
-        if changed.keys() - {"show_actions", "user_name", "user_about", "user_avatar", "user_color"}:
+        if changed.keys() - {"show_actions", "user_name", "user_about", "user_avatar", "user_color", "language"}:
             self._enter_idle()
 
     def _validate(self, changed: dict[str, Any]) -> None:
@@ -1878,6 +1901,7 @@ class Engine:
             "vad_threshold": (0.2 <= s.vad_threshold <= 0.9, "Speech detection must be between 0.2 and 0.9."),
             "end_silence_ms": (200 <= s.end_silence_ms <= 3000, "End of speech must be between 200 and 3000 ms."),
             "talk_mode": (s.talk_mode in TALK_MODES, f"Unknown talk mode {s.talk_mode}."),
+            "language": (s.language in ("auto", *CONVERSATION_LANGUAGES), f"Unknown language {s.language}."),
             "context": (CONTEXT_MIN <= s.context <= CONTEXT_MAX and s.context % CONTEXT_STEP == 0,
                         f"Context length must be {CONTEXT_MIN} to {CONTEXT_MAX} tokens in steps of {CONTEXT_STEP}."),
             "session_bitrate_kbps": (s.session_bitrate_kbps in SESSION_BITRATES,

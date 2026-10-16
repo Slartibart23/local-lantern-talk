@@ -146,6 +146,11 @@ project uses [Semantic Versioning](https://semver.org/).
   risk, responsibly and with respect for other people's privacy.
 
 ### Changed
+- Conversation language in the right panel: English by default, other languages or
+  *Automatic*; a fixed language is passed to Whisper, so noise or a short word is never
+  taken for another language (a greeting in Japanese after a misheard first word).
+- Session recordings default to 128 kbit/s (about 58 MB per hour).
+- The model catalog links every model to its Hugging Face page.
 - The example characters greet in English and use the English built-in voices; they still
   answer in the language you speak.
 - The memory summary grows with the context (200 words at 8k, 400 at 16k, 800 at 32k).

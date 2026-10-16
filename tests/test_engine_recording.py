@@ -36,7 +36,7 @@ def test_typed_turn_records_greeting_and_reply(setup) -> None:  # noqa: F811
     mp3, session = _session(engine)
     assert session["title"].startswith("Lena — ")
     roles = [(e["role"], e["tags"][0]) for e in session["entries"]]
-    assert roles == [("assistant", "greeting"), ("user", "typed"), ("assistant", "German female")]
+    assert roles == [("assistant", "greeting"), ("user", "typed"), ("assistant", "English female")]  # language: en
     reply = session["entries"][2]
     assert reply["duration"] and reply["duration"] > 0
     assert mp3_duration(mp3.read_bytes()) == pytest.approx(reply["offset"] + reply["duration"], abs=0.002)
@@ -70,7 +70,7 @@ def test_spoken_turn_records_full_quality_user_audio(setup) -> None:  # noqa: F8
     rec.wait_for(lambda ev: any(e["type"] == "editable" for e in ev[start:]))
     _, session = _session(engine)
     user = session["entries"][1]
-    assert user["role"] == "user" and user["source"] == "voice" and "de" in user["tags"]
+    assert user["role"] == "user" and user["source"] == "voice" and "en" in user["tags"]  # language: en
     assert 0.5 <= user["duration"] < 1.6       # speech + kept tail, not the 16 kHz copy's silence
     exact = {e["id"]: e for e in rec.events[start:] if e["type"] == "recorded"}
     user_id, reply_id = engine.transcript[-2]["id"], engine.transcript[-1]["id"]

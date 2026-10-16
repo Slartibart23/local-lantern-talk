@@ -918,11 +918,16 @@ function modelRow(m) {
   const row = el("div", { class: `model-row ${q.fit}${loaded ? " loaded" : ""}` });
 
   const meta = [m.family, m.languages_note, m.license_note].filter(Boolean).join(" · ");
+  const hf = m.hf_repo ? el("a", { class: "hf-link", href: `https://huggingface.co/${m.hf_repo}`, target: "_blank",
+                                   rel: "noopener noreferrer",
+                                   title: "Open the model page on Hugging Face: description, license, all files" },
+                            `huggingface.co/${m.hf_repo} ↗`) : null;
   row.append(el("div", {},
     el("div", { class: "model-title" }, m.name,
       el("span", { class: `badge ${m.variant}` }, VARIANT_LABEL[m.variant])),
     el("div", { class: "model-purpose" }, m.purpose + (m.note ? ` — ${m.note}` : "")),
-    meta ? el("div", { class: "model-meta" }, meta) : null));
+    meta ? el("div", { class: "model-meta" }, meta) : null,
+    hf));
 
   const select = el("select", { "aria-label": `Quantization for ${m.name}`,
                                 title: "How finely the model is stored: higher numbers are better but bigger" });
@@ -1041,6 +1046,7 @@ function applySettings() {
   const s = app.settings;
   $("voice-output").checked = !!s.voice_output;
   $("match-language").checked = !!s.match_language;
+  $("language-select").value = s.language || "en";
   $("mic-enabled").checked = !!s.mic_enabled;
   $("show-actions").checked = !!s.show_actions;
   $("record-sessions").checked = !!s.record_sessions;
@@ -2138,6 +2144,7 @@ function init() {
 
   $("voice-output").onchange = (e) => changeSetting("voice_output", e.target.checked);
   $("match-language").onchange = (e) => changeSetting("match_language", e.target.checked);
+  $("language-select").onchange = (e) => changeSetting("language", e.target.value);
   $("mic-enabled").onchange = (e) => changeSetting("mic_enabled", e.target.checked);
   $("show-actions").onchange = (e) => changeSetting("show_actions", e.target.checked);
   $("voice-select").onchange = (e) => { e.target.disabled = true; changeSetting("voice", e.target.value); };
