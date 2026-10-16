@@ -50,6 +50,7 @@ class Character:
     background_fade: int = 80         # how washed out the background is shown, 0-95 %
     text_color: str = ""              # one of TEXT_COLORS for the character's messages; "" = default
     director_notes: list[str] = field(default_factory=list)   # pinned director's notes (always active)
+    adult: bool = False               # for adults only: hidden in family mode
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -96,7 +97,7 @@ def validate(data: dict[str, Any], char_id: str) -> Character:
             raise CharacterError(f"{key.replace('_', ' ').capitalize()} is too long.")
         values[key] = text
     values["avatar_initials"] = (str(values.get("avatar_initials") or "").strip()[:3] or initials_for(name)).upper()
-    for key in ("voice_output", "show_actions_as_text", "memory_enabled", "recording_enabled"):
+    for key in ("voice_output", "show_actions_as_text", "memory_enabled", "recording_enabled", "adult"):
         if key in values:
             values[key] = bool(values[key])
     for key in ("voice", "model"):

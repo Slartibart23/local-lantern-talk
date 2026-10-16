@@ -48,7 +48,11 @@
       <section>
         <h2>Characters</h2>
         <ul class="char-list" id="char-list"></ul>
-        <button type="button" id="new-char" class="secondary new-char">+ New character</button>
+        <div class="char-buttons">
+          <button type="button" id="new-char" class="secondary new-char" title="Create your own character">+ New character</button>
+          <button type="button" id="import-char" class="secondary import-char"
+                  title="Add a character from a file exported with Export… (its look and pictures; no memory, no cloned voice)">Import…</button>
+        </div>
       </section>
       <section>
         <h2>Recent sessions</h2>
@@ -433,10 +437,13 @@
         <label class="switch"><input type="checkbox" id="ce-actions"><span>Show actions as text</span></label>
         <label class="switch"><input type="checkbox" id="ce-memory"><span>Remember conversations</span></label>
         <label class="switch"><input type="checkbox" id="ce-recording"><span>Record sessions</span></label>
+        <label class="switch" title="Hidden while family mode is on (Settings → Family mode)"><input type="checkbox" id="ce-adult"><span>For adults only</span></label>
       </div>
       <div class="editor-actions">
         <button type="button" id="ce-delete" class="secondary danger">Delete</button>
         <button type="button" id="ce-duplicate" class="secondary">Duplicate</button>
+        <button type="button" id="ce-export" class="secondary"
+                title="Save this character as a file to keep or share: description, look, pictures and pinned notes. Its memory and a cloned voice are never included.">Export…</button>
         <span class="spacer"></span>
         <button type="button" id="ce-cancel" class="secondary">Cancel</button>
         <button type="submit" class="primary">Save</button>
@@ -585,6 +592,13 @@
           <h2 id="set-look-title">Appearance</h2>
           <label class="switch"><input type="checkbox" id="set-decorations"><span>Decorations: scenes, fairy lights and lanterns</span></label>
           <p class="hint">Stored in this browser. Animations stop when Windows is set to reduce motion.</p>
+        </section>
+
+        <section aria-labelledby="set-family-title">
+          <h2 id="set-family-title">Family mode</h2>
+          <label class="switch"><input type="checkbox" id="set-family"><span>Family mode</span></label>
+          <p class="hint">Hides uncensored and explicit language models in the catalog and characters marked
+            "For adults only". It is a filter for shared computers, not a lock: anyone can switch it off here.</p>
         </section>
 
         <section aria-labelledby="set-rec-title">

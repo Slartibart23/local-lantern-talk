@@ -877,9 +877,19 @@ function toggleInfo(btn) {
   btn.setAttribute("aria-expanded", String(!box.hidden));
 }
 
+function familyMode() {
+  return !!(app.settings && app.settings.family_mode);
+}
+
+// Family mode hides uncensored and explicit models (a filter, not a lock).
+function modelAllowed(m) {
+  return !familyMode() || !["uncensored", "explicit"].includes(m.variant);
+}
+
 function filteredModels() {
   const f = app.catalogFilter;
-  return app.models.filter((m) => f === "all" || (f === "downloaded" ? m.downloaded_files.length > 0 : m.variant === f));
+  return app.models.filter(modelAllowed)
+    .filter((m) => f === "all" || (f === "downloaded" ? m.downloaded_files.length > 0 : m.variant === f));
 }
 
 function renderCatalog() {
@@ -888,6 +898,10 @@ function renderCatalog() {
     ? `${g.name} · ${(g.vram_mib / 1024).toFixed(1)} GB VRAM · profile ${g.profile} · recommended quantization ${g.recommended_quant}` +
       ` · about ${g.available_gb} GB free for a language model`
     : "GPU not detected";
+  document.querySelectorAll(".chip").forEach((c) => {
+    c.hidden = familyMode() && ["uncensored", "explicit"].includes(c.dataset.filter);
+    c.setAttribute("aria-pressed", String(c.dataset.filter === app.catalogFilter));
+  });
   const list = $("model-list");
   list.innerHTML = "";
   const models = filteredModels();
@@ -1035,6 +1049,12 @@ function applySettings() {
   $("quick-end-silence").value = s.end_silence_ms;
   $("quick-end-silence-out").textContent = `${(s.end_silence_ms / 1000).toFixed(1)} s`;
   if (!$("settings").hidden) renderSettings();
+  if (app.characters.length) renderCharacters();
+  if (app.familyShown !== familyMode()) {  // family mode changes what the catalog shows
+    app.familyShown = familyMode();
+    if (familyMode() && ["uncensored", "explicit"].includes(app.catalogFilter)) app.catalogFilter = "all";
+    renderCatalog();
+  }
   $("messages").classList.toggle("hide-actions", !s.show_actions);
   renderHeader();
   renderCurrentModel();
@@ -1172,7 +1192,9 @@ function renderCharacters() {
   const list = $("char-list");
   list.innerHTML = "";
   const activeId = app.character && app.character.id;
-  for (const c of app.characters) {
+  const visible = app.characters.filter((c) => !familyMode() || !c.adult);
+  if (familyMode() && app.character && app.character.adult && visible.length) selectCharacter(visible[0].id);
+  for (const c of visible) {
     const active = c.id === activeId;
     const btn = el("button", { type: "button", class: "char" + (active ? " active" : ""),
                                title: c.persona || c.name, onclick: () => selectCharacter(c.id) },
@@ -1225,7 +1247,7 @@ function fillVoiceOptions(sel, value) {
 function fillModelOptions(sel, value) {
   sel.innerHTML = "";
   sel.append(new Option("Use the selected model", ""));
-  for (const m of app.models) {
+  for (const m of app.models.filter(modelAllowed)) {
     for (const file of m.downloaded_files) {
       const q = m.quants.find((x) => x.file === file);
       sel.append(new Option(q ? `${m.name} · ${q.quant}` : `${m.name} · ${file}`, file));
@@ -1241,7 +1263,7 @@ function openEditor(id) {
   const d = c || { name: "", avatar_initials: "", kind: "roleplay", persona: "", system_prompt: "", greeting: "",
                    voice: app.settings.voice, model: "", voice_output: true, show_actions_as_text: true,
                    memory_enabled: true, recording_enabled: true, avatar: "", background: "", background_fade: 80,
-                   text_color: "", director_notes: [] };
+                   text_color: "", director_notes: [], adult: false };
   app.editLook = { avatar: d.avatar || "", background: d.background || "", text_color: d.text_color || "",
                    director_notes: d.director_notes || [] };
   $("ce-bg-fade").value = d.background_fade ?? 80;
@@ -1258,9 +1280,11 @@ function openEditor(id) {
   $("ce-actions").checked = d.show_actions_as_text;
   $("ce-memory").checked = d.memory_enabled;
   $("ce-recording").checked = d.recording_enabled;
+  $("ce-adult").checked = !!d.adult;
   $("ce-scene").value = SCENES[d.scene] ? d.scene : "plain";
   $("ce-delete").hidden = !c;
   $("ce-duplicate").hidden = !c;
+  $("ce-export").hidden = !c;
   renderEditorLook();
   $("app").classList.remove("show-left");
   $("char-editor").hidden = false;
@@ -1294,9 +1318,45 @@ function saveEditor(ev) {
     background_fade: Number($("ce-bg-fade").value),
     text_color: app.editLook.text_color,
     director_notes: app.editLook.director_notes,
+    adult: $("ce-adult").checked,
   };
   send({ type: "save_character", id: app.editingId, character });
   closeEditor();
+}
+
+async function exportEdited() {
+  if (!app.editingId) return;
+  try {
+    const r = await fetch(`/api/characters/${encodeURIComponent(app.editingId)}/export`);
+    if (!r.ok) throw new Error((await r.json()).error);
+    const match = /filename\*=UTF-8''([^;]+)/.exec(r.headers.get("content-disposition") || "");
+    const a = el("a", { href: URL.createObjectURL(await r.blob()),
+                        download: match ? decodeURIComponent(match[1]) : "character.llt-character.json" });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    toast("Saved to your downloads folder. Memory and cloned voices are never included.", "info");
+  } catch (err) {
+    toast(`The character could not be exported. ${err.message || ""}`);
+  }
+}
+
+async function importCharacter() {
+  const file = await new Promise((resolve) => {
+    const input = el("input", { type: "file", accept: ".json,application/json" });
+    input.onchange = () => resolve(input.files[0] || null);
+    input.click();
+  });
+  if (!file) return;
+  try {
+    const r = await fetch("/api/characters/import", { method: "POST", body: file,
+                                                       headers: { "Content-Type": "application/json" } });
+    const result = await r.json();
+    if (!r.ok) toast(result.error || "The character could not be imported.");
+  } catch {
+    toast("The character could not be imported — is the app still running?");
+  }
 }
 
 function duplicateEdited() {
@@ -1582,6 +1642,7 @@ function renderSettings() {
   renderContext();
   renderProfileTable();
   $("set-record-sessions").checked = !!s.record_sessions;
+  $("set-family").checked = !!s.family_mode;
   setSelect($("session-bitrate"), String(s.session_bitrate_kbps), `${s.session_bitrate_kbps} kbit/s`);
   $("session-gap").value = s.session_gap_ms;
   $("session-gap-out").textContent = `${(s.session_gap_ms / 1000).toFixed(1)} s`;
@@ -2188,6 +2249,9 @@ function init() {
   $("close-editor").onclick = closeEditor;
   $("ce-cancel").onclick = closeEditor;
   $("ce-duplicate").onclick = duplicateEdited;
+  $("ce-export").onclick = exportEdited;
+  $("import-char").onclick = importCharacter;
+  $("set-family").onchange = (e) => changeSetting("family_mode", e.target.checked);
   $("ce-delete").onclick = deleteEdited;
   $("char-editor").onclick = (e) => { if (e.target === $("char-editor")) closeEditor(); };
   $("fact-form").onsubmit = (ev) => {

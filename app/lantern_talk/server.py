@@ -40,11 +40,12 @@ import sys
 import threading
 import webbrowser
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 import uvicorn
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -176,6 +177,36 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
         return JSONResponse(result)
 
     images = ImageStore(paths.images)
+
+    @app.get("/api/characters/{char_id}/export")
+    async def export_character(char_id: str, request: Request) -> Any:
+        if not same_site(request):  # only our own page may read characters
+            return JSONResponse({"error": "Forbidden"}, status_code=403)
+        assert hub.engine is not None
+        try:
+            name, data = await asyncio.to_thread(hub.engine.export_character, char_id)
+        except UserError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=404)
+        quoted = quote(name)
+        return Response(data, media_type="application/json",
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quoted}",
+                                 "Cache-Control": "no-store"})
+
+    @app.post("/api/characters/import")
+    async def import_character(request: Request) -> JSONResponse:
+        if request.headers.get("origin") not in allowed_origins:
+            return JSONResponse({"error": "Forbidden"}, status_code=403)
+        body = bytearray()
+        async for chunk in request.stream():
+            body += chunk
+            if len(body) > 4 * MAX_IMAGE_BYTES:
+                return JSONResponse({"error": "The file is too large."}, status_code=413)
+        assert hub.engine is not None
+        try:
+            result = await asyncio.to_thread(hub.engine.import_character, bytes(body))
+        except UserError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return JSONResponse(result)
 
     @app.get("/api/images/{name}")
     async def image(name: str, request: Request) -> Any:

@@ -238,3 +238,15 @@ def test_pictures_are_uploaded_and_served_only_to_the_app(tmp_path: Path) -> Non
         assert got.status_code == 200 and got.content == webp and got.headers["content-type"] == "image/webp"
         assert c.get(f"/api/images/{name}", headers={"sec-fetch-site": "cross-site"}).status_code == 403
         assert c.get("/api/images/..%5Csettings.json").status_code == 404
+
+
+
+def test_character_files_only_for_the_app(client: TestClient) -> None:
+    engine: FakeEngine = client.engine  # type: ignore[attr-defined]
+    engine.export_character = lambda char_id: ("Max.llt-character.json", b'{"format": "x"}')
+    engine.import_character = lambda data: {"name": "Max"}
+    r = client.get("/api/characters/max/export")
+    assert r.status_code == 200 and "Max.llt-character.json" in r.headers["content-disposition"]
+    assert client.get("/api/characters/max/export", headers={"sec-fetch-site": "cross-site"}).status_code == 403
+    assert client.post("/api/characters/import", content=b"{}", headers={"origin": "http://evil.example"}).status_code == 403
+    assert client.post("/api/characters/import", content=b"{}", headers=GOOD_ORIGIN).json() == {"name": "Max"}

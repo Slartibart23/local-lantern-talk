@@ -30,7 +30,7 @@ from typing import Any
 import numpy as np
 
 from .audio_prep import VOICE_EXTENSIONS
-from .characters import TEXT_COLORS, Character, CharacterError, CharacterStore
+from .characters import TEXT_COLORS, Character, CharacterError, CharacterStore, slugify
 from .downloads import DownloadJob
 from .errors import describe as describe_error
 from .gpu import query_gpu
@@ -76,6 +76,7 @@ PLAYBACK_WAIT_MARGIN_S = 15.0     # safety timeout if the browser never reports 
 LANGUAGE_CONFIDENCE = 0.6         # below this, keep the previously detected language
 MAX_VOICE_UPLOAD_BYTES = 50 * 2**20
 TALK_MODES = ("auto", "smart", "ptt")
+CHARACTER_FILE_FORMAT = "local-lantern-talk-character"
 MAX_COLLECT_S = 120.0             # push-to-talk / "Hold on" end by themselves after this
 
 EmitFn = Callable[[dict[str, Any], bytes | None], None]
@@ -369,6 +370,76 @@ class Engine:
             raise UserError(str(exc)) from exc
         self._fresh_images[name] = time.monotonic()
         return {"name": name}
+
+    # -- character files (export / import) ---------------------------------------------------
+    def export_character(self, char_id: str) -> tuple[str, bytes]:
+        """One character as a file: settings, look and pictures; never its memory or a cloned voice."""
+        import base64
+        import json
+
+        c = self.characters.get(char_id)
+        if c is None:
+            raise UserError("This character no longer exists.")
+        data = c.to_dict()
+        data.pop("id", None)
+        if data["voice"].startswith("custom:"):
+            data["voice"] = ""  # a cloned voice belongs to its speaker and is not passed on
+        pictures = {}
+        for key in ("avatar", "background"):
+            path = self.images.path(data[key])
+            if path is not None:
+                pictures[key] = {"file": path.suffix.lstrip("."), "data": base64.b64encode(path.read_bytes()).decode()}
+            data[key] = ""
+        payload = {"format": CHARACTER_FILE_FORMAT, "version": 1, "app": __version__, "character": data,
+                   "pictures": pictures}
+        name = re.sub(r"[^\w\- ]+", "", c.name).strip() or "character"
+        return f"{name}.llt-character.json", json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
+
+    def import_character(self, raw: bytes) -> dict[str, str]:
+        """Add a character from an exported file (called from the web server thread)."""
+        import base64
+        import binascii
+        import json
+
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise UserError("This is not a Local Lantern Talk character file.") from exc
+        if not isinstance(payload, dict) or payload.get("format") != CHARACTER_FILE_FORMAT \
+                or not isinstance(payload.get("character"), dict):
+            raise UserError("This is not a Local Lantern Talk character file.")
+        data = dict(payload["character"])
+        data.pop("id", None)
+        if data.get("voice") and str(data["voice"]).startswith("custom:"):
+            data["voice"] = ""
+        if data.get("voice"):
+            try:
+                self._voice_ref(str(data["voice"]))
+            except UserError:
+                data["voice"] = ""
+        if not data.get("voice"):
+            data["voice"] = DEFAULT_VOICE
+        for key in ("avatar", "background"):
+            data[key] = ""
+            picture = (payload.get("pictures") or {}).get(key)
+            if isinstance(picture, dict) and picture.get("data"):
+                try:
+                    data[key] = self.add_image("avatar" if key == "avatar" else "background",
+                                               base64.b64decode(picture["data"], validate=True))["name"]
+                except (binascii.Error, ValueError, UserError):
+                    log.warning("Skipping an unusable %s in an imported character", key)
+        if self.characters.get(slugify(str(data.get("name", "")))) is not None:
+            data["name"] = f"{str(data.get('name', '')).strip()} (imported)"[:60]
+        self._commands.put(("import_character", data))
+        return {"name": str(data.get("name", ""))}
+
+    def _handle_import_character(self, data: dict[str, Any]) -> None:
+        try:
+            char = self.characters.save(data)
+        except CharacterError as exc:
+            raise UserError(f"The character could not be imported: {exc}") from exc
+        self._emit_character_state()
+        self._emit({"type": "notice", "message": f"{char.name} was imported. Pick them on the left to talk to them."})
 
     def _cleanup_images(self) -> None:
         """Pictures no character and no profile uses any more are removed (uploads of the last hour stay)."""
@@ -676,6 +747,7 @@ class Engine:
             "pin_note": self._handle_pin_note,
             "unpin_note": self._handle_unpin_note,
             "continue": lambda _: self._turn("", self.last_language, "director"),
+            "import_character": self._handle_import_character,
         }
         while True:
             name, arg = self._commands.get()

@@ -40,6 +40,7 @@ class Settings:
     user_about: str = ""                # a few sentences about you, sent to every character
     user_avatar: str = ""               # picture in user_data\images
     user_color: str = ""                # text colour of your messages (characters.TEXT_COLORS)
+    family_mode: bool = False           # hide uncensored / explicit models and adults-only characters
 
     def update(self, values: dict[str, Any]) -> dict[str, Any]:
         """Apply known keys with type coercion; returns the keys that changed."""

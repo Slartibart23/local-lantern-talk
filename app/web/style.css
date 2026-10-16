@@ -291,6 +291,10 @@ input[type="range"] { width: 100%; accent-color: var(--amber); }
 .char-list li:hover .char-edit, .char-edit:focus-visible, .char.active + .char-edit { opacity: 1; }
 .char-edit:hover { color: var(--amber); background: var(--panel); }
 .new-char { width: 100%; margin-top: 8px; font-size: 13px; }
+.char-buttons { display: flex; gap: 6px; }
+.char-buttons .new-char { flex: 1; }
+.import-char { margin-top: 8px; font-size: 13px; padding: 8px 10px; }
+.chip[hidden] { display: none; }
 #edit-active-char { width: 34px; height: 34px; }
 #edit-active-char svg { width: 16px; height: 16px; }
 .editor-panel { width: min(720px, 96vw); }

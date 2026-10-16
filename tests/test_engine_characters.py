@@ -398,3 +398,33 @@ def test_director_notes(setup) -> None:  # noqa: ANN001
     engine2.unpin_note(0)
     _wait(rec2, "director", start)
     assert engine2.characters.get("lena").director_notes == []
+
+
+
+def test_export_and_import_a_character(setup) -> None:  # noqa: ANN001
+    import json
+
+    engine, comps, rec = setup()
+    png = b"\x89PNG\r\n\x1a\n" + b"\x01" * 32
+    avatar = engine.add_image("avatar", png)["name"]
+    max_char = engine.characters.get("max")
+    start = len(rec.events)
+    engine.save_character({**max_char.to_dict(), "avatar": avatar, "voice": "builtin:en_male",
+                           "director_notes": ["Speaks like a pirate."], "text_color": "lime"}, "max")
+    _wait(rec, "character", start)
+    _turn(engine, rec, "Remember: my dog is called Bello.")  # memory is never exported
+    name, data = engine.export_character("max")
+    assert name == "Max.llt-character.json"
+    payload = json.loads(data)
+    assert payload["format"] == "local-lantern-talk-character" and "id" not in payload["character"]
+    assert payload["character"]["avatar"] == "" and payload["pictures"]["avatar"]["file"] == "png"
+    assert "Bello" not in data.decode("utf-8")
+    start = len(rec.events)
+    assert engine.import_character(data) == {"name": "Max (imported)"}
+    _wait(rec, "notice", start)
+    copy = next(c for c in engine.characters.list() if c.name == "Max (imported)")
+    assert copy.id != "max" and copy.director_notes == ["Speaks like a pirate."] and copy.text_color == "lime"
+    assert copy.avatar and copy.avatar != avatar and engine.images.path(copy.avatar).read_bytes() == png
+    assert engine.memory.active_messages(copy.id) == []
+    with pytest.raises(Exception, match="not a Local Lantern Talk character file"):
+        engine.import_character(b'{"hello": 1}')
