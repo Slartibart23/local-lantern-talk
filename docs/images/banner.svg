@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320" width="1280" height="320" role="img" aria-labelledby="t d">
+  <title id="t">Local Lantern Talk</title>
+  <desc id="d">Talk to a local AI by voice. Fully offline, on your own NVIDIA GPU.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#121316"/>
+      <stop offset=".55" stop-color="#1b1510"/>
+      <stop offset="1" stop-color="#2a170c"/>
+    </linearGradient>
+    <radialGradient id="warm" cx="17%" cy="62%" r="42%">
+      <stop offset="0" stop-color="#ffb347" stop-opacity=".42"/>
+      <stop offset=".6" stop-color="#e2641e" stop-opacity=".10"/>
+      <stop offset="1" stop-color="#e2641e" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="flame" cx="50%" cy="60%" r="50%">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset=".45" stop-color="#ffc35a"/>
+      <stop offset="1" stop-color="#f2a93b" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffcf73" stop-opacity=".95"/>
+      <stop offset="1" stop-color="#e2641e" stop-opacity=".85"/>
+    </linearGradient>
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fff4dc"/>
+      <stop offset="1" stop-color="#f2c67a"/>
+    </linearGradient>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6"/></filter>
+  </defs>
+
+  <rect width="1280" height="320" rx="24" fill="url(#bg)"/>
+  <rect width="1280" height="320" rx="24" fill="url(#warm)"/>
+
+  <!-- fairy lights -->
+  <path d="M 30 22 Q 640 96 1250 22" fill="none" stroke="#5a4a3a" stroke-width="2"/>
+  <g>
+    <circle cx="110" cy="38" r="9" fill="#ffcf5a" opacity=".35" filter="url(#soft)"/><circle cx="110" cy="38" r="4" fill="#ffcf5a"/>
+    <circle cx="230" cy="49" r="9" fill="#ff7a6a" opacity=".35" filter="url(#soft)"/><circle cx="230" cy="49" r="4" fill="#ff7a6a"/>
+    <circle cx="350" cy="57" r="9" fill="#8fd18a" opacity=".35" filter="url(#soft)"/><circle cx="350" cy="57" r="4" fill="#8fd18a"/>
+    <circle cx="470" cy="62" r="9" fill="#7fb2e5" opacity=".35" filter="url(#soft)"/><circle cx="470" cy="62" r="4" fill="#7fb2e5"/>
+    <circle cx="590" cy="65" r="9" fill="#ffcf5a" opacity=".35" filter="url(#soft)"/><circle cx="590" cy="65" r="4" fill="#ffcf5a"/>
+    <circle cx="710" cy="65" r="9" fill="#ff7a6a" opacity=".35" filter="url(#soft)"/><circle cx="710" cy="65" r="4" fill="#ff7a6a"/>
+    <circle cx="830" cy="62" r="9" fill="#8fd18a" opacity=".35" filter="url(#soft)"/><circle cx="830" cy="62" r="4" fill="#8fd18a"/>
+    <circle cx="950" cy="57" r="9" fill="#7fb2e5" opacity=".35" filter="url(#soft)"/><circle cx="950" cy="57" r="4" fill="#7fb2e5"/>
+    <circle cx="1070" cy="49" r="9" fill="#ffcf5a" opacity=".35" filter="url(#soft)"/><circle cx="1070" cy="49" r="4" fill="#ffcf5a"/>
+    <circle cx="1190" cy="38" r="9" fill="#ff7a6a" opacity=".35" filter="url(#soft)"/><circle cx="1190" cy="38" r="4" fill="#ff7a6a"/>
+  </g>
+
+  <!-- the lantern -->
+  <g transform="translate(118 92)">
+    <ellipse cx="80" cy="110" rx="110" ry="100" fill="#ffb347" opacity=".16" filter="url(#soft)"/>
+    <line x1="80" y1="-6" x2="80" y2="18" stroke="#8a6a46" stroke-width="5" stroke-linecap="round"/>
+    <path d="M58 18 h44 M80 18 v8" stroke="#c99a5a" stroke-width="6" stroke-linecap="round"/>
+    <path d="M44 48 L54 26 h52 l10 22 Z" fill="#3a2a1e" stroke="#c99a5a" stroke-width="4" stroke-linejoin="round"/>
+    <rect x="40" y="48" width="80" height="112" rx="16" fill="url(#glass)" stroke="#c99a5a" stroke-width="5"/>
+    <path d="M60 52 v104 M100 52 v104" stroke="#a8743c" stroke-width="3" opacity=".6"/>
+    <ellipse cx="80" cy="112" rx="24" ry="34" fill="url(#flame)"/>
+    <path d="M80 86 C92 102 90 118 80 126 C70 118 68 102 80 86 Z" fill="#fff6d8"/>
+    <rect x="36" y="158" width="88" height="14" rx="5" fill="#3a2a1e" stroke="#c99a5a" stroke-width="4"/>
+  </g>
+
+  <!-- title and tagline -->
+  <text x="332" y="160" font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="68" font-weight="700" fill="url(#title)" letter-spacing="-1">Local Lantern Talk</text>
+  <text x="335" y="206" font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="23" fill="#d8d2c6">Talk to a local AI — by voice. Fully offline, on your own NVIDIA GPU.</text>
+
+  <!-- feature pills -->
+  <g font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" fill="#f2c67a">
+    <rect x="335" y="234" width="132" height="34" rx="17" fill="#f2a93b" fill-opacity=".12" stroke="#f2a93b" stroke-opacity=".55"/>
+    <text x="401" y="256" text-anchor="middle">Voice cloning</text>
+    <rect x="479" y="234" width="112" height="34" rx="17" fill="#f2a93b" fill-opacity=".12" stroke="#f2a93b" stroke-opacity=".55"/>
+    <text x="535" y="256" text-anchor="middle">Characters</text>
+    <rect x="603" y="234" width="100" height="34" rx="17" fill="#f2a93b" fill-opacity=".12" stroke="#f2a93b" stroke-opacity=".55"/>
+    <text x="653" y="256" text-anchor="middle">Memory</text>
+    <rect x="715" y="234" width="170" height="34" rx="17" fill="#f2a93b" fill-opacity=".12" stroke="#f2a93b" stroke-opacity=".55"/>
+    <text x="800" y="256" text-anchor="middle">Smart turn-taking</text>
+    <rect x="897" y="234" width="120" height="34" rx="17" fill="#7cc48a" fill-opacity=".12" stroke="#7cc48a" stroke-opacity=".6"/>
+    <text x="957" y="256" text-anchor="middle" fill="#9fdcaa">100 % local</text>
+  </g>
+
+  <!-- voice wave -->
+  <g fill="#f2a93b" opacity=".85" transform="translate(1124 146) scale(.92)">
+    <rect x="0" y="22" width="9" height="36" rx="4.5"/>
+    <rect x="18" y="6" width="9" height="68" rx="4.5"/>
+    <rect x="36" y="-14" width="9" height="108" rx="4.5"/>
+    <rect x="54" y="10" width="9" height="60" rx="4.5"/>
+    <rect x="72" y="-4" width="9" height="88" rx="4.5"/>
+    <rect x="90" y="18" width="9" height="44" rx="4.5"/>
+    <rect x="108" y="28" width="9" height="24" rx="4.5"/>
+  </g>
+</svg>

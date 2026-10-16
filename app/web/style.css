@@ -558,6 +558,7 @@ body.busy .msg-actions { display: none; }
 .talk-mode[aria-checked="true"] { background: var(--amber-soft); color: var(--amber); font-weight: 600; }
 .talk-btn { min-width: 108px; user-select: none; touch-action: none; }
 .talk-btn:disabled { opacity: .45; cursor: not-allowed; }
+.talk-btn[hidden] { display: none; }
 .talk-btn.collecting { background: var(--amber); border-color: var(--amber); color: var(--amber-text); font-weight: 600;
   animation: pulse 2s ease-in-out infinite; }
 .status { min-width: 240px; }

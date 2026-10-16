@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="docs/images/banner.svg" width="100%"
+       alt="Local Lantern Talk — talk to a local AI by voice. Fully offline, on your own NVIDIA GPU.">
+</p>
+
 # Local Lantern Talk
 
 Talk to a local AI — by voice or by typing — and hear it answer in a natural voice,
@@ -6,7 +11,14 @@ Windows app: the language model, speech recognition and speech synthesis all run
 your own NVIDIA GPU. After installation it works offline, and nothing you say leaves
 your computer.
 
-![The conversation screen: a roleplay chat with Elara, the tavern keeper](docs/images/conversation.png)
+### The web UI in action
+
+![Local Lantern Talk in action: you ask Elara, the tavern keeper, for a room; she answers while her voice
+plays, then a director's note lets a stranger walk in and she reacts — with her avatar, a washed-out tavern
+background, the talk modes Auto / Smart / Push to talk and the Director's note field under the chat](docs/images/webui-in-action.gif)
+
+*A roleplay chat with Elara: talk modes under the chat, a pinned and a one-time director's note, avatars
+for her and for you, and a washed-out background picture. The pictures are drawn for the demo.*
 
 ## Features
 
@@ -49,9 +61,9 @@ your computer.
 - **Portable** — everything lives in one folder: no admin rights, no registry entries,
   nothing in your user profile. Delete the folder and it is gone.
 
-| Model catalog | Character editor | Settings |
-|---|---|---|
-| ![Model catalog](docs/images/model-catalog.png) | ![Character editor](docs/images/character-editor.png) | ![Settings](docs/images/settings.png) |
+| Conversation | Model catalog | Character editor | Settings |
+|---|---|---|---|
+| ![Conversation](docs/images/conversation.png) | ![Model catalog](docs/images/model-catalog.png) | ![Character editor](docs/images/character-editor.png) | ![Settings](docs/images/settings.png) |
 
 ## What you can do with it
 
@@ -60,7 +72,7 @@ What a conversation feels like depends on two things you choose: the **character
 say). The same app covers a wide range:
 
 | You want … | Character | Good models from the catalog |
-|---|---|---|
+|---|---|---|---|
 | Casual, funny small talk | Lena, Max, or your own cheerful character | Gemma 4 12B, Gemma 4 26B-A4B |
 | A voice assistant for questions, explanations, brainstorming, writing | Lena, Max, or your own expert character | Gemma 4 26B-A4B (best German), Mistral Small 3.2, Qwen 3.8 27B |
 | In-depth, well-founded discussions | A knowledgeable character, e.g. a professor or a specialist | Gemma 4 26B-A4B, Mistral Small 3.2, Qwen 3.8 27B |
@@ -117,7 +129,7 @@ word on an RTX 5090. More technical details: [docs/architecture.md](docs/archite
 ## Requirements
 
 | | Minimum | Recommended |
-|---|---|---|
+|---|---|---|---|
 | GPU | NVIDIA RTX with **10 GB VRAM** (e.g. RTX 3080) | NVIDIA RTX with **24 GB+ VRAM** (RTX 4090 / 5090) |
 | System RAM | 16 GB | 32 GB |
 | Free disk space | ~30 GB (install + one small model), SSD recommended | ~100 GB (several models) |

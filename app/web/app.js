@@ -272,6 +272,7 @@ function setState(state, detail) {
   $("pause-btn").disabled = !app.settings.mic_enabled;
   const busy = state === "thinking" || state === "speaking";
   $("stop-btn").hidden = !busy;
+  $("talk-btn").hidden = busy && !app.collecting;  // Stop takes its place while the character answers
   document.body.classList.toggle("busy", busy || state === "loading");
   if (state !== "listening") $("meter-fill").style.width = "0";
   document.querySelectorAll("#messages .msg.speaking").forEach((m) => m.classList.remove("speaking"));
@@ -776,7 +777,7 @@ function renderCurrentModel() {
 // ---------------------------------------------------------------- context length (Settings → Language model)
 
 function fmtTokens(n) {
-  return Number(n).toLocaleString("en-US").replace(/,/g, " ");
+  return Number(n).toLocaleString("en-US").replace(/,/g, "\u202f");  // narrow no-break space: never wraps
 }
 
 // Half of the context holds the conversation; ~3.5 characters per token and ~7 per word (incl. space).
