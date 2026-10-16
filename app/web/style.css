@@ -438,7 +438,9 @@ body.decorated .brand-icon { color: #e5533d; filter: drop-shadow(0 0 6px rgba(22
 /* ---- scenes (per character; Settings → Appearance) ---------------------------------------- */
 .center { position: relative; }
 .center > :not(.scene-fx):not(.chat-bg) { position: relative; z-index: 1; }
-.center > .garland { z-index: 3; }
+.center > .garland:not(.scene-fx):not(.chat-bg) { z-index: 3; }
+/* The "+ Add" menu opens over the chat, the portraits and the lights (as specific as the rule above). */
+.center > .cast-bar:not(.scene-fx):not(.chat-bg) { z-index: 4; }
 .scene-fx { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 .side-art { margin-top: auto; padding: 12px 0 4px; display: flex; justify-content: center; pointer-events: none; }
 .side-art:empty { padding: 0; }
