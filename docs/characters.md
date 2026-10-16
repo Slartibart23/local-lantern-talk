@@ -38,7 +38,14 @@ touched.
 
 ## Creating and editing characters
 
-- **+ New character** (left panel) opens the editor with an empty character.
+- **+ New character** (left panel) opens the editor with a **template** for the chosen type
+  (Assistant or Roleplay): replace the parts in [brackets] with your own words. *Use
+  template* fills it in again; switching the type of a new character switches the template.
+- **Write from profile ✨**: write only the name and the **profile** in your own words (any
+  language, e.g. "Hilde, 72, Bäckerin aus dem Schwarzwald, warmherzig, etwas stur"). The
+  loaded language model then drafts the instructions, how the character speaks, how it
+  behaves in a group, a short description and a greeting. You see the draft in the editor
+  and change it before you save; nothing is saved by itself.
 - The **pencil** next to a character (or next to the name in the header) edits it.
 - **Duplicate** creates a copy named "… (copy)" to experiment with.
 - **Export…** saves the character as one file (`<name>.llt-character.json` in your
@@ -58,6 +65,8 @@ touched.
 | **Short description** | One line shown as a tooltip in the list and on the profile card. |
 | **Profile** | The profile card for you: age, background, personality. Shown when you click the character's picture; the model does not see it. |
 | **Personality and instructions** | The most important field: who the character is. See below. |
+| **How they speak** | Tone, word choice, sentence length, habits ("short, dry sentences; calls everyone *stranger*"). Added to the instructions, alone and in groups. |
+| **In a group** | How the character behaves with other characters ("takes the lead", "teases whoever spoke last"). Only used in [group chats and story mode](group-chat.md). |
 | **Greeting** | The first message of every new conversation. It is shown as text, not spoken. |
 | **Scene** | The look of the chat: *Tavern*, *Space*, *Red lantern*, *Study* or *Plain* — background, accent colour, fairy-light colours and cliparts in the side panels. Every example character comes with a scene. Switch decorations off in **Settings → Appearance**. |
 | **Avatar** | A picture of the character, shown in the list, in the header and as a portrait at the top left of the chat. Choose any JPG, PNG or WebP photo; you move and zoom it to fit the circle, and the app shrinks it to 768 × 768 pixels. The portrait size is set in **Settings → Appearance → Avatar size**: *Small* (header only), *Medium* or *Large*. Portraits grow with the window height (Medium about 245 px, Large about 390 px on a 2560 × 1440 screen), get smaller in narrow windows and are hidden on very small ones. |
@@ -123,6 +132,9 @@ mentioning or answering it.
 | **Pin** | The note applies to every reply until you remove it (✕ on its card above the field). Pinned notes belong to the character and stay after *End chat* and restarts. Example: "It is a stormy night." Up to 8 per character. |
 | **Continue ▶** | The character goes on by itself, without you saying anything — with the note, if you typed one. Example: "A stranger in a grey cloak walks in." |
 
+In a [group chat](group-chat.md#directors-notes-in-a-group) a list next to the field
+chooses who the note is for: everyone, or one character.
+
 Notes appear dimmed in the chat (🎬 …) so you can see where you steered. They are never
 spoken and never appear in the session transcript. Bigger models (24B and more) follow
 them most reliably.
@@ -136,8 +148,11 @@ Point at a message to see its buttons:
   once this way, always from the end. Messages that are already folded into the memory
   summary can no longer be deleted.
 - **↻ Write again** (last reply) lets the character answer your last message again.
-- **✎ Edit** (your last message) puts it into the message box; send it to get a new
-  answer.
+- **✎ Edit** changes the text of any message that can still be deleted; the messages after
+  it stay, and the model sees the new text from now on. A **character's reply** is spoken
+  again with its voice and replaces the old audio in the session recording. **Your own
+  message** keeps your recorded voice; only its text changes. For your last message,
+  *Save and answer again* lets the character answer the new text (the old answer goes).
 - **■ Stop** (next to *Pause listening*, or Esc) stops a reply that is being written or
   spoken. What was written so far stays.
 

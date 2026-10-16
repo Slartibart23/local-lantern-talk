@@ -11,7 +11,8 @@ import numpy as np
 PREP_SAMPLE_RATE = 24_000
 # Formats ffmpeg reads; messenger voice notes are often .opus / .ogg, iPhone memos .m4a.
 VOICE_EXTENSIONS = (".mp3", ".wav", ".flac", ".ogg", ".opus", ".m4a", ".aac", ".webm")
-RECOMMENDED_S = (3.0, 10.0)
+MIN_S = 3.0
+RECOMMENDED_S = (10.0, 13.0)
 TRIM_ABOVE_S = 20.0
 NOISY_BELOW_DB = 15.0
 CLIPPING_FRACTION = 0.001
@@ -86,8 +87,11 @@ def analyze(original: np.ndarray, prepared: np.ndarray, sample_rate: int = PREP_
 
     warnings = []
     low, high = RECOMMENDED_S
-    if duration < low:
-        warnings.append(f"Only {duration:.1f} s of sound; {low:.0f}-{high:.0f} s of clean speech clone best.")
+    if duration < MIN_S:
+        warnings.append(f"Only {duration:.1f} s of sound; too little to copy the voice. "
+                        f"{low:.0f}-{high:.0f} s of clean speech clone best.")
+    elif duration < low:
+        warnings.append(f"{duration:.1f} s long; works, but {low:.0f}-{high:.0f} s usually clone best.")
     elif duration > TRIM_ABOVE_S:
         warnings.append(f"{duration:.0f} s long; without your own reference text only the first 15 s are used. "
                         f"{low:.0f}-{high:.0f} s work best.")

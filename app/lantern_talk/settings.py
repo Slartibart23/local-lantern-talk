@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import threading
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +42,10 @@ class Settings:
     user_avatar: str = ""               # picture in user_data\images
     user_color: str = ""                # text colour of your messages (characters.TEXT_COLORS)
     family_mode: bool = False           # hide uncensored / explicit models and adults-only characters
+    group: list[str] = field(default_factory=list)   # the other characters in the chat (group chat; up to 3)
+    group_mode: str = "chat"            # chat (you lead the talk) | story (the characters tell a story)
+    story_rules: str = ""               # what every character is told in story mode; "" = the built-in rules
+    recent_groups: list[list[str]] = field(default_factory=list)  # for opening a group chat again
 
     def update(self, values: dict[str, Any]) -> dict[str, Any]:
         """Apply known keys with type coercion; returns the keys that changed."""
@@ -51,6 +55,9 @@ class Settings:
                 continue
             current = getattr(self, f.name)
             value = values[f.name]
+            if isinstance(current, list) and not isinstance(value, list):
+                log.warning("Ignoring invalid value for setting %s: %r", f.name, value)
+                continue
             try:
                 value = type(current)(value) if not isinstance(current, bool) else bool(value)
             except (TypeError, ValueError):

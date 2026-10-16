@@ -126,9 +126,14 @@ def test_replay_info_and_migration_of_old_databases(tmp_path: Path) -> None:
     old = mem.active_messages("lena")[0]
     assert old.content == "alt" and old.replay_session is None
     mid = mem.add_message("lena", "assistant", "neu")
-    mem.set_replay(mid, "2026-10-13_1538_lena", 12.5, 3.25)
+    mem.set_replay(mid, "2026-10-13_1538_lena", 3, "0003 Lena.mp3", 3.25)
     new = mem.active_messages("lena")[1]
-    assert (new.replay_session, new.replay_offset, new.replay_duration) == ("2026-10-13_1538_lena", 12.5, 3.25)
+    assert (new.replay_session, new.replay_seq, new.replay_part, new.replay_duration) == (
+        "2026-10-13_1538_lena", 3, "0003 Lena.mp3", 3.25)
+    mem.update_message(mid, "geändert")
+    assert mem.active_messages("lena")[1].content == "geändert"
+    mem.set_meta("lena", "session", "2026-10-13_1538_lena")
+    assert mem.meta_values("session") == {"2026-10-13_1538_lena"}
     mem.close()
 
 

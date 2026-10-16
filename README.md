@@ -31,25 +31,33 @@ for her and for you, and a washed-out background picture. The pictures are drawn
 - **Natural speech in many languages** — 8 built-in voices (German, English, Spanish,
   French × female / male), shipped with the app, that follow the language you speak, so
   a German reply never has an English accent.
-- **Voice cloning** — add a 3–10 s clip (MP3, WAV, M4A, …), tell the app its language,
+- **Voice cloning** — add a 10–13 s clip (MP3, WAV, M4A, …), tell the app its language,
   and the AI speaks with that voice. Only with the speaker's consent.
 - **Characters** — assistants like *Lena* and *Max*, roleplay characters like *Elara*
   (fantasy tavern) and *Captain Vargas* (sci-fi), or your own: describe a personality
   once, and the character behaves that way in every conversation, with its own voice,
   avatar, chat background, text colour, scene (tavern, space, red lantern, study) and,
   optionally, its own model. Export a character as a file and import it elsewhere.
+- **Group chats and story mode** — up to four characters in one chat, each with its own
+  voice, personality and way of speaking, all on the one loaded model. Lead the talk
+  yourself, or press *Play* and let them tell a story with each other while you direct,
+  pause or join in. Records as a ready-made audio drama.
 - **Director's notes** — steer the story without saying it: "A stranger walks in",
   "It is a stormy night". For the next reply, pinned for good, or *Continue* to let the
-  character go on by itself. Never spoken.
+  character go on by itself; in a group for everyone or one character. Never spoken.
 - **Edit the conversation** — delete messages from the end (also from memory and the
-  recording), let the AI write its last answer again, or change your last message.
+  recording), let the AI write its last answer again, or edit any message: a changed
+  reply is spoken again for the recording.
+- **Easy characters** — new characters start from a template, or let the model write the
+  instructions from a profile in your own words.
 - **Your profile** — your name, a few words about you and your own avatar; every
   character knows who it talks to.
 - **Memory** — characters remember earlier conversations across restarts: a short
   summary plus a list of facts you can view, edit and reset.
 - **Actions are never spoken** — `*smiles*` and stage directions are shown dimmed as
   "not spoken" (or hidden), never read aloud.
-- **Session recording** — each chat as one MP3 of the whole dialogue plus a
+- **Session recording** — each message as its own MP3 while the chat is open (so it can be
+  deleted or edited), one MP3 of the whole dialogue when the chat ends, plus a
   screenplay-style transcript; replay any message with one click.
 - **Model catalog** — German-focused assistant and roleplay models (censored,
   uncensored and explicit) with one-click download, automatic choice of the quantization
@@ -116,7 +124,7 @@ Everything runs locally on your NVIDIA GPU, in four steps per turn:
 3. **Speak** — **OmniVoice** (k2-fsa) turns the reply into speech, sentence by sentence,
    so the voice starts while the model is still writing. It speaks with one of the
    8 built-in voices (designed with OmniVoice, shipped with the app) or clones a voice
-   from a short clip you add — 3–10 s of clean speech plus its transcript, which Whisper
+   from a short clip you add — 10–13 s of clean speech plus its transcript, which Whisper
    writes for you. Built-in voices follow the language you speak. Stage directions like
    `*smiles*` are filtered out and never spoken. See [docs/voices.md](docs/voices.md).
 4. **Remember and record** — each character keeps its own memory in a local database
@@ -193,6 +201,7 @@ later without touching your models or personal data.
 | [Voices](docs/voices.md) | Built-in voices, voice cloning, what makes a good reference clip, reference texts |
 | [Language models](docs/models.md) | The catalog, quantization and GPU memory, your own models, context length |
 | [Characters](docs/characters.md) | Example characters, creating your own, writing a good personality |
+| [Group chats and story mode](docs/group-chat.md) | Up to four characters, story mode, director's notes per character |
 | [Memory](docs/memory.md) | History, summaries, facts, resetting |
 | [Session recording](docs/recording.md) | The dialogue MP3, the transcript, replay |
 | [Configuration](docs/configuration.md) | Settings, folders, `settings.json`, command-line options |

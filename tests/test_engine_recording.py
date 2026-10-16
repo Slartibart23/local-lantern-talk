@@ -24,25 +24,27 @@ def _start(setup):  # noqa: ANN001, ANN202
 
 
 def _session(engine) -> tuple[Path, dict]:  # noqa: ANN001
+    """The open session: its folder of single MP3s and its entries."""
     engine.recorder.wait_idle()
     name = engine.memory.get_meta("lena", "session")
-    return engine.paths.sessions / f"{name}.mp3", load_session(engine.paths.sessions, name)
+    return engine.paths.sessions / name, load_session(engine.paths.sessions, name)
 
 
 def test_typed_turn_records_greeting_and_reply(setup) -> None:  # noqa: F811
     engine, comps, rec = _start(setup)
     start = len(rec.events)
     _turn(engine, rec, "Hallo Lena!")
-    mp3, session = _session(engine)
+    folder, session = _session(engine)
     assert session["title"].startswith("Lena — ")
     roles = [(e["role"], e["tags"][0]) for e in session["entries"]]
     assert roles == [("assistant", "greeting"), ("user", "typed"), ("assistant", "English female")]  # language: en
     reply = session["entries"][2]
     assert reply["duration"] and reply["duration"] > 0
-    assert mp3_duration(mp3.read_bytes()) == pytest.approx(reply["offset"] + reply["duration"], abs=0.002)
+    assert mp3_duration((folder / reply["part"]).read_bytes()) == pytest.approx(reply["duration"], abs=0.002)
     # the replay view still shows the actions; the Markdown has only the spoken words
     assert reply["segments"][0] == {"kind": "action", "text": "lächelt"}
-    md = mp3.with_suffix(".md").read_text(encoding="utf-8").split("\n\n", 1)[1]
+    mp3 = folder.with_suffix(".mp3")
+    md = folder.with_suffix(".md").read_text(encoding="utf-8").split("\n\n", 1)[1]
     assert md == ("Lena: Hi, I'm Lena! Great to have you here. What's on your mind today?\n\n"
                   "You: Hallo Lena!\n\nLena: Mir geht es gut. Und dir?\n\n")
     # the browser learns where each message is
@@ -74,8 +76,8 @@ def test_spoken_turn_records_full_quality_user_audio(setup) -> None:  # noqa: F8
     assert 0.5 <= user["duration"] < 1.6       # speech + kept tail, not the 16 kHz copy's silence
     exact = {e["id"]: e for e in rec.events[start:] if e["type"] == "recorded"}
     user_id, reply_id = engine.transcript[-2]["id"], engine.transcript[-1]["id"]
-    assert exact[reply_id]["offset"] == pytest.approx(
-        exact[user_id]["offset"] + exact[user_id]["duration"] + 0.2, abs=0.001)
+    assert exact[user_id]["part"] == "0002 You.mp3" and exact[reply_id]["part"] == "0003 Lena.mp3"
+    assert engine.transcript[-2]["part"] == "0002 You.mp3"
 
 
 def test_replay_info_survives_a_restart(setup) -> None:  # noqa: F811
@@ -84,9 +86,11 @@ def test_replay_info_survives_a_restart(setup) -> None:  # noqa: F811
     engine.recorder.wait_idle()
     name = engine.memory.get_meta("lena", "session")
     engine.shutdown()
+    assert (engine.paths.sessions / f"{name}.mp3").exists()  # closing the app puts the MP3 together
     engine2, _, rec2 = _start(setup)
     reply = engine2.transcript[-1]
-    assert reply["session"] == name and reply["offset"] is not None and reply["duration"] > 0
+    assert reply["session"] == name and reply["part"] == "0003 Lena.mp3" and reply["duration"] > 0
+    assert (engine2.paths.sessions / name / reply["part"]).exists()  # the chat goes on: single files stay
     # continuing the chat appends to the same recording
     _turn(engine2, rec2, "Noch da?")
     _, session = _session(engine2)
@@ -101,6 +105,10 @@ def test_end_chat_starts_a_new_recording(setup) -> None:  # noqa: F811
     engine.new_conversation()
     _wait(rec, "character", start)
     assert engine.recorder.name is None
+    assert "one MP3" in _wait(rec, "notice", start)["message"]
+    assert "is ready" in _wait(rec, "notice", start, lambda e: "ready" in e["message"])["message"]
+    sessions = engine.paths.sessions
+    assert (sessions / f"{first}.mp3").exists() and not (sessions / first).exists()  # End chat: one MP3
     _turn(engine, rec, "Neuer Chat.")
     second = engine.memory.get_meta("lena", "session")
     assert second and second != first
@@ -156,7 +164,7 @@ def test_deleting_the_end_of_a_chat_cuts_memory_history_and_recording(setup) -> 
     engine, comps, rec = _start(setup)
     for text in ("Erste Frage.", "Zweite Frage.", "Dritte Frage."):
         _turn(engine, rec, text)
-    mp3, session = _session(engine)
+    folder, session = _session(engine)
     assert len(session["entries"]) == 7  # greeting + 3 x (question, reply)
     second = next(t for t in engine.transcript if t.get("text") == "Zweite Frage.")
     start = len(rec.events)
@@ -166,17 +174,16 @@ def test_deleting_the_end_of_a_chat_cuts_memory_history_and_recording(setup) -> 
     assert ev["deletable_from"] == ev["transcript"][1]["id"]  # the greeting stays
     assert [m.content for m in engine.memory.active_messages("lena")][1:] == ["Erste Frage.", comps.llm.reply]
     assert len(engine.conversation.history) == 3
-    mp3, session = _session(engine)
+    folder, session = _session(engine)
     assert len(session["entries"]) == 3
-    last = session["entries"][-1]
-    assert mp3_duration(mp3.read_bytes()) == pytest.approx(last["offset"] + last["duration"], abs=0.05)
-    md = mp3.with_suffix(".md").read_text(encoding="utf-8")
+    assert sorted(p.name for p in folder.iterdir()) == ["0003 Lena.mp3"]  # the greeting was text only
+    md = folder.with_suffix(".md").read_text(encoding="utf-8")
     assert "Erste Frage." in md and "Zweite Frage." not in md and md.startswith("# Lena")
-    # Talking on appends right after the cut.
+    # Talking on goes on after the cut.
     _turn(engine, rec, "Neue Frage.")
-    mp3, session = _session(engine)
+    folder, session = _session(engine)
     assert [e.get("text") for e in session["entries"] if e["role"] == "user"] == ["Erste Frage.", "Neue Frage."]
-    assert session["entries"][-1]["offset"] > last["offset"] + last["duration"]
+    assert [e["seq"] for e in session["entries"]] == [1, 2, 3, 4, 5]
 
 
 def test_regenerate_and_edit_the_last_message(setup) -> None:  # noqa: F811
@@ -191,7 +198,7 @@ def test_regenerate_and_edit_the_last_message(setup) -> None:  # noqa: F811
     assert not any(e["type"] == "user_message" for e in rec.events[start:])  # the question stays as it was
     assert [m.content for m in engine.memory.active_messages("lena")][1:] == [
         "Wie heißt du?", "Ich bin Lena, schön dich zu sehen."]
-    mp3, session = _session(engine)
+    folder, session = _session(engine)
     assert [e["role"] for e in session["entries"]] == ["assistant", "user", "assistant"]
     start = len(rec.events)
     engine.edit_last("Wie alt bist du?")
@@ -201,6 +208,39 @@ def test_regenerate_and_edit_the_last_message(setup) -> None:  # noqa: F811
     users = [t["text"] for t in engine.transcript if t["role"] == "user"]
     assert users == ["Wie alt bist du?"]
     assert [m.role for m in engine.conversation.history] == ["assistant", "user", "assistant"]
+
+
+def test_editing_a_message_changes_memory_history_and_recording(setup) -> None:  # noqa: F811
+    engine, comps, rec = _start(setup)
+    _turn(engine, rec, "Wie heißt du?")
+    _turn(engine, rec, "Und dein Hund?")
+    reply = engine.transcript[2]
+    folder, _ = _session(engine)
+    old_audio = (folder / reply["part"]).read_bytes()
+    comps.tts.synthesize = lambda text, prompt, language=None: type(  # type: ignore[method-assign]
+        "R", (), {"audio": np.full(24_000, 0.2, dtype=np.float32), "duration_s": 1.0, "seconds": 0.01})()
+    start = len(rec.events)
+    engine.edit_message(reply["id"], "*nickt* Ich heiße Lena.")
+    ev = _wait(rec, "transcript", start)
+    edited = next(t for t in ev["transcript"] if t["id"] == reply["id"])
+    assert edited["edited"] and edited["segments"] == [{"kind": "action", "text": "nickt"},
+                                                       {"kind": "speech", "text": "Ich heiße Lena."}]
+    assert len(ev["transcript"]) == 5  # the messages after it stay
+    assert engine.memory.active_messages("lena")[2].content == "*nickt* Ich heiße Lena."
+    assert engine.conversation.history[2].content == "*nickt* Ich heiße Lena."
+    folder, session = _session(engine)
+    entry = session["entries"][2]
+    assert entry["tags"][0] == "edited" and entry["segments"][1]["text"] == "Ich heiße Lena."
+    assert (folder / entry["part"]).read_bytes() != old_audio and entry["duration"] >= 1.0
+    assert "Lena: Ich heiße Lena." in folder.with_suffix(".md").read_text(encoding="utf-8")
+    # Your own message: only the text changes.
+    question = engine.transcript[3]
+    start = len(rec.events)
+    engine.edit_message(question["id"], "Und deine Katze?")
+    _wait(rec, "transcript", start)
+    assert engine.memory.active_messages("lena")[3].content == "Und deine Katze?"
+    _, session = _session(engine)
+    assert session["entries"][3]["text"] == "Und deine Katze?"
 
 
 def test_summarized_messages_cannot_be_deleted(setup) -> None:  # noqa: F811

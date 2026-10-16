@@ -59,7 +59,7 @@ def test_unreadable_file(tmp_path: Path) -> None:
 
 
 def test_analyze_clean_clip() -> None:
-    clip = speechlike(6.0, sr=PREP_SAMPLE_RATE)
+    clip = speechlike(11.0, sr=PREP_SAMPLE_RATE)
     report = analyze(clip, clip)
     assert report.warnings == [] and report.snr_db > 30 and not report.clipped
 

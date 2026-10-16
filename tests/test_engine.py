@@ -382,7 +382,7 @@ def wav_bytes(seconds: float) -> bytes:
 
 def test_add_voice_stores_clip_and_lists_it(setup) -> None:  # noqa: ANN001
     engine, comps, rec = setup
-    result = engine.add_voice("Meine Stimme.wav", wav_bytes(5))
+    result = engine.add_voice("Meine Stimme.wav", wav_bytes(11))
     assert result["id"] == "custom:Meine Stimme.wav" and result["warnings"] == []
     assert (engine.paths.voices / "Meine Stimme.wav").exists()
     assert {"id": "custom:Meine Stimme.wav", "name": "Meine Stimme"} in engine.list_voices()["custom"]

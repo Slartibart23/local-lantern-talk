@@ -95,6 +95,8 @@ closed; invalid values are ignored or rejected with a message.
 | `user_name`, `user_about` | Your profile: sent to every character with each message |
 | `user_avatar`, `user_color` | Your picture (in `user_data\images\`) and the text colour of your messages |
 | `family_mode` | Family mode on / off |
+| `group`, `group_mode`, `recent_groups` | The other characters in the chat, *chat* or *story*, and the last groups (set by the app) |
+| `story_rules` | The story rules for story mode; empty = the built-in rules |
 
 ## Command-line options
 

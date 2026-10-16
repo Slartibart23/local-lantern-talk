@@ -30,7 +30,7 @@ from typing import Any
 import numpy as np
 
 from .audio_prep import VOICE_EXTENSIONS
-from .characters import TEXT_COLORS, Character, CharacterError, CharacterStore, slugify
+from .characters import TEMPLATES, TEXT_COLORS, Character, CharacterError, CharacterStore, slugify
 from .downloads import DownloadJob
 from .errors import describe as describe_error
 from .gpu import query_gpu
@@ -47,8 +47,12 @@ from .catalog import PARTIAL_FACTOR
 from .gguf_meta import GGUFError, model_info
 from .models import ContextProfile, ModelError, ModelManager, NoGGUFError
 from .paths import Paths
+from .group import (
+    DEFAULT_STORY_RULES, IMPULSE_EVERY, IMPULSES, MAX_CAST, MAX_RULES, NamePrefixFilter, build_group_prompt, cast_title,
+    director_lines, group_key, group_messages, mentioned, next_speaker, persona_text, session_stem, stop_sequences,
+)
 from .pipeline import Conversation, ConversationConfig, SegmentEvent, SpeechAudio, TurnDone, TurnError
-from .prompts import CONTINUE_TEXT, DEFAULT_ASSISTANT_PERSONA, LANGUAGE_NAMES, user_context
+from .prompts import CONTINUE_TEXT, DEFAULT_ASSISTANT_PERSONA, LANGUAGE_NAMES, director_context, language_name, user_context
 from .recorder import CaptureBuffer, SessionItem, SessionRecorder, list_sessions, session_title, spoken_text
 from .resample import StreamingResampler
 from .sanitizer import split_segments
@@ -81,6 +85,27 @@ MAX_VOICE_UPLOAD_BYTES = 50 * 2**20
 TALK_MODES = ("auto", "smart", "ptt")
 CHARACTER_FILE_FORMAT = "local-lantern-talk-character"
 MAX_COLLECT_S = 120.0             # push-to-talk / "Hold on" end by themselves after this
+GROUP_MODES = ("chat", "story")
+STORY_AUTO_PAUSE_LINES = 50       # story mode pauses by itself after this many lines without you
+MAX_RECENT_GROUPS = 6
+SESSION_TTS_RATE = 24_000         # OmniVoice's output rate
+ENGINE_OWNED_SETTINGS = {"group", "group_mode", "recent_groups", "character"}  # changed by their own commands
+
+DRAFT_SYSTEM = "You write character sheets for a local voice chat app. You answer with JSON only."
+DRAFT_PROMPT = """Write the instructions for a character of a voice chat app from this profile.
+
+Name: {name}
+Kind: {kind}
+Profile, in the user's own words (it may be in another language):
+{profile}
+
+Answer with one JSON object with these keys:
+"system_prompt": the instructions, in English, addressed to the character in the second person ("You are {name}, ..."): age, background, personality, what they know and what they don't, the setting{extra}. 120 to 220 words. Do not write rules about formatting, markdown or speech output.
+"speaking_style": how {name} speaks (tone, word choice, sentence length, habits), in English, one or two sentences.
+"group_style": how {name} behaves in a group with other characters, in English, one or two sentences.
+"persona": a short description for the character list, in English, at most twelve words.
+"greeting": what {name} says first when the user arrives, in {language}, one to three spoken sentences{action}."""
+DRAFT_KEYS = ("system_prompt", "speaking_style", "group_style", "persona", "greeting")
 
 EmitFn = Callable[[dict[str, Any], bytes | None], None]
 
@@ -176,6 +201,14 @@ class Engine:
         self.character: Character | None = None
         self.resume: dict[str, Any] | None = None  # an unfinished chat that was loaded from memory
         self.pending_note = ""                     # director's note for the next reply
+        self.group_notes: dict[str, str] = {}      # group chats: one-time notes per character id ("" = anyone)
+        self.story_playing = False                 # story mode: the characters go on by themselves
+        self._story_gen = 0                        # Play / Pause bump this; stale "story_next" commands are dropped
+        self._story_scheduled = False              # a "story_next" command is already waiting
+        self._story_lines = 0                      # lines since you last said or directed something
+        self._lines_since_note = 0                 # story mode: lines since the last director's note or nudge
+        self.next_speaker: str | None = None       # group chats: who you picked to speak next
+        self._finishing: str | None = None         # End chat: the recording being put together
         self.replaying = False                     # a recorded message is playing in the browser
         self._msg_seq = 0                          # ids of transcript items (for replay buttons)
         self._replay_lock = threading.Lock()
@@ -184,7 +217,9 @@ class Engine:
         self.recorder = SessionRecorder(
             paths.sessions, paths.ffmpeg, self._on_recorded,
             gap_ms=lambda: self.store.settings.session_gap_ms,
-            bitrate_kbps=lambda: self.store.settings.session_bitrate_kbps)
+            bitrate_kbps=lambda: self.store.settings.session_bitrate_kbps, on_built=self._on_session_built)
+        # Chats that were closed with the app keep their single files; the others get their whole MP3.
+        self.recorder.finish_pending(self.memory.meta_values("session"))
         if self.characters.list():
             self._activate_character(s.character)
         self.segmenter = UtteranceSegmenter(
@@ -222,19 +257,57 @@ class Engine:
         self.memory.close()
 
     # -- director's notes ---------------------------------------------------------------------
-    def set_pending_note(self, text: str) -> None:
-        """A director's note for the next reply, however it is started (typed, spoken, Continue)."""
-        self._commands.put(("pending_note", " ".join(text.split())[:300]))
+    def set_pending_note(self, text: str, target: str = "") -> None:
+        """A director's note for the next reply, however it is started (typed, spoken, Continue).
 
-    def pin_note(self, text: str) -> None:
-        self._commands.put(("pin_note", text))
+        In a group chat ``target`` is the character it is meant for ("" = whoever speaks next).
+        """
+        self._commands.put(("pending_note", (" ".join(text.split())[:300], target)))
+
+    def pin_note(self, text: str, target: str = "") -> None:
+        self._commands.put(("pin_note", (text, target)))
 
     def unpin_note(self, index: int) -> None:
         self._commands.put(("unpin_note", index))
 
-    def continue_story(self) -> None:
-        """The character goes on by itself (with the pending director's note, if any)."""
-        self._commands.put(("continue", None))
+    def continue_story(self, speaker: str = "") -> None:
+        """The character goes on by itself (with the pending director's note, if any).
+
+        In a group chat one character speaks: ``speaker``, or whoever is next.
+        """
+        self._commands.put(("continue", speaker))
+
+    # -- group chats and story mode ---------------------------------------------------------------
+    def set_group(self, ids: list[str]) -> None:
+        """The other characters in the chat (up to three); [] = only the character picked on the left."""
+        self._commands.put(("set_group", [str(i) for i in ids][:MAX_CAST]))
+
+    def open_group(self, ids: list[str]) -> None:
+        """Open a group chat again (from the recent groups): the first id is the one picked on the left."""
+        self._commands.put(("open_group", [str(i) for i in ids][:MAX_CAST]))
+
+    def set_group_mode(self, mode: str) -> None:
+        self._commands.put(("group_mode", mode))
+
+    def story_play(self) -> None:
+        self._commands.put(("story_play", None))
+
+    def story_pause(self) -> None:
+        """Stop after the line that is being spoken (immediately, not queued behind the story)."""
+        if self.story_playing:
+            self.story_playing = False
+            self._story_gen += 1
+            self._emit_group()
+
+    def set_next_speaker(self, char_id: str) -> None:
+        self._commands.put(("next_speaker", char_id))
+
+    def set_premise(self, text: str) -> None:
+        self._commands.put(("premise", text))
+
+    def draft_character(self, data: dict[str, Any]) -> None:
+        """Let the loaded model write instructions, speaking style and greeting from a profile."""
+        self._commands.put(("draft_character", data))
 
     def submit_text(self, text: str) -> None:
         text = text.strip()
@@ -300,8 +373,15 @@ class Engine:
         if text:
             self._commands.put(("edit_last", text))
 
+    def edit_message(self, msg_id: int, text: str) -> None:
+        """Change the text of a message; a character's reply is spoken again in the recording."""
+        text = text.strip()
+        if text:
+            self._commands.put(("edit_message", (msg_id, text)))
+
     def stop_reply(self) -> None:
         """Stop the reply that is being written or spoken (not queued: the worker is busy with the turn)."""
+        self.story_pause()  # a story stops with it
         if self.state in (State.THINKING, State.SPEAKING):
             self.conversation.cancel.set()
             self._playback_done.set()
@@ -349,6 +429,9 @@ class Engine:
             "transcript": self.transcript,
             "deletable_from": self._deletable_from(),
             "director": self.director_view(),
+            "group": self.group_view(),
+            "templates": TEMPLATES,
+            "story_rules_default": DEFAULT_STORY_RULES,
             "components": self.components_status(),
             "voice_info": self.voice_info(),
             "character": self.character.to_dict() if self.character else None,
@@ -444,6 +527,39 @@ class Engine:
         self._emit_character_state()
         self._emit({"type": "notice", "message": f"{char.name} was imported. Pick them on the left to talk to them."})
 
+    def _handle_draft_character(self, data: dict[str, Any]) -> None:
+        """The loaded model drafts a character from its profile; the editor shows it before anything is saved."""
+        import json
+
+        name = " ".join(str(data.get("name") or "").split())[:60]
+        profile = str(data.get("profile") or "").strip()[:2000]
+        roleplay = data.get("kind") == "roleplay"
+        if not name or not profile:
+            raise UserError("Write a name and a profile first; the instructions are written from them.")
+        if not self.c.server.running:
+            raise UserError(self.fatal_error or "Load a language model first; it writes the instructions.")
+        self._set_state(State.THINKING, f"Writing the instructions for {name}…")
+        language = language_name(self._fixed_language() or self.last_language or FALLBACK_LANGUAGE) or "English"
+        extra = (", who the user is in this story, and that they stay in character and drive the story forward"
+                 if roleplay else ", what they help the user with, and that they say honestly when they don't "
+                 "know something")
+        text = self._llm_text(DRAFT_SYSTEM, DRAFT_PROMPT.format(
+            name=name, kind="roleplay character" if roleplay else "assistant", profile=profile, extra=extra,
+            language=language, action=", it may start with a short action in *asterisks*" if roleplay else ""),
+            max_tokens=1200)
+        draft: dict[str, str] = {}
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        try:
+            parsed = json.loads(match.group(0)) if match else {}
+        except ValueError:
+            parsed = {}
+        if isinstance(parsed, dict):
+            draft = {k: " ".join(str(parsed[k]).split()) for k in DRAFT_KEYS if isinstance(parsed.get(k), str)}
+        self._enter_idle()
+        if not draft.get("system_prompt"):
+            raise UserError("The model did not write usable instructions. Try again, or try another model.")
+        self._emit({"type": "character_draft", "draft": draft})
+
     def _cleanup_images(self) -> None:
         """Pictures no character and no profile uses any more are removed (uploads of the last hour stay)."""
         s = self.store.settings
@@ -468,7 +584,7 @@ class Engine:
         if not data:
             raise UserError("The file is empty.")
         if len(data) > MAX_VOICE_UPLOAD_BYTES:
-            raise UserError("The file is too large. A voice clip only needs 3-10 seconds of speech.")
+            raise UserError("The file is too large. A voice clip only needs 10-13 seconds of speech.")
         self.paths.voices.mkdir(parents=True, exist_ok=True)
         target = self._free_voice_path(_safe_stem(Path(name).stem), suffix)
         target.write_bytes(data)
@@ -749,9 +865,17 @@ class Engine:
             "pending_note": self._handle_pending_note,
             "pin_note": self._handle_pin_note,
             "unpin_note": self._handle_unpin_note,
-            "continue": lambda _: self._turn("", self._fixed_language() or self.last_language or FALLBACK_LANGUAGE,
-                                             "director"),
+            "continue": self._handle_continue,
             "import_character": self._handle_import_character,
+            "set_group": self._handle_set_group,
+            "open_group": self._handle_open_group,
+            "group_mode": self._handle_group_mode,
+            "story_play": self._handle_story_play,
+            "story_next": self._handle_story_next,
+            "next_speaker": self._handle_next_speaker,
+            "premise": self._handle_premise,
+            "draft_character": self._handle_draft_character,
+            "edit_message": lambda arg: self._handle_edit_message(*arg),
         }
         while True:
             name, arg = self._commands.get()
@@ -761,10 +885,12 @@ class Engine:
                 handlers[name](arg)
             except (UserError, ModelError) as exc:
                 self._emit({"type": "error", "message": str(exc)})
+                self.story_pause()
                 self._enter_idle()
             except Exception as exc:  # noqa: BLE001 - details go to the log
                 log.exception("Command %s failed", name)
                 self._emit({"type": "error", "message": describe_error(exc)})
+                self.story_pause()
                 self._enter_idle()
 
     # -- model catalog ----------------------------------------------------------------
@@ -1100,6 +1226,9 @@ class Engine:
         self._recover_llm()
         if self.fatal_error or not self.c.server.running:
             raise UserError(self.fatal_error or "The language model is not loaded.")
+        if self.in_group:
+            self._group_turn(text, language, source, stt_ms, audio, audio_sr)
+            return
         if source == "director" and user is None and not self.pending_note and not self.transcript:
             raise UserError("Nothing to continue yet.")
         self._set_state(State.THINKING, "")
@@ -1124,15 +1253,35 @@ class Engine:
                                  "voice": self._display_voice(voice)}
         self.transcript.append(reply)
         self._emit({"type": "assistant_start", "id": reply["id"], "voice": reply["voice"]})
+        llm_text = text or CONTINUE_TEXT  # a director's note alone: "(continue)"
+        reply_text, spoken, spoken_sr = self._play(reply, self.conversation.run_turn(llm_text, language,
+                                                                                     user.get("note", "")))
+        if recording and reply_text:
+            c = self.character
+            tags = [self._voice_name(reply["voice"])] if spoken and reply["voice"] else ["text only"]
+            self.recorder.add(SessionItem(
+                reply["id"], "assistant", c.name if c else "Assistant", spoken_text(reply["segments"]),
+                tags, np.concatenate(spoken) if spoken else None, spoken_sr, segments=reply["segments"]))
+        if reply_text:
+            user["in_history"] = reply["in_history"] = True  # the pipeline added both to the LLM history
+        self._remember_turn(user, reply, language, source, reply_text)
+        self._enter_idle()
+        if reply_text:
+            self._maintain_memory()  # between turns; a new utterance waits in the queue
+        self._emit_editable()
+
+    def _play(self, reply: dict[str, Any], events: Any) -> tuple[str, list[np.ndarray], int]:
+        """Show and send one reply as it is written and spoken; wait until the browser has played it.
+
+        Returns the reply text and the spoken audio (for the session recording).
+        """
         spoken: list[np.ndarray] = []
         spoken_sr = 24_000
-
         self._playback_done.clear()
         chunks = 0
         audio_seconds = 0.0
         reply_text = ""
-        llm_text = text or CONTINUE_TEXT  # a director's note alone: "(continue)"
-        for event in self.conversation.run_turn(llm_text, language, user.get("note", "")):
+        for event in events:
             if isinstance(event, SegmentEvent):
                 seg = event.segment
                 _append_segment(reply["segments"], seg.kind, seg.text)
@@ -1162,19 +1311,306 @@ class Engine:
             if not self._playback_done.wait(timeout=audio_seconds + PLAYBACK_WAIT_MARGIN_S):
                 log.warning("Browser did not report the end of playback; continuing.")
             time.sleep(POST_PLAYBACK_MUTE_S)
-        if recording and reply_text:
-            c = self.character
+        return reply_text, spoken, spoken_sr
+
+    # -- group chats and story mode ------------------------------------------------------------
+    @property
+    def members(self) -> list[Character]:
+        """Everyone in the chat: the character picked on the left first, then the others."""
+        if self.character is None:
+            return []
+        others = [self.characters.get(i) for i in self.store.settings.group if i != self.character.id]
+        return [self.character, *[c for c in others if c is not None]][:MAX_CAST]
+
+    @property
+    def in_group(self) -> bool:
+        return len(self.members) > 1
+
+    def _story(self) -> bool:
+        return self.in_group and self.store.settings.group_mode == "story"
+
+    def _mem_key(self) -> str:
+        """Where the chat is remembered: the character's id, or one shared key for a group."""
+        members = self.members
+        if not members:
+            return "chat"
+        return group_key([m.id for m in members]) if len(members) > 1 else members[0].id
+
+    def _mem_on(self) -> bool:
+        """Memory is on when every character in the chat has it on."""
+        members = self.members
+        return bool(members) and all(m.memory_enabled for m in members)
+
+    def _mem_title(self) -> str:
+        return cast_title([m.name for m in self.members]) or "Assistant"
+
+    def _names(self) -> dict[str, str]:
+        return {m.id: m.name for m in self.members}
+
+    def group_view(self) -> dict[str, Any]:
+        s = self.store.settings
+        return {"members": [m.id for m in self.members], "mode": s.group_mode, "playing": self.story_playing,
+                "next": self.next_speaker, "premise": self._group_meta("premise") if self.in_group else "",
+                "recent": [g for g in s.recent_groups if all(self.characters.get(i) for i in g)]}
+
+    def _emit_group(self) -> None:
+        self._emit({"type": "group", **self.group_view()})
+
+    def _group_meta(self, key: str) -> str:
+        return self.memory.get_meta(self._mem_key(), key, "")
+
+    def _group_pins(self) -> list[dict[str, str]]:
+        import json
+
+        try:
+            pins = json.loads(self._group_meta("pins") or "[]")
+        except ValueError:
+            pins = []
+        return [p for p in pins if isinstance(p, dict) and p.get("text")] if isinstance(pins, list) else []
+
+    def _member(self, char_id: str) -> Character:
+        member = next((m for m in self.members if m.id == char_id), None)
+        if member is None:
+            raise UserError("This character is not in the chat.")
+        return member
+
+    def _member_voice(self, member: Character, language: str | None) -> str | None:
+        """The voice ``member`` speaks with (None: text only)."""
+        if not member.voice_output:
+            return None
+        try:
+            ref = self._voice_ref(member.voice or DEFAULT_VOICE)
+        except UserError:
+            ref = DEFAULT_VOICE
+        return self.conversation.voice_for(language, ref)
+
+    def _prepare_group_voices(self) -> None:
+        """Every voice of the group is ready before the first line, so switching speakers costs nothing."""
+        if not (self.store.settings.voice_output and self.c.tts.loaded):
+            return
+        for m in self.members[1:]:
+            ref = self._member_voice(m, self._fixed_language() or self.last_language)
+            if ref is not None:
+                self._set_state(State.LOADING, f"Preparing the voice of {m.name}…")
+                self.c.voices.prompt_for(ref)
+
+    def _group_turn(self, text: str, language: str | None, source: str, stt_ms: int | None = None,
+                    audio: np.ndarray | None = None, audio_sr: int = 0, speaker: str = "") -> None:
+        """You said something (``text``) or the story goes on (``source`` "director"): one or more lines.
+
+        In a group chat the character you address answers (or whoever is next), and anyone that
+        reply addresses may answer too. In story mode one line follows; with Play the story goes on.
+        """
+        self._set_state(State.THINKING, "")
+        self.resume = None
+        recording = self._ensure_session()
+        members = self.members
+        if source != "director" and text:
+            user: dict[str, Any] = {"id": self._new_id(), "role": "user", "text": text, "language": language,
+                                    "source": source, "in_history": True}
+            self.transcript.append(user)
+            self._emit({"type": "user_message", **user, "stt_ms": stt_ms})
+            if recording:
+                tags = ["spoken", language] if source == "voice" and language else [
+                    "spoken" if source == "voice" else "typed"]
+                self.recorder.add(SessionItem(user["id"], "user", self._user_label(), text, tags,
+                                              audio if source == "voice" else None, audio_sr or SAMPLE_RATE))
+            self.conversation.history.append(ChatMessage("user", text))
+            self._store_line(user, "user", text, language, source)
+            self._story_lines = 0
+            queue_ = mentioned(text, members) or [speaker or self.next_speaker or
+                                                  next_speaker(members, self.conversation.history)]
+        else:
+            queue_ = [speaker or self.next_speaker or next_speaker(members, self.conversation.history)]
+        self.next_speaker = None
+        spoken_now: set[str] = set()
+        while queue_ and len(spoken_now) < len(members):
+            sid = queue_.pop(0)
+            if sid in spoken_now or sid not in {m.id for m in members}:
+                continue
+            reply_text = self._group_line(self._member(sid), language, recording)
+            spoken_now.add(sid)
+            if not reply_text or self.conversation.cancel.is_set():
+                break
+            if source != "director" and not self._story():
+                queue_ += [cid for cid in mentioned(reply_text, members, [sid]) if cid not in spoken_now]
+        self._emit_group()
+        self._enter_idle()
+        self._maintain_memory()
+        self._emit_editable()
+        self._schedule_story()
+
+    def _group_line(self, member: Character, language: str | None, recording: bool) -> str:
+        """One line of ``member``, written and spoken; returns its text."""
+        s = self.store.settings
+        story = self._story()
+        note = " ".join(n for n in (self.group_notes.pop("", ""), self.group_notes.pop(member.id, "")) if n)
+        nudge = ""
+        if story and not note:
+            self._lines_since_note += 1
+            if self._lines_since_note >= IMPULSE_EVERY:
+                import random
+
+                nudge, self._lines_since_note = random.choice(IMPULSES), 0
+        elif note:
+            self._lines_since_note = 0
+        names = self._names()
+        system = build_group_prompt(
+            member, [m for m in self.members if m.id != member.id], default_persona=DEFAULT_ASSISTANT_PERSONA,
+            story=story, story_rules=s.story_rules, premise=self._group_meta("premise"),
+            user=self.conversation.config.user, user_name=s.user_name, memory=self.conversation.config.memory,
+            director=director_context(director_lines(self._group_pins(), member.id), note or nudge),
+            reply_language=language)
+        messages = group_messages(member.id, system, self.conversation.history[-200:], names, s.user_name)
+        sampling = SamplingConfig(temperature=0.9 if story else 0.8, max_tokens=400, dry_multiplier=0.8,
+                                  stop=stop_sequences(member.id, names, s.user_name))
+        voice = self._member_voice(member, language)
+        reply: dict[str, Any] = {"id": self._new_id(), "role": "assistant", "speaker": member.id, "segments": [],
+                                 "voice": self._display_voice(voice)}
+        if note:
+            reply["note"] = note
+        self.transcript.append(reply)
+        self._emit({"type": "assistant_start", "id": reply["id"], "voice": reply["voice"], "speaker": member.id,
+                    "note": note or None})
+        self._emit_director()
+        self._set_state(State.THINKING, f"{member.name} is thinking…")
+        reply_text, spoken, spoken_sr = self._play(
+            reply, self.conversation.stream(messages, voice, language, sampling, NamePrefixFilter(member.name)))
+        if not reply_text:
+            return ""
+        if recording:
             tags = [self._voice_name(reply["voice"])] if spoken and reply["voice"] else ["text only"]
             self.recorder.add(SessionItem(
-                reply["id"], "assistant", c.name if c else "Assistant", spoken_text(reply["segments"]),
-                tags, np.concatenate(spoken) if spoken else None, spoken_sr, segments=reply["segments"]))
-        if reply_text:
-            user["in_history"] = reply["in_history"] = True  # the pipeline added both to the LLM history
-        self._remember_turn(user, reply, language, source, reply_text)
+                reply["id"], "assistant", member.name, spoken_text(reply["segments"]), tags,
+                np.concatenate(spoken) if spoken else None, spoken_sr, segments=reply["segments"]))
+        self.conversation.history.append(ChatMessage("assistant", reply_text, name=member.id))
+        reply["in_history"] = True
+        self._store_line(reply, "assistant", reply_text, language, None, note=note, speaker=member.id)
+        self._story_lines += 1
+        return reply_text
+
+    def _store_line(self, item: dict[str, Any], role: str, text: str, language: str | None, source: str | None,
+                    note: str = "", speaker: str | None = None) -> None:
+        """A group line goes into the group's memory right away (or the history is trimmed without memory)."""
+        if not self._mem_on():
+            self._trim_history()
+            return
+        db_id = self.memory.add_message(self._mem_key(), role, text, language, source,
+                                        item.get("voice") if role == "assistant" else None, note=note or None,
+                                        speaker=speaker)
+        with self._replay_lock:  # the recorder may already have finished this message
+            item["db_id"] = db_id
+            if item.get("session"):
+                self.memory.set_replay(db_id, item["session"], item["seq"], item.get("part"), item.get("duration"))
+
+    def _schedule_story(self) -> None:
+        """Story mode with Play: the next line is queued behind whatever you did meanwhile."""
+        if not (self.story_playing and self._story()) or self._story_scheduled:
+            return
+        if self._story_lines >= STORY_AUTO_PAUSE_LINES:
+            self.story_pause()
+            self._emit({"type": "notice", "message": f"The story paused after {STORY_AUTO_PAUSE_LINES} lines "
+                                                     "without you. Press Play to go on."})
+            return
+        self._story_scheduled = True
+        self._commands.put(("story_next", self._story_gen))
+
+    def _handle_story_next(self, gen: int) -> None:
+        self._story_scheduled = False
+        if gen != self._story_gen or not self.story_playing or not self._story():
+            return
+        self._turn("", self._fixed_language() or self.last_language or FALLBACK_LANGUAGE, "director")
+
+    def _handle_story_play(self, _: Any = None) -> None:
+        if not self.in_group:
+            raise UserError("Story mode needs at least two characters. Add someone to the chat first.")
+        if not self.c.server.running:
+            raise UserError(self.fatal_error or "The language model is not loaded.")
+        self.store.settings.group_mode = "story"
+        self.store.save()
+        self.story_playing = True
+        self._story_gen += 1
+        self._story_lines = 0
+        self._emit_group()
+        self._schedule_story()
+
+    def _handle_continue(self, speaker: str = "") -> None:
+        language = self._fixed_language() or self.last_language or FALLBACK_LANGUAGE
+        if self.in_group:
+            if speaker:
+                self._member(speaker)
+            self._turn("", language, "director") if not speaker else self._continue_as(speaker, language)
+        else:
+            self._turn("", language, "director")
+
+    def _continue_as(self, speaker: str, language: str) -> None:
+        self._recover_llm()
+        if self.fatal_error or not self.c.server.running:
+            raise UserError(self.fatal_error or "The language model is not loaded.")
+        self._group_turn("", language, "director", speaker=speaker)
+
+    def _handle_next_speaker(self, char_id: str) -> None:
+        self.next_speaker = self._member(char_id).id if char_id else None
+        self._emit_group()
+
+    def _handle_premise(self, text: str) -> None:
+        if not self.in_group:
+            raise UserError("A story setup belongs to a group chat.")
+        self.memory.set_meta(self._mem_key(), "premise", str(text).strip()[:MAX_RULES])
+        self._emit_group()
+
+    def _handle_group_mode(self, mode: str) -> None:
+        if mode not in GROUP_MODES:
+            raise UserError(f"Unknown mode {mode}.")
+        self.store.settings.group_mode = mode
+        self.store.save()
+        if mode != "story":
+            self.story_pause()
+        self._emit_group()
+
+    def _handle_set_group(self, ids: list[str]) -> None:
+        c = self._memory_character()
+        others: list[str] = []
+        for i in ids:
+            if i != c.id and i not in others:
+                if self.characters.get(i) is None:
+                    raise UserError("This character no longer exists.")
+                others.append(i)
+        if len(others) > MAX_CAST - 1:
+            raise UserError(f"A chat has at most {MAX_CAST} characters.")
+        self._change_cast(c.id, others)
+
+    def _handle_open_group(self, ids: list[str]) -> None:
+        if not ids or any(self.characters.get(i) is None for i in ids):
+            raise UserError("Someone in this group no longer exists.")
+        self._change_cast(ids[0], ids[1:])
+
+    def _change_cast(self, lead: str, others: list[str]) -> None:
+        """Switch to another set of characters: their own chat, memory and recording."""
+        s = self.store.settings
+        if lead == (self.character.id if self.character else None) and others == list(s.group):
+            return
+        self.story_pause()
+        self._end_session()
+        self.group_notes.clear()
+        self.next_speaker = None
+        self.pending_note = ""
+        s.group = list(others)
+        if others:
+            cast = [lead, *others]
+            s.recent_groups = [cast, *[g for g in s.recent_groups if sorted(g) != sorted(cast)]][:MAX_RECENT_GROUPS]
+        self.store.save()
+        if self.character is None or self.character.id != lead:
+            self._activate_character(lead, keep_group=True)
+            self._prepare_voice()
+            self._ensure_llm()
+        else:
+            self._refresh_memory_context()
+            self._load_history()
+            self._sync_tts()
+        self._prepare_group_voices()
+        self._emit_character_state()
         self._enter_idle()
-        if reply_text:
-            self._maintain_memory()  # between turns; a new utterance waits in the queue
-        self._emit_editable()
 
     def _recover_llm(self) -> None:
         """llama-server stopped on its own (crash, killed): start it again before the next turn."""
@@ -1194,23 +1630,19 @@ class Engine:
         return f"custom:{Path(ref).name}"
 
     def _clear_conversation(self) -> None:
-        """Start over with the active character; with memory on, the old talk goes into the summary."""
-        self._end_session()
+        """Start over with the same characters. The chat window is cleared at once; with memory on,
+        the old talk is folded into the summary afterwards."""
+        self.story_pause()
+        self._finish_session()
+        self.pending_note = ""
+        self.group_notes.clear()
+        self.next_speaker = None
         c = self.character
-        if c is not None and c.memory_enabled:
-            old = self.memory.active_messages(c.id)
-            if any(m.role == "user" for m in old):
-                if self.c.server.running:
-                    self._set_state(State.THINKING, "Saving the conversation to memory…")
-                    try:
-                        self._summarize(c, old)
-                        self._update_facts(c)
-                    except Exception:  # noqa: BLE001 - never block a new conversation
-                        log.exception("Could not summarize the conversation")
-                self.memory.mark_summarized(c.id, old[-1].id)
-            elif old:
-                self.memory.mark_summarized(c.id, old[-1].id)  # only the greeting
-            self._refresh_memory_context()
+        old: list[Any] = []
+        if c is not None and self._mem_on():
+            old = self.memory.active_messages(self._mem_key())
+            if old:
+                self.memory.mark_summarized(self._mem_key(), old[-1].id)
         if c is not None:
             self._load_history()
         else:
@@ -1218,6 +1650,16 @@ class Engine:
             self.transcript.clear()
         self._emit({"type": "cleared"})
         self._emit_character_state()
+        worth_keeping = any(m.role == "user" for m in old) or (self.in_group and old)
+        if worth_keeping and self.c.server.running:
+            self._set_state(State.THINKING, "Saving the conversation to memory…")
+            try:
+                self._summarize(old)
+                self._update_facts(old[-8:])
+            except Exception:  # noqa: BLE001 - never block a new conversation
+                log.exception("Could not summarize the conversation")
+            self._refresh_memory_context()
+            self._emit({"type": "memory", **self.memory_view()})
         self._enter_idle()
 
     # -- deleting, regenerating and editing the end of the chat ----------------------------------
@@ -1227,7 +1669,8 @@ class Engine:
         The greeting stays, and so does what is already folded into the memory summary.
         """
         c = self.character
-        active = {m.id for m in self.memory.active_messages(c.id)} if c is not None and c.memory_enabled else None
+        active = {m.id for m in self.memory.active_messages(self._mem_key())} if c is not None and self._mem_on() \
+            else None
         first = None
         for item in reversed(self.transcript):
             if item.get("greeting") or (active is not None and item.get("db_id") and item["db_id"] not in active):
@@ -1237,28 +1680,62 @@ class Engine:
 
     def director_view(self) -> dict[str, Any]:
         c = self.character
-        return {"pending": self.pending_note, "pinned": list(c.director_notes) if c else []}
+        if self.in_group:
+            names = self._names()
+            return {"group": True,
+                    "pending": [{"target": t, "name": names.get(t, ""), "text": n} for t, n in self.group_notes.items()],
+                    "pinned": [{"target": p.get("target", ""), "name": names.get(p.get("target", ""), ""),
+                                "text": p["text"]} for p in self._group_pins()]}
+        return {"group": False, "pending": self.pending_note, "pinned": list(c.director_notes) if c else []}
 
     def _emit_director(self) -> None:
         self._emit({"type": "director", **self.director_view()})
 
-    def _handle_pending_note(self, text: str) -> None:
-        self.pending_note = text
+    def _handle_pending_note(self, arg: tuple[str, str]) -> None:
+        text, target = arg
+        if self.in_group:
+            target = self._member(target).id if target else ""
+            if text:
+                self.group_notes[target] = text
+            else:
+                self.group_notes.pop(target, None)
+        else:
+            self.pending_note = text
         self._emit_director()
 
-    def _handle_pin_note(self, text: str) -> None:
+    def _handle_pin_note(self, arg: tuple[str, str]) -> None:
+        import json
+
         from .characters import MAX_NOTES
 
+        text, target = arg
         c = self._memory_character()
         text = " ".join(str(text).split())[:300]
         if not text:
+            return
+        if self.in_group:
+            pins = self._group_pins()
+            if len(pins) >= MAX_NOTES:
+                raise UserError(f"This group already has {MAX_NOTES} pinned notes. Remove one first.")
+            pins.append({"target": self._member(target).id if target else "", "text": text})
+            self.memory.set_meta(self._mem_key(), "pins", json.dumps(pins))
+            self._emit_director()
             return
         if len(c.director_notes) >= MAX_NOTES:
             raise UserError(f"{c.name} already has {MAX_NOTES} pinned notes. Remove one first.")
         self._save_director_notes([*c.director_notes, text])
 
     def _handle_unpin_note(self, index: int) -> None:
+        import json
+
         c = self._memory_character()
+        if self.in_group:
+            pins = self._group_pins()
+            if 0 <= int(index) < len(pins):
+                del pins[int(index)]
+                self.memory.set_meta(self._mem_key(), "pins", json.dumps(pins))
+            self._emit_director()
+            return
         notes = list(c.director_notes)
         if 0 <= int(index) < len(notes):
             del notes[int(index)]
@@ -1300,10 +1777,10 @@ class Engine:
         for name, count in cuts.items():
             self.recorder.truncate(name, count)
         c = self.character
-        if c is not None and c.memory_enabled:
+        if c is not None and self._mem_on():
             ids = [item["db_id"] for item in forget if item.get("db_id")]
             if ids:
-                self.memory.delete_from(c.id, min(ids))
+                self.memory.delete_from(self._mem_key(), min(ids))
             self._reload_llm_history()
         else:
             count = sum(1 for item in forget if item.get("in_history"))
@@ -1327,6 +1804,18 @@ class Engine:
 
     def _handle_regenerate(self, _: Any = None) -> None:
         items = self.transcript
+        if self.in_group:
+            last = items[-1] if items else None
+            if last is None or last.get("role") != "assistant" or not last.get("speaker"):
+                raise UserError("There is no reply to write again.")
+            self._check_deletable(len(items) - 1)
+            speaker = self._member(last["speaker"]).id
+            if last.get("note"):
+                self.group_notes[speaker] = last["note"]  # the same direction again
+            self._truncate(len(items) - 1)
+            self._emit_transcript()
+            self._continue_as(speaker, self._fixed_language() or self.last_language or FALLBACK_LANGUAGE)
+            return
         if (len(items) < 2 or items[-1].get("role") != "assistant" or items[-1].get("greeting")
                 or items[-2].get("role") != "user"):
             raise UserError("There is no reply to write again.")
@@ -1339,6 +1828,70 @@ class Engine:
         if self._fixed_language():
             self.last_language = self._fixed_language()
         self._turn(user["text"], self.last_language, user.get("source") or "text", user=user)  # keeps its note
+
+    def _handle_edit_message(self, msg_id: int, text: str) -> None:
+        """Edit one message in place; the messages after it stay. The model sees the new text from now on.
+
+        The session recording follows: a character's reply is spoken again with its voice and replaces
+        the old audio; your own message keeps your recorded voice, only its text changes.
+        """
+        index = next((i for i, t in enumerate(self.transcript) if t.get("id") == msg_id), None)
+        if index is None:
+            raise UserError("This message is no longer in the chat.")
+        self._check_deletable(index)
+        item = self.transcript[index]
+        if item.get("role") == "user" and item.get("source") == "director" and not item.get("text"):
+            raise UserError("A director's note alone cannot be edited; delete it instead.")
+        if item.get("role") == "user":
+            item["text"] = text
+        else:
+            item["segments"] = [{"kind": seg.kind, "text": seg.text.strip()} for seg in split_segments(text)
+                                if seg.text.strip()]
+        item["edited"] = True
+        if item.get("db_id"):
+            self.memory.update_message(item["db_id"], text)
+        if self._mem_on():
+            self._reload_llm_history()
+        elif item.get("in_history"):
+            later = sum(1 for t in self.transcript[index + 1:] if t.get("in_history"))
+            history = self.conversation.history
+            if later < len(history):
+                old = history[-1 - later]
+                history[-1 - later] = ChatMessage(old.role, text, name=old.name)
+        if item.get("session") and item.get("seq"):
+            self._record_edit(item)
+        self._emit_transcript()
+        self._enter_idle()
+
+    def _record_edit(self, item: dict[str, Any]) -> None:
+        """Replace the edited message in its session recording (a reply with newly spoken audio)."""
+        from .sanitizer import clean_for_speech
+
+        if item["role"] == "user":
+            self.recorder.replace(item["session"], item["seq"],
+                                  SessionItem(item["id"], "user", self._user_label(), item["text"]), keep_audio=True)
+            return
+        speech = spoken_text(item["segments"])
+        speaker = self.characters.get(item.get("speaker") or "") or self.character
+        audio = None
+        keep_audio = False
+        if item.get("duration") is not None and clean_for_speech(speech):  # it was spoken: speak it again
+            if self.c.tts.loaded and self.store.settings.voice_output and item.get("voice"):
+                try:
+                    ref = self._voice_ref(item["voice"])
+                except UserError:
+                    ref = self._voice_ref(DEFAULT_VOICE)
+                self._set_state(State.THINKING, "Speaking the new text for the recording…")
+                result = self.c.tts.synthesize(clean_for_speech(speech), self.c.voices.prompt_for(ref),
+                                               self.c.voices.language_of(ref) or self.last_language)
+                audio = result.audio
+            else:
+                keep_audio = True
+                self._emit({"type": "notice", "message": "Voice output is off, so the recording keeps the old "
+                                                         "audio of this message; only its text was changed."})
+        self.recorder.replace(item["session"], item["seq"], SessionItem(
+            item["id"], "assistant", speaker.name if speaker else "Assistant", speech, [], audio,
+            SESSION_TTS_RATE, segments=item["segments"]), keep_audio=keep_audio)
 
     def _handle_edit_last(self, text: str) -> None:
         index = next((i for i in range(len(self.transcript) - 1, -1, -1)
@@ -1357,9 +1910,11 @@ class Engine:
         c = self.character
         if c is None:
             return {"character": None, "enabled": False, "facts": [], "summary": ""}
+        key = self._mem_key()
         return {
-            "character": c.id, "enabled": c.memory_enabled, "summary": self.memory.summary(c.id),
-            "facts": [{"id": f.id, "text": f.text, "source": f.source} for f in self.memory.facts(c.id)],
+            "character": key, "title": self._mem_title(), "group": self.in_group, "enabled": self._mem_on(),
+            "summary": self.memory.summary(key),
+            "facts": [{"id": f.id, "text": f.text, "source": f.source} for f in self.memory.facts(key)],
         }
 
     def select_character(self, char_id: str) -> None:
@@ -1387,23 +1942,30 @@ class Engine:
         self._commands.put(("reset_memory", None))
 
     def _voice_output_on(self) -> bool:
-        """Voice output is on globally and for the active character (spec §7.4)."""
-        c = self.character
-        return bool(self.store.settings.voice_output and (c is None or c.voice_output))
+        """Voice output is on globally and for the active character (spec §7.4), or anyone in the group."""
+        members = self.members
+        return bool(self.store.settings.voice_output and (not members or any(m.voice_output for m in members)))
 
     def _sync_tts(self) -> None:
         self.conversation.tts = self.c.tts if (self._voice_output_on() and self.c.tts.loaded) else None
 
-    def _activate_character(self, char_id: str | None) -> None:
-        """Switch persona, voice, model, memory and history in one step (spec §10)."""
+    def _activate_character(self, char_id: str | None, keep_group: bool = False) -> None:
+        """Switch persona, voice, model, memory and history in one step (spec §10).
+
+        Picking a character on the left starts a chat with them alone (``keep_group``: a group is opened).
+        """
         char = self.characters.get(char_id or "") or self.characters.first()
         if char is None:
             raise UserError("No characters found. Create one with + New character.")
+        s = self.store.settings
         if self.character is not None and self.character.id != char.id:
             self._end_session()
             self.pending_note = ""  # a note was meant for the other character
+            self.group_notes.clear()
+            self.story_pause()
+            if not keep_group:
+                s.group = []
         self.character = char
-        s = self.store.settings
         s.character = char.id
         if char.voice:
             try:
@@ -1416,7 +1978,7 @@ class Engine:
             s.model = char.model
         self.store.save()
         cfg = self.conversation.config
-        cfg.persona = char.system_prompt or char.persona or DEFAULT_ASSISTANT_PERSONA
+        cfg.persona = persona_text(char, DEFAULT_ASSISTANT_PERSONA)
         cfg.roleplay = char.kind == "roleplay"
         cfg.director = list(char.director_notes)
         self._refresh_memory_context()
@@ -1424,10 +1986,10 @@ class Engine:
         self._sync_tts()
 
     def _refresh_memory_context(self) -> None:
-        c = self.character
-        enabled = c is not None and c.memory_enabled
+        key = self._mem_key()
         self.conversation.config.memory = (
-            memory_context(self.memory.summary(c.id), self.memory.facts(c.id)) if enabled and c else "")
+            memory_context(self.memory.summary(key), self.memory.facts(key), group=self.in_group)
+            if self.character is not None and self._mem_on() else "")
 
     def _load_history(self) -> None:
         """LLM history and visible transcript of the active character (from its memory)."""
@@ -1436,15 +1998,18 @@ class Engine:
         self.conversation.history = []
         self.transcript = []
         self.resume = None
-        if c.memory_enabled:
-            stored = self.memory.active_messages(c.id)
-            if any(m.role == "user" for m in stored):
+        group = self.in_group
+        key = self._mem_key()
+        if self._mem_on():
+            stored = self.memory.active_messages(key)
+            if any(m.role == "user" for m in stored) or (group and stored):
                 # Offer "Continue" / "Start new chat" in the UI (the chat is loaded either way).
                 self.resume = {"messages": len(stored), "last": stored[-1].created}
             for m in stored:
-                self.conversation.history.append(ChatMessage(m.role, m.content))
+                self.conversation.history.append(ChatMessage(m.role, m.content, name=m.speaker))
                 item: dict[str, Any] = {"id": self._new_id(), "db_id": m.id, "session": m.replay_session,
                                         "offset": m.replay_offset, "duration": m.replay_duration,
+                                        "seq": m.replay_seq, "part": m.replay_part,
                                         "in_history": True}
                 if m.role == "user":
                     director = m.source == "director"
@@ -1454,38 +2019,44 @@ class Engine:
                         item["note"] = m.note
                 else:
                     item.update({"role": "assistant", "voice": m.voice,
-                                 "greeting": m.voice is None and m.content == c.greeting,
+                                 "greeting": not group and m.voice is None and m.content == c.greeting,
                                  "segments": [{"kind": seg.kind, "text": seg.text}
                                               for seg in split_segments(m.content)]})
+                    if m.speaker:
+                        item["speaker"] = m.speaker
+                    if m.note and group:
+                        item["note"] = m.note
                 self.transcript.append(item)
         if self.resume is None:
-            self.memory.set_meta(c.id, "session", "")  # a fresh chat gets a new session recording
-        if not self.conversation.history and c.greeting:
+            self.memory.set_meta(key, "session", "")  # a fresh chat gets a new session recording
+        if not self.conversation.history and c.greeting and not group:  # a group starts with you or Play
             self.conversation.history.append(ChatMessage("assistant", c.greeting))
             greeting: dict[str, Any] = {"id": self._new_id(), "role": "assistant", "voice": None, "greeting": True,
                                         "in_history": True,
                                         "segments": [{"kind": seg.kind, "text": seg.text}
                                                      for seg in split_segments(c.greeting)]}
             self.transcript.append(greeting)
-            if c.memory_enabled:
-                greeting["db_id"] = self.memory.add_message(c.id, "assistant", c.greeting)
+            if self._mem_on():
+                greeting["db_id"] = self.memory.add_message(key, "assistant", c.greeting)
 
     def _reload_llm_history(self) -> None:
         """After summarizing: the LLM sees only the unsummarized messages (the transcript stays)."""
-        c = self.character
-        if c is not None and c.memory_enabled:
-            self.conversation.history = [ChatMessage(m.role, m.content) for m in self.memory.active_messages(c.id)]
+        if self.character is not None and self._mem_on():
+            self.conversation.history = [ChatMessage(m.role, m.content, name=m.speaker)
+                                         for m in self.memory.active_messages(self._mem_key())]
 
     def _emit_character_state(self) -> None:
         self._emit({"type": "character", "character": self.character.to_dict() if self.character else None,
                     "characters": self.list_characters(), "transcript": self.transcript,
                     "deletable_from": self._deletable_from(), "memory": self.memory_view(), "resume": self.resume,
-                    "director": self.director_view()})
+                    "director": self.director_view(), "group": self.group_view()})
         self._emit({"type": "settings", "settings": asdict(self.store.settings)})
         self._emit({"type": "voice_info", **self.voice_info()})
 
     def _handle_select_character(self, char_id: str) -> None:
         if self.character is not None and self.character.id == char_id:
+            if self.store.settings.group:  # back from a group to a chat with them alone
+                self._change_cast(char_id, [])
             return
         if self.characters.get(char_id) is None:
             raise UserError("This character no longer exists.")
@@ -1505,9 +2076,13 @@ class Engine:
         except CharacterError as exc:
             raise UserError(str(exc)) from exc
         if char_id is None or (self.character and self.character.id == char.id):
-            self._activate_character(char.id)  # a new or edited active character takes effect now
+            self._activate_character(char.id, keep_group=char_id is not None)  # takes effect now
             self._prepare_voice()
             self._ensure_llm()
+        elif char.id in self.store.settings.group:
+            self._refresh_memory_context()  # e.g. memory turned off for someone in the group
+            self._sync_tts()
+            self._prepare_group_voices()
         self._cleanup_images()
         self._emit_character_state()
         self._enter_idle()
@@ -1529,6 +2104,12 @@ class Engine:
         except CharacterError as exc:
             raise UserError(str(exc)) from exc
         self.memory.reset(char_id)  # its history and facts go with it
+        for key in self.memory.groups_with(char_id):
+            self.memory.reset(key)  # and so do the groups it was in
+        s = self.store.settings
+        s.group = [i for i in s.group if i != char_id]
+        s.recent_groups = [g for g in s.recent_groups if char_id not in g]
+        self.store.save()
         self._cleanup_images()
         if self.character is not None and self.character.id == char_id:
             self._activate_character(None)
@@ -1541,7 +2122,7 @@ class Engine:
     def _remember_turn(self, user: dict[str, Any], reply: dict[str, Any], language: str | None, source: str,
                        reply_text: str) -> None:
         c = self.character
-        if c is None or not c.memory_enabled or not reply_text:
+        if c is None or not self._mem_on() or not reply_text:
             self._trim_history()
             return
         user_db = self.memory.add_message(c.id, "user", user["text"] or CONTINUE_TEXT, language, source,
@@ -1551,14 +2132,15 @@ class Engine:
             with self._replay_lock:  # the recorder may already have finished this message
                 item["db_id"] = db_id
                 if item.get("session"):
-                    self.memory.set_replay(db_id, item["session"], item["offset"], item.get("duration"))
+                    self.memory.set_replay(db_id, item["session"], item["seq"], item.get("part"), item.get("duration"))
 
     def _trim_history(self) -> None:
         """Without memory the oldest exchanges drop out once the history outgrows its context share."""
         history = self.conversation.history
         budget = history_budget(self.context)
+        step = 1 if self.in_group else 2  # a group's lines are not in pairs
         while len(history) > 2 and sum(estimate_tokens(m.content) for m in history) > budget:
-            del history[:2]
+            del history[:step]
 
     def _llm_text(self, system: str, prompt: str, max_tokens: int = 400) -> str:
         """One quick, low-temperature request used to maintain the memory."""
@@ -1568,72 +2150,77 @@ class Engine:
 
     def _maintain_memory(self) -> None:
         """Between turns: summarize old history when it gets long; update the facts every few turns."""
-        c = self.character
-        if c is None or not c.memory_enabled or not self.c.server.running:
+        if self.character is None or not self._mem_on() or not self.c.server.running:
             return
+        key = self._mem_key()
         try:
-            old = messages_to_summarize(self.memory.active_messages(c.id), self.context)
+            old = messages_to_summarize(self.memory.active_messages(key), self.context)
             if old:
-                self._summarize(c, old)
-            turns = int(self.memory.get_meta(c.id, "turns_since_facts", "0") or 0) + 1
+                self._summarize(old)
+            turns = int(self.memory.get_meta(key, "turns_since_facts", "0") or 0) + 1
             if turns >= FACT_UPDATE_EVERY:
-                self._update_facts(c)
+                self._update_facts()
                 turns = 0
-            self.memory.set_meta(c.id, "turns_since_facts", str(turns))
+            self.memory.set_meta(key, "turns_since_facts", str(turns))
         except Exception:  # noqa: BLE001 - memory upkeep must never break the conversation
             log.exception("Memory maintenance failed")
         self._refresh_memory_context()
         self._emit({"type": "memory", **self.memory_view()})
 
-    def _summarize(self, c: Character, old: list[Any]) -> None:
+    def _summarize(self, old: list[Any]) -> None:
+        key, title, names = self._mem_key(), self._mem_title(), self._names()
         words = summary_words(self.context)
         summary = self._llm_text(
-            SUMMARY_SYSTEM.format(name=c.name),
-            SUMMARY_PROMPT.format(summary=self.memory.summary(c.id) or "(none)",
-                                  transcript=transcript_text(old, c.name, self.store.settings.user_name),
+            SUMMARY_SYSTEM.format(name=title),
+            SUMMARY_PROMPT.format(summary=self.memory.summary(key) or "(none)",
+                                  transcript=transcript_text(old, title, self.store.settings.user_name, names),
                                   words=words),
             max_tokens=max(400, words * 2))
         if summary:
-            self.memory.set_summary(c.id, summary)
-            self.memory.mark_summarized(c.id, old[-1].id)
+            self.memory.set_summary(key, summary)
+            self.memory.mark_summarized(key, old[-1].id)
             self._reload_llm_history()
-            log.info("Summarized %d messages of %s", len(old), c.id)
+            log.info("Summarized %d messages of %s", len(old), key)
 
-    def _update_facts(self, c: Character) -> None:
-        recent = self.memory.active_messages(c.id)[-8:]
-        facts = self.memory.facts(c.id)
+    def _update_facts(self, recent: list[Any] | None = None) -> None:
+        """``recent``: the messages to learn from (by default the last eight of the chat)."""
+        key, title, names = self._mem_key(), self._mem_title(), self._names()
+        if recent is None:
+            recent = self.memory.active_messages(key)[-8:]
+        facts = self.memory.facts(key)
         reply = self._llm_text(
-            FACTS_SYSTEM.format(name=c.name),
+            FACTS_SYSTEM.format(name=title),
             FACTS_PROMPT.format(facts="\n".join(f"- {f.text}" for f in facts) or "(none)",
-                                transcript=transcript_text(recent, c.name, self.store.settings.user_name)),
+                                transcript=transcript_text(recent, title, self.store.settings.user_name, names)),
             max_tokens=300)
         add, remove = parse_fact_update(reply)
-        self.memory.remove_facts_by_text(c.id, remove)
+        self.memory.remove_facts_by_text(key, remove)
         for text in add:
-            self.memory.add_fact(c.id, text, source="llm")
+            self.memory.add_fact(key, text, source="llm")
 
     def _handle_add_fact(self, text: str) -> None:
-        c = self._memory_character()
-        self.memory.add_fact(c.id, text, source="user")
+        self._memory_character()
+        self.memory.add_fact(self._mem_key(), text, source="user")
         self._refresh_memory_context()
         self._emit({"type": "memory", **self.memory_view()})
 
     def _handle_update_fact(self, fact_id: int, text: str) -> None:
-        c = self._memory_character()
-        self.memory.update_fact(c.id, int(fact_id), text)
+        self._memory_character()
+        self.memory.update_fact(self._mem_key(), int(fact_id), text)
         self._refresh_memory_context()
         self._emit({"type": "memory", **self.memory_view()})
 
     def _handle_delete_fact(self, fact_id: int) -> None:
-        c = self._memory_character()
-        self.memory.delete_fact(c.id, int(fact_id))
+        self._memory_character()
+        self.memory.delete_fact(self._mem_key(), int(fact_id))
         self._refresh_memory_context()
         self._emit({"type": "memory", **self.memory_view()})
 
     def _handle_reset_memory(self, _: Any = None) -> None:
-        c = self._memory_character()
-        self._end_session()
-        self.memory.reset(c.id)
+        self._memory_character()
+        self.story_pause()
+        self._finish_session()
+        self.memory.reset(self._mem_key())
         self._refresh_memory_context()
         self._load_history()
         self._emit_character_state()
@@ -1653,8 +2240,8 @@ class Engine:
         return " ".join(self.store.settings.user_name.split()) or "You"
 
     def _recording_on(self) -> bool:
-        c = self.character
-        return bool(self.store.settings.record_sessions and (c is None or c.recording_enabled))
+        members = self.members
+        return bool(self.store.settings.record_sessions and all(m.recording_enabled for m in members))
 
     def _ensure_session(self) -> bool:
         """Start (or continue) the session recording of the current chat; False when not recording."""
@@ -1664,14 +2251,15 @@ class Engine:
         if self.recorder.name is not None:
             return True
         c = self.character
-        char_id = c.id if c else "chat"
-        name = self.memory.get_meta(char_id, "session", "")
+        key = self._mem_key()
+        name = self.memory.get_meta(key, "session", "")
         if name and SessionRecorder.valid_name(name) and (self.paths.sessions / f"{name}.md").exists():
             self.recorder.resume(name)  # a resumed chat continues its recording
         else:
-            name = self.recorder.new_name(char_id)
-            self.recorder.start(name, session_title(c.name if c else "Assistant"))
-            self.memory.set_meta(char_id, "session", name)
+            name = self.recorder.new_name(session_stem([m.id for m in self.members]) if self.in_group
+                                          else (c.id if c else "chat"))
+            self.recorder.start(name, session_title(self._mem_title()))
+            self.memory.set_meta(key, "session", name)
             for item in self.transcript:  # the greeting that opened this chat
                 if item.get("greeting"):
                     self.recorder.add(SessionItem(item["id"], "assistant", c.name if c else "Assistant",
@@ -1689,15 +2277,40 @@ class Engine:
         self._emit({"type": "sessions", "sessions": list_sessions(self.paths.sessions),
                     "recording": self.recorder.files()})
 
-    def _on_recorded(self, msg_id: int, session: str, offset: float, duration: float | None) -> None:
-        """Called by the recorder thread once a message is in the session files."""
+    def _on_recorded(self, msg_id: int, session: str, seq: int, part: str | None, duration: float | None) -> None:
+        """Called by the recorder thread once a message is in the session files (its own MP3)."""
         with self._replay_lock:
             item = next((t for t in self.transcript if t.get("id") == msg_id), None)
             if item is not None:
-                item.update(session=session, offset=offset, duration=duration)
+                item.update(session=session, seq=seq, part=part, duration=duration, offset=None)
                 if item.get("db_id"):
-                    self.memory.set_replay(item["db_id"], session, offset, duration)
-        self._emit({"type": "recorded", "id": msg_id, "session": session, "offset": offset, "duration": duration})
+                    self.memory.set_replay(item["db_id"], session, seq, part, duration)
+        self._emit({"type": "recorded", "id": msg_id, "session": session, "seq": seq, "part": part,
+                    "duration": duration})
+
+    def _on_session_built(self, name: str) -> None:
+        """Called by the recorder thread: the MP3 of a whole session is ready (or there was nothing to do)."""
+        self._emit_sessions()
+        if name == self._finishing:
+            self._finishing = None
+            if (self.paths.sessions / f"{name}.mp3").exists():
+                self._emit({"type": "notice",
+                            "message": f"The recording is ready: user_data\\sessions\\{name}.mp3"})
+
+    def _finish_session(self) -> None:
+        """End chat: the recording of this chat is put together into one MP3."""
+        name = self.recorder.name or self.memory.get_meta(self._mem_key(), "session", "")
+        if self.recorder.name != name:
+            self._end_session()
+        if not name or not SessionRecorder.valid_name(name):
+            return
+        spoken = any(t.get("duration") or t.get("source") == "voice" or (t.get("role") == "assistant" and
+                                                                          t.get("voice")) for t in self.transcript)
+        if spoken:
+            self._finishing = name
+            self._emit({"type": "notice", "message": "Putting the recording of this chat together into one MP3…"})
+        self.recorder.finish(name)  # also ends the recording of this chat
+        self._emit_sessions()
 
     def _handle_replay(self, playing: bool) -> None:
         self.replaying = bool(playing)
@@ -1822,6 +2435,7 @@ class Engine:
 
     def _apply_settings(self, values: dict[str, Any]) -> None:
         s = self.store.settings
+        values = {k: v for k, v in values.items() if k not in ENGINE_OWNED_SETTINGS}
         before = asdict(s)
         changed = s.update(values)
         if not changed:
@@ -1891,7 +2505,8 @@ class Engine:
             self._end_session()
         if self.character is not None and changed.keys() & {"voice", "show_actions", "voice_output"}:
             self._save_character_from_settings(changed)
-        if changed.keys() - {"show_actions", "user_name", "user_about", "user_avatar", "user_color", "language"}:
+        if changed.keys() - {"show_actions", "user_name", "user_about", "user_avatar", "user_color", "language",
+                             "story_rules"}:
             self._enter_idle()
 
     def _validate(self, changed: dict[str, Any]) -> None:
@@ -1913,6 +2528,8 @@ class Engine:
             "user_about": (len(s.user_about) <= 1000, "The text about you is too long (1000 characters at most)."),
             "user_avatar": (s.user_avatar == "" or valid_image_name(s.user_avatar), "Unknown picture."),
             "user_color": (s.user_color in ("", *TEXT_COLORS), f"Unknown colour {s.user_color}."),
+            "story_rules": (len(s.story_rules) <= MAX_RULES, f"The story rules are too long ({MAX_RULES} "
+                                                             "characters at most)."),
         }
         for key, (ok, message) in checks.items():
             if key in changed and not ok:

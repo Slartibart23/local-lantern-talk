@@ -51,7 +51,7 @@ def test_concatenated_mp3_pieces_have_exact_durations() -> None:
 
 @needs_ffmpeg
 def test_recorder_writes_audio_and_transcript(tmp_path: Path) -> None:
-    recorded: list[tuple[int, str, float, float | None]] = []
+    recorded: list[tuple[int, str, int, str | None, float | None]] = []
     rec = SessionRecorder(tmp_path, FFMPEG, lambda *a: recorded.append(a), gap_ms=lambda: 500)
     name = rec.new_name("lena")
     rec.start(name, "Lena — test")
@@ -62,16 +62,25 @@ def test_recorder_writes_audio_and_transcript(tmp_path: Path) -> None:
     rec.add(SessionItem(3, "assistant", "Lena", spoken_text(segs), ["German female"], tone(2.0), segments=segs))
     rec.add(SessionItem(4, "user", "You", "Getippt.", ["typed"]))
     rec.wait_idle()
+    # While the chat is open, every utterance has its own MP3; the whole one comes at the end.
+    by_id = {r[0]: r for r in recorded}
+    assert by_id[1][2:] == (1, None, None)                      # text only, no audio
+    assert by_id[2][3] == "0002 You.mp3" and by_id[2][4] >= 1.2
+    assert by_id[3][3] == "0003 Lena.mp3"
+    folder = tmp_path / name
+    assert sorted(p.name for p in folder.iterdir()) == ["0002 You.mp3", "0003 Lena.mp3"]
+    assert not (tmp_path / f"{name}.mp3").exists()
+    assert load_session(tmp_path, name)["parts"] is True
     rec.stop()
     rec.close()
 
-    by_id = {r[0]: r for r in recorded}
-    assert by_id[1][2] == 0.0 and by_id[1][3] is None           # text only, no audio
-    assert by_id[2][2] == 0.0 and by_id[2][3] >= 1.2            # first audio: no gap
-    assert by_id[3][2] == pytest.approx(by_id[2][3] + 0.5, abs=0.001)  # gap before the reply
     total = mp3_duration((tmp_path / f"{name}.mp3").read_bytes())
-    assert by_id[3][2] + by_id[3][3] == pytest.approx(total)
-    assert by_id[4][2] == pytest.approx(total)                  # typed: offset = position at that time
+    e = load_session(tmp_path, name)["entries"]
+    assert e[1]["offset"] == 0.0                                 # first audio: no gap
+    assert e[2]["offset"] == pytest.approx(e[1]["duration"] + 0.5, abs=0.06)  # a pause before the reply
+    assert e[2]["offset"] + e[2]["duration"] == pytest.approx(total, abs=0.001)
+    assert e[3]["offset"] == pytest.approx(total, abs=0.001)    # typed: the position at that time
+    assert folder.is_dir()                                       # kept: the chat may go on
 
     # the transcript reads like a screenplay: only who said what
     md = (tmp_path / f"{name}.md").read_text(encoding="utf-8")
@@ -85,7 +94,6 @@ def test_recorder_writes_audio_and_transcript(tmp_path: Path) -> None:
     assert [x["role"] for x in e] == ["assistant", "user", "assistant", "user"]
     assert e[0]["greeting"] and e[0]["duration"] is None
     assert e[1]["source"] == "voice" and e[1]["text"] == "Ein Ausflug."
-    assert e[2]["offset"] == pytest.approx(by_id[3][2], abs=0.001)
     assert e[2]["segments"] == segs[:2]  # model reasoning is never kept
     assert e[3]["source"] == "text" and e[3]["duration"] is None
 
@@ -93,6 +101,70 @@ def test_recorder_writes_audio_and_transcript(tmp_path: Path) -> None:
     assert sessions[0]["name"] == name and sessions[0]["character"] == "lena"
     assert sessions[0]["duration"] == pytest.approx(total, abs=0.1)
     assert estimate_duration(tmp_path / f"{name}.mp3") == pytest.approx(total, abs=0.1)
+    # End chat: the single files go, the whole MP3 stays.
+    rec2 = SessionRecorder(tmp_path, FFMPEG)
+    rec2.finish(name)
+    rec2.close()
+    assert not folder.exists() and (tmp_path / f"{name}.mp3").exists()
+    assert load_session(tmp_path, name)["parts"] is False
+
+
+@needs_ffmpeg
+def test_single_utterances_can_be_deleted_and_replaced(tmp_path: Path) -> None:
+    recorded = []
+    rec = SessionRecorder(tmp_path, FFMPEG, lambda *a: recorded.append(a))
+    name = rec.new_name("lena")
+    rec.start(name, "Lena")
+    rec.add(SessionItem(1, "user", "You", "Eins", ["spoken"], tone(1.0)))
+    rec.add(SessionItem(2, "assistant", "Lena", "Zwei", ["English female"], tone(1.0)))
+    rec.add(SessionItem(3, "assistant", "Lena", "Drei", ["English female"], tone(1.0)))
+    rec.stop()
+    rec.wait_idle()
+    assert (tmp_path / f"{name}.mp3").exists()
+    rec.resume(name)
+    rec.replace(name, 2, SessionItem(2, "assistant", "Lena", "Zwei, neu gesprochen", [], tone(2.0)))
+    rec.truncate(name, 1)
+    rec.wait_idle()
+    assert recorded[-1][:4] == (2, name, 2, "0002 Lena.mp3") and recorded[-1][4] >= 2.0
+    assert not (tmp_path / f"{name}.mp3").exists()               # out of date: put together again at the end
+    assert sorted(p.name for p in (tmp_path / name).iterdir()) == ["0001 You.mp3", "0002 Lena.mp3"]
+    md = (tmp_path / f"{name}.md").read_text(encoding="utf-8")
+    assert md == "# Lena\n\nYou: Eins\n\nLena: Zwei, neu gesprochen\n\n"
+    # Your own message: new text, your voice stays.
+    before = (tmp_path / name / "0001 You.mp3").read_bytes()
+    rec.replace(name, 1, SessionItem(1, "user", "You", "Eins (korrigiert)"), keep_audio=True)
+    rec.add(SessionItem(4, "user", "You", "Vier", ["typed"]))
+    rec.close()
+    assert (tmp_path / name / "0001 You.mp3").read_bytes() == before
+    e = load_session(tmp_path, name)["entries"]
+    assert [x["seq"] for x in e] == [1, 2, 3]                    # after the cut the numbers go on from there
+    assert e[0]["text"] == "Eins (korrigiert)" and e[0]["tags"][0] == "edited"
+    assert mp3_duration((tmp_path / f"{name}.mp3").read_bytes()) == pytest.approx(
+        e[1]["offset"] + e[1]["duration"], abs=0.001)
+
+
+@needs_ffmpeg
+def test_old_single_file_sessions_are_split_when_continued(tmp_path: Path) -> None:
+    import json
+
+    name = "2026-10-12_1200_lena"
+    first, second = encode_mp3(tone(1.0), FFMPEG), encode_mp3(tone(1.5), FFMPEG)
+    (tmp_path / f"{name}.mp3").write_bytes(first + second)
+    (tmp_path / f"{name}.md").write_text("# Lena\n\nYou: A\n\nLena: B\n\n", encoding="utf-8")
+    (tmp_path / INDEX_DIR).mkdir()
+    d1 = mp3_duration(first)
+    (tmp_path / INDEX_DIR / f"{name}.jsonl").write_text(
+        json.dumps({"role": "user", "speaker": "You", "offset": 0.0, "duration": d1, "tags": [], "text": "A"}) + "\n"
+        + json.dumps({"role": "assistant", "speaker": "Lena", "offset": d1, "duration": mp3_duration(second),
+                      "tags": [], "segments": [{"kind": "speech", "text": "B"}]}) + "\n", encoding="utf-8")
+    rec = SessionRecorder(tmp_path, FFMPEG)
+    rec.resume(name)
+    rec.add(SessionItem(9, "user", "You", "C", ["typed"]))
+    rec.wait_idle()
+    assert sorted(p.name for p in (tmp_path / name).iterdir()) == ["0001 You.mp3", "0002 Lena.mp3"]
+    assert (tmp_path / name / "0002 Lena.mp3").read_bytes() == second
+    rec.close()
+    assert [e["seq"] for e in load_session(tmp_path, name)["entries"]] == [1, 2, 3]
 
 
 @needs_ffmpeg
@@ -101,8 +173,6 @@ def test_resume_appends_at_the_end(tmp_path: Path) -> None:
     name = rec.new_name("max")
     rec.start(name, "Max")
     rec.add(SessionItem(1, "user", "You", "Eins", ["spoken"], tone(1.0)))
-    rec.wait_idle()
-    first = rec.duration
     rec.stop()
     rec.close()
     recorded = []
@@ -111,8 +181,9 @@ def test_resume_appends_at_the_end(tmp_path: Path) -> None:
     rec2.add(SessionItem(2, "assistant", "Max", "Zwei", [], tone(1.0)))
     rec2.wait_idle()
     rec2.close()
-    assert recorded[0][2] == pytest.approx(first + 0.5)
-    assert len(load_session(tmp_path, name)["entries"]) == 2
+    assert recorded[0][2:4] == (2, "0002 Max.mp3")
+    e = load_session(tmp_path, name)["entries"]
+    assert len(e) == 2 and e[1]["offset"] == pytest.approx(e[0]["duration"] + 0.5, abs=0.06)
     assert (tmp_path / f"{name}.md").read_text(encoding="utf-8") == "# Max\n\nYou: Eins\n\nMax: Zwei\n\n"
 
 

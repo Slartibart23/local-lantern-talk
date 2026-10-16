@@ -91,7 +91,7 @@ The browser only plays sound after you clicked *Start*.
 **Replies are text only**: *Voice output* is off globally (right panel) or for this
 character (character editor).
 
-**A cloned voice sounds wrong**: see [voices.md](voices.md) — a clean 3–10 s clip and an
+**A cloned voice sounds wrong**: see [voices.md](voices.md) — a clean 10–13 s clip and an
 exact reference text matter most.
 
 ## Language model and GPU memory

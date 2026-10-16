@@ -28,7 +28,7 @@ project uses [Semantic Versioning](https://semver.org/).
   text input, actions shown as "not spoken", voice / model selection, microphone and
   voice-output toggles (unloading Whisper / VAD / OmniVoice), GPU memory display.
 - "Add voice…" uploads an MP3 / WAV / FLAC / OGG reference clip into `user_data\voices`,
-  with a warning for clips outside the recommended 3–10 s.
+  with a warning for clips outside the recommended 10–13 s (and a hint below 10 s).
 - Reference text for custom voices: the Whisper transcript is shown and can be corrected
   in the UI (saved as `clip.txt` next to `clip.mp3`); the voice is rebuilt with it.
 - Speech quality settings: OmniVoice synthesis steps (16-64) and precision (fp16 / bf16 /
@@ -146,6 +146,27 @@ project uses [Semantic Versioning](https://semver.org/).
   risk, responsibly and with respect for other people's privacy.
 
 ### Changed
+- Group chats with up to four equal characters on the one loaded model: each speaks with
+  its own voice and gets its own system prompt (personality, how they speak, how they
+  behave in a group, who else is there); the character you address answers and may pass
+  the word on. The group has its own memory and recording; recent groups reopen with one
+  click.
+- Story mode: the characters tell a story with each other (Play, Pause, Next line, pick the
+  next speaker), with a story setup per group, editable story rules (Settings → Story
+  mode), a DRY sampler and occasional nudges against repetition; you can direct or join in
+  at any time.
+- Director's notes for everyone or for one character in a group; pinned notes of a group.
+- New character fields *How they speak* and *In a group*, filled in for the six examples
+  and taken over by installed examples once.
+- Templates for new characters (Assistant / Roleplay) and *Write from profile*: the loaded
+  model drafts instructions, speaking style, group behaviour, description and greeting
+  from a profile in your own words.
+- Edit any message that can still be deleted; a character's edited reply is spoken again
+  and replaced in the session recording.
+- Session recording keeps every message as its own MP3 while the chat is open; the MP3 of
+  the whole dialogue is put together at the end (End chat, switching characters, closing
+  the app). Older single-file sessions are split once when they are continued.
+- End chat clears the chat window at once; the summary is written afterwards.
 - Six example characters with six uses, each with an AI-generated portrait, a profile card
   (click the picture) and two recommended models (24–32 GB and 10–16 GB; *Show in catalog*,
   never loaded automatically): Lena (everyday assistant), Max (small talk), Professor Edmund

@@ -19,7 +19,8 @@ import numpy as np
 
 from .errors import describe as describe_error
 from .errors import is_out_of_memory
-from .llm import ChatMessage, LLMClient
+from .group import NamePrefixFilter
+from .llm import ChatMessage, LLMClient, SamplingConfig
 from .prompts import build_system_prompt, director_context
 from .sanitizer import ActionFilter, Segment, clean_for_speech
 from .sentences import SentenceSplitter
@@ -132,14 +133,17 @@ class Conversation:
     def voice_enabled(self) -> bool:
         return self.tts is not None and self.config.voice is not None
 
-    def voice_for(self, language: str | None) -> str | None:
-        """The voice to speak a reply in ``language`` with (None when voice output is off)."""
-        if not self.voice_enabled:
+    def voice_for(self, language: str | None, voice: str | None = None) -> str | None:
+        """The voice to speak a reply in ``language`` with (None when voice output is off).
+
+        ``voice`` is another character's voice (group chats); by default the active character's.
+        """
+        base = voice or self.config.voice
+        if self.tts is None or base is None:
             return None
-        assert self.config.voice is not None
         if self.config.match_language:
-            return self.voices.matched(self.config.voice, language)
-        return self.config.voice
+            return self.voices.matched(base, language)
+        return base
 
     def build_messages(self, user_text: str, language: str | None, note: str = "") -> list[ChatMessage]:
         prompt = build_system_prompt(
@@ -166,14 +170,26 @@ class Conversation:
 
         ``note`` is a director's note for this reply only (never part of the history).
         """
+        messages = self.build_messages(user_text, language, note)
+        for event in self.stream(messages, self.voice_for(language), language):
+            if isinstance(event, TurnDone) and event.reply:
+                self.history.append(ChatMessage("user", user_text))
+                self.history.append(ChatMessage("assistant", event.reply))
+            yield event
+
+    def stream(self, messages: list[ChatMessage], voice: str | None, language: str | None,
+               sampling: SamplingConfig | None = None, text_filter: NamePrefixFilter | None = None,
+               ) -> Iterator[TurnEvent]:
+        """Write and speak one reply to ``messages`` with ``voice``; the caller keeps the history.
+
+        ``text_filter`` removes the speaker's name from the start of the reply (group chats).
+        """
         metrics = TurnMetrics()
         self.cancel.clear()
         events: queue.Queue[object] = queue.Queue()
         sentences: queue.Queue[object] = queue.Queue()
-        messages = self.build_messages(user_text, language, note)
         reply_parts: list[str] = []
         errors: list[str] = []
-        voice = self.voice_for(language)
         self.active_voice = voice
         tts_language = language or (self.voices.language_of(voice) if voice else None)
 
@@ -194,14 +210,20 @@ class Conversation:
                     metrics.mark("first_sentence")
                     sentences.put(cleaned)
 
-            try:
-                for delta in self.llm.stream_chat(messages):
-                    if self.cancel.is_set():
-                        break  # closing the stream makes llama-server stop writing
-                    metrics.mark("first_token")
+            def take(delta: str) -> None:
+                if delta:
                     reply_parts.append(delta)
                     events.put(TextDelta(delta))
                     handle(action_filter.feed(delta))
+
+            try:
+                for delta in self.llm.stream_chat(messages, sampling):
+                    if self.cancel.is_set():
+                        break  # closing the stream makes llama-server stop writing
+                    metrics.mark("first_token")
+                    take(text_filter.feed(delta) if text_filter else delta)
+                if text_filter:
+                    take(text_filter.finish())
                 handle(action_filter.finish())
                 for sentence in splitter.finish():
                     push_sentence(sentence)
@@ -271,9 +293,6 @@ class Conversation:
         reply = "".join(reply_parts).strip()
         if errors:
             yield TurnError("; ".join(errors))
-        if reply:
-            self.history.append(ChatMessage("user", user_text))
-            self.history.append(ChatMessage("assistant", reply))
         yield TurnDone(reply, metrics)
 
 

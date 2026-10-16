@@ -135,6 +135,7 @@ class LlamaServer:
 class ChatMessage:
     role: str  # "system" | "user" | "assistant"
     content: str
+    name: str | None = None  # group chats: id of the character who said it (never sent to the model)
 
     def to_dict(self) -> dict[str, str]:
         return {"role": self.role, "content": self.content}
@@ -145,6 +146,8 @@ class SamplingConfig:
     temperature: float = 0.8
     top_p: float = 0.95
     max_tokens: int = 600
+    stop: list[str] = field(default_factory=list)   # the reply ends where one of these would begin
+    dry_multiplier: float = 0.0                       # DRY sampler against repeated phrases (0 = off)
 
 
 class LLMClient:
@@ -164,6 +167,10 @@ class LLMClient:
             "top_p": sp.top_p,
             "max_tokens": sp.max_tokens,
         }
+        if sp.stop:
+            payload["stop"] = sp.stop
+        if sp.dry_multiplier:
+            payload.update(dry_multiplier=sp.dry_multiplier, dry_base=1.75, dry_allowed_length=2)
         url = f"{self.server.base_url}/v1/chat/completions"
         with httpx.stream("POST", url, json=payload, timeout=httpx.Timeout(300.0, connect=5.0)) as r:
             r.raise_for_status()

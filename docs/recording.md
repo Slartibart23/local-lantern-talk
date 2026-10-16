@@ -1,22 +1,34 @@
 # Session recording
 
 Local Lantern Talk can record each chat as **one MP3 of the whole dialogue** (your
-voice and the character's voice, alternating) plus a **Markdown transcript** that reads
+voice and the characters' voices, alternating) plus a **Markdown transcript** that reads
 like a screenplay. Everything stays on your computer in `user_data\sessions\`.
+
+While a chat is open, **every message is kept as its own MP3** in a folder named after the
+session, so a single message can be deleted or edited. The MP3 of the whole dialogue is put
+together from these files when the chat ends.
 
 ## What is a session?
 
-A session is one chat with one character: it starts with your first message and ends
+A session is one chat with one character or one group: it starts with your first message and ends
 when you click **End chat**. If you come back to the character later (after switching
 characters or restarting the app) and continue the chat, the recording continues in
 the same files. **Start new chat** or **End chat** starts a new session.
 
-Files are named after the start time and the character:
+Files are named after the start time and the character (or the characters of a group):
 
 ```
-user_data\sessions\2026-10-13_1538_lena.mp3
-user_data\sessions\2026-10-13_1538_lena.md
+user_data\sessions\2026-10-13_1538_lena.mp3          the whole dialogue
+user_data\sessions\2026-10-13_1538_lena.md           the transcript
+user_data\sessions\2026-10-13_1538_lena\0002 You.mp3   while the chat is open: one file
+user_data\sessions\2026-10-13_1538_lena\0003 Lena.mp3  per message
 ```
+
+- **End chat** puts the whole MP3 together (a notice says when it is ready; that takes
+  about a second per hour of audio) and removes the single files.
+- **Switching characters or closing the app** also puts the whole MP3 together, but keeps the
+  single files: the chat can go on later, and its messages can still be edited.
+- After a crash, the whole MP3 is put together at the next start.
 
 ## Turning it on and off
 
@@ -32,12 +44,13 @@ badge in the header shows that recording is active. *Open session folder* opens
 
 - One file for the whole dialogue, in order. Your speech comes from the full-quality
   microphone recording, not from the reduced copy used for speech recognition.
+  In a group chat every character speaks with its own voice: a ready-made audio drama.
 - Waiting time (while the model thinks) is not recorded. Turns are separated by a short
   pause of 0.5 s.
 - User and AI speech are brought to a common loudness.
 - Mono, 128 kbit/s, 24 kHz: about 58 MB per hour (32–128 kbit/s in Settings).
-- Each utterance is appended as soon as it is complete. If the app or the computer
-  crashes, the file is intact up to the last complete utterance.
+- Each utterance is saved as its own file as soon as it is complete, so nothing is lost
+  in a crash.
 - Encoding runs in the background on the CPU and never delays the conversation.
 
 The pause and the bitrate can be changed in `user_data\settings.json`
@@ -64,16 +77,17 @@ Elara: Ach, die Goldene Laterne … die gibt es schon seit dreißig Jahren.
 - With a name in **Settings → Your profile**, your lines start with your name instead of
   "You". Director's notes are never part of the transcript.
 - **Deleting messages** in the chat (🗑, see [characters.md](characters.md#deleting-writing-again-and-editing-messages))
-  cuts them off the end of the MP3 and the transcript too. *Write again* replaces the
-  last reply in the recording.
+  removes their files and their lines in the transcript too. *Write again* replaces the
+  last reply. **Editing** a character's reply speaks it again and replaces its file; an
+  edited message of yours keeps your voice and gets its new text in the transcript.
 - The position of every utterance in the MP3 (for the replay buttons) is kept in a
   hidden file, `user_data\sessions\.index\<session>.jsonl`. If you delete a session's
   `.md` and `.mp3`, this file is removed automatically.
 
 ## Replay
 
-- Every recorded message in the chat has a **▶ 0:12** button. It plays that message
-  from the session MP3 and stops at its end. Click it again (or press Esc) to stop.
+- Every recorded message in the chat has a **▶ 0:12** button (its length). It plays that
+  message and stops at its end. Click it again (or press Esc) to stop.
 - The microphone stays muted while a recording plays, so the app never hears itself.
 - **Recent sessions** in the left panel lists past sessions with their length. Clicking
   one opens it **read-only**, with a replay button for each message. *Back to chat*

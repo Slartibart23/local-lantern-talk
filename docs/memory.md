@@ -25,6 +25,13 @@ Everything is stored locally in `user_data\memory\memory.db` (SQLite).
   its last chat is loaded and a bar offers *Continue* or *Start new chat*. Simply
   talking on also continues it.
 
+- **Groups** (see [group-chat.md](group-chat.md)): a group of characters has its own
+  memory, separate from the chats with each of them alone. All characters of the group
+  know its summary and facts. Memory is on for a group when it is on for every character
+  in it; *Reset* in the Memory panel resets only the group.
+- *End chat* clears the chat window at once; the summary is written right afterwards
+  (the status shows "Saving the conversation to memory…").
+
 Facts and the summary are added to the character's instructions in every request. The
 character therefore "knows" them without reading the whole old conversation.
 

@@ -180,9 +180,11 @@ def test_new_conversation_moves_the_talk_into_memory(setup) -> None:  # noqa: AN
     start = len(rec.events)
     engine.new_conversation()
     ev = _wait(rec, "character", start)
-    assert [t["role"] for t in ev["transcript"]] == ["assistant"]  # fresh greeting
+    assert [t["role"] for t in ev["transcript"]] == ["assistant"]  # fresh greeting, before the summary is written
     assert ev["resume"] is None
-    assert ev["memory"]["summary"] == MemoryLLM.summary_reply
+    memory = _wait(rec, "memory", start, lambda e: bool(e["summary"]))  # written afterwards
+    assert memory["summary"] == MemoryLLM.summary_reply
+    rec.wait_state("listening", start)
     assert engine.memory.summary("lena") in engine.conversation.config.memory
 
 

@@ -53,10 +53,14 @@ const app = {
   memory: null,         // facts and summary of the active character
   editingId: null,      // character open in the editor (null = new)
   deletableFrom: null,  // id of the oldest message that can still be deleted
-  editingLast: false,   // the message box holds the last user message for editing
+  editingMsg: null,     // the message open in the edit dialog: { id, role, last }
   collecting: false,    // push-to-talk / "Hold on": the app collects what you say until "Send"
   talkPress: null,      // when the Talk button / Space went down (push-to-talk)
   director: { pending: "", pinned: [] },  // director's notes: for the next reply, and pinned ones
+  group: { members: [], mode: "chat", playing: false, next: null, premise: "", recent: [] },  // group chat / story
+  speakingId: null,     // group chats: who is speaking now (portrait glow)
+  templates: {},        // starting points for new characters, per type
+  storyRulesDefault: "",
 };
 
 // ---------------------------------------------------------------- WebSocket
@@ -99,10 +103,13 @@ function handleEvent(msg) {
       renderComponents(msg.components);
       app.deletableFrom = msg.deletable_from ?? null;
       if (msg.director) app.director = msg.director;
+      if (msg.group) app.group = msg.group;
+      app.templates = msg.templates || {};
+      app.storyRulesDefault = msg.story_rules_default || "";
       renderDirector();
+      applyCharacterState(msg);
       renderTranscript(msg.transcript);
       renderVoiceInfo(msg.voice_info);
-      applyCharacterState(msg);
       app.profiles = msg.profiles || [];
       app.contextInfo = msg.context_info || null;
       app.version = msg.version || "";
@@ -120,6 +127,7 @@ function handleEvent(msg) {
       markRecorded(msg);
       break;
     case "character":
+      if (msg.group) app.group = msg.group;
       applyCharacterState(msg);
       if (msg.director) { app.director = msg.director; renderDirector(); }
       app.deletableFrom = msg.deletable_from ?? null;
@@ -130,8 +138,15 @@ function handleEvent(msg) {
       renderTranscript(msg.transcript);
       break;
     case "director":
-      app.director = { pending: msg.pending, pinned: msg.pinned };
+      app.director = { group: msg.group, pending: msg.pending, pinned: msg.pinned };
       renderDirector();
+      break;
+    case "group":
+      app.group = msg;
+      renderGroup();
+      break;
+    case "character_draft":
+      applyDraft(msg.draft);
       break;
     case "talk":
       app.collecting = !!msg.collecting;
@@ -157,7 +172,8 @@ function handleEvent(msg) {
       break;
     case "assistant_start":
       stopReplay();
-      startAssistantMessage(msg.voice, msg.id);
+      startAssistantMessage(msg.voice, msg.id, msg.speaker, msg.note);
+      setSpeaking(msg.speaker || null);
       resetPlayback();
       break;
     case "segment":
@@ -219,12 +235,12 @@ function handleEvent(msg) {
       renderTranscript([]);
       if (app.endingChat) {
         app.endingChat = false;
-        const name = app.character ? app.character.name : "the assistant";
-        toast(`New chat with ${name}. Pick another character on the left to talk to someone else.`, "info");
+        toast(`New chat with ${chatTitle()}. Pick another character on the left to talk to someone else.`, "info");
       }
       break;
     case "error":
       toast(msg.message);
+      resetDraftButton();
       break;
     case "bye":
       appClosed();
@@ -277,6 +293,8 @@ function setState(state, detail) {
   if (state !== "listening") $("meter-fill").style.width = "0";
   document.querySelectorAll("#messages .msg.speaking").forEach((m) => m.classList.remove("speaking"));
   if (state === "speaking" && app.lastAiEl) app.lastAiEl.classList.add("speaking");
+  if (state !== "speaking" && state !== "thinking") setSpeaking(null);
+  renderStoryControls();
   // While models load, settings are locked so a click cannot switch something off by accident.
   const loading = state === "loading";
   for (const node of [$("right-panel"), document.querySelector("#settings .settings-grid")]) {
@@ -362,6 +380,7 @@ function addUserMessage(msg) {
     t.textContent = `STT ${msg.stt_ms} ms`;
     meta.append(t);
   }
+  if (msg.edited) meta.append(el("span", { class: "edited", title: "You edited this message" }, "edited"));
   addReplayButton(meta, msg);
   addMessageActions(meta, "user");
   el.append(bubble, meta);
@@ -369,21 +388,30 @@ function addUserMessage(msg) {
   scrollToEnd(true);
 }
 
-function startAssistantMessage(voice, id) {
+function startAssistantMessage(voice, id, speaker = null, note = null) {
   hideEmptyHint();
-  const el = document.createElement("div");
-  el.className = "msg ai streaming";
-  if (id != null) el.dataset.id = id;
-  app.lastAiEl = el;  // glows while it is spoken
+  const node = document.createElement("div");
+  node.className = "msg ai streaming";
+  if (id != null) node.dataset.id = id;
+  app.lastAiEl = node;  // glows while it is spoken
+  const who = speaker ? member(speaker) : null;
+  if (who) {  // group chats: who is speaking, in their own colour
+    node.dataset.speaker = who.id;
+    const color = TEXT_COLORS[who.text_color];
+    if (color) node.style.setProperty("--speaker-text", color[1]);
+    node.append(el("div", { class: "speaker" },
+      setAvatar(el("span", { class: "avatar tiny", "aria-hidden": "true" }), who.avatar, who.avatar_initials), who.name));
+  }
+  if (note) node.append(directorLine(note));
   const bubble = document.createElement("div");
   bubble.className = "bubble";
   const meta = document.createElement("div");
   meta.className = "meta";
   meta.textContent = voice ? `voice: ${voiceName(voice)}` : "text only";
   addMessageActions(meta, "ai");
-  el.append(bubble, meta);
-  $("messages").append(el);
-  app.currentAi = { el, bubble, meta, lastSpeech: null };
+  node.append(bubble, meta);
+  $("messages").append(node);
+  app.currentAi = { el: node, bubble, meta, lastSpeech: null };
   scrollToEnd(true);
 }
 
@@ -440,11 +468,15 @@ function renderTranscript(items) {
   const box = $("messages");
   box.querySelectorAll(".msg").forEach((m) => m.remove());
   $("empty-hint").hidden = items.length > 0;
+  $("empty-hint").textContent = inGroup()
+    ? (app.group.mode === "story" ? "Press Play and the characters start the story. Pause to direct them or join in."
+      : "Say something to the group, or address someone by name.")
+    : "Say hello, or type a message below.";
   app.currentAi = null;
   for (const item of items) {
     if (item.role === "user") addUserMessage(item);
     else {
-      startAssistantMessage(item.voice, item.id);
+      startAssistantMessage(item.voice, item.id, item.speaker, item.note);
       if (item.greeting) app.currentAi.meta.querySelector(".msg-actions")?.remove();
       const meta = app.currentAi.meta;
       if (item.greeting) {
@@ -453,6 +485,7 @@ function renderTranscript(items) {
       }
       for (const seg of item.segments) renderSegment(app.currentAi, seg.kind, seg.text);
       finishAssistantMessage(null, item.stopped);
+      if (item.edited) meta.append(el("span", { class: "edited", title: "You edited this message" }, "edited"));
       addReplayButton(meta, item);
     }
   }
@@ -471,9 +504,10 @@ function addMessageActions(meta, role) {
   };
   if (role === "ai") {
     box.append(button("act-regen", "i-redo", "Write this answer again", () => send({ type: "regenerate" })));
-  } else {
-    box.append(button("act-edit", "i-edit", "Change your last message and send it again", startEditLast));
   }
+  box.append(button("act-edit", "i-edit", role === "ai"
+    ? "Edit this reply (it is spoken again for the recording)" : "Edit your message",
+                    (ev) => openEditMessage(ev.currentTarget.closest(".msg"))));
   box.append(button("act-delete", "i-trash", "Delete this message and everything after it",
                     (ev) => deleteFrom(ev.currentTarget.closest(".msg"))));
   meta.append(box);
@@ -498,29 +532,58 @@ function deleteFrom(node) {
   if (!node) return;
   const nodes = [...document.querySelectorAll("#messages .msg")];
   const after = nodes.length - 1 - nodes.indexOf(node);
-  const name = app.character ? app.character.name : "the assistant";
   const what = after > 0 ? `this message and the ${after} message${after > 1 ? "s" : ""} after it` : "this message";
-  if (!confirm(`Delete ${what}?\n\nThey are removed from the chat, from ${name}'s memory and from the session recording.`)) return;
+  const memory = inGroup() ? "the group's memory" : `${chatTitle()}'s memory`;
+  if (!confirm(`Delete ${what}?\n\nThey are removed from the chat, from ${memory} and from the session recording.`)) return;
   send({ type: "delete_from", id: Number(node.dataset.id) });
 }
 
-function startEditLast() {
-  const node = document.querySelector("#messages .msg.user.last-user");
-  if (!node) return;
-  const input = $("text-input");
-  input.value = node.querySelector(".bubble").textContent;
-  app.editingLast = true;
-  $("edit-bar").hidden = false;
-  autoGrow(input);
-  input.focus();
+// The text of a message as you would type it: actions of a reply go back into *asterisks*.
+function messageText(node) {
+  const bubble = node.querySelector(".bubble");
+  if (node.classList.contains("user")) return bubble.textContent;
+  const parts = [];
+  for (const child of bubble.childNodes) {
+    if (child.nodeType !== Node.ELEMENT_NODE) continue;
+    if (child.classList.contains("speech")) parts.push(child.textContent.trim());
+    else if (child.classList.contains("action")) {
+      const text = child.firstChild ? child.firstChild.textContent.trim() : "";
+      if (text) parts.push(child.classList.contains("code") ? text : `*${text}*`);
+    }
+  }
+  return parts.filter(Boolean).join(" ");
 }
 
-function cancelEditLast() {
-  if (!app.editingLast) return;
-  app.editingLast = false;
-  $("edit-bar").hidden = true;
-  $("text-input").value = "";
-  autoGrow($("text-input"));
+function openEditMessage(node) {
+  if (!node) return;
+  const user = node.classList.contains("user");
+  const last = user && node.classList.contains("last-user") && !document.querySelector(
+    `#messages .msg.user.last-user ~ .msg.user`);
+  app.editingMsg = { id: Number(node.dataset.id), role: user ? "user" : "ai", last };
+  $("edit-dialog-title").textContent = user ? "Edit your message" : "Edit this reply";
+  $("edit-text").value = messageText(node);
+  const recorded = !!node.querySelector(".replay");
+  $("edit-hint").textContent = user
+    ? "The messages after it stay. " + (recorded ? "The session recording keeps your recorded voice; only the text changes." : "")
+    : "The messages after it stay. Actions in *asterisks* are shown but never spoken. " +
+      (recorded ? "The reply is spoken again with the character's voice and replaces the old audio in the session recording." : "");
+  $("edit-resend").hidden = !last;
+  $("edit-dialog").hidden = false;
+  $("edit-text").focus();
+}
+
+function closeEditMessage() {
+  $("edit-dialog").hidden = true;
+  app.editingMsg = null;
+}
+
+function saveEditMessage(answerAgain = false) {
+  const m = app.editingMsg;
+  const text = $("edit-text").value.trim();
+  if (!m || !text) return;
+  if (answerAgain) send({ type: "edit_last", text });
+  else send({ type: "edit_message", id: m.id, text });
+  closeEditMessage();
 }
 
 // ---------------------------------------------------------------- talk modes: Auto, Smart, Push to talk, Hold on
@@ -593,6 +656,23 @@ function renderDirector() {
   const box = $("director-chips");
   box.innerHTML = "";
   const d = app.director || { pending: "", pinned: [] };
+  renderDirectorTarget();
+  if (d.group) {  // group chats: notes for everyone or for one character
+    d.pinned.forEach((p, i) => {
+      box.append(el("span", { class: "director-chip pinned", title: p.name ? `Pinned: ${p.name} follows this in every line` : "Pinned: everyone follows this" },
+        el("span", { "aria-hidden": "true" }, "📌 "), el("strong", {}, `${p.name || "Everyone"}: `), p.text,
+        el("button", { type: "button", "aria-label": `Remove the pinned note: ${p.text}`, title: "Remove",
+                       onclick: () => send({ type: "unpin_note", index: i }) }, "✕")));
+    });
+    for (const p of d.pending) {
+      box.append(el("span", { class: "director-chip pending", title: p.name ? `For the next line of ${p.name}` : "For the next line, whoever speaks" },
+        el("strong", {}, p.name ? `${p.name}, next line: ` : "Next line: "), p.text,
+        el("button", { type: "button", "aria-label": "Remove this note", title: "Remove",
+                       onclick: () => send({ type: "director_note", text: "", target: p.target }) }, "✕")));
+    }
+    box.hidden = !d.pinned.length && !d.pending.length;
+    return;
+  }
   const name = app.character ? app.character.name : "the character";
   d.pinned.forEach((note, i) => {
     box.append(el("span", { class: "director-chip pinned", title: `Pinned: ${name} follows this in every reply` },
@@ -607,6 +687,21 @@ function renderDirector() {
                      onclick: () => send({ type: "director_note", text: "" }) }, "✕")));
   }
   box.hidden = !d.pinned.length && !d.pending;
+}
+
+function renderDirectorTarget() {
+  const sel = $("director-target");
+  const group = inGroup();
+  sel.hidden = !group;
+  if (!group) return;
+  const keep = sel.value;
+  sel.innerHTML = "";
+  sel.append(new Option("Everyone", ""));
+  for (const id of app.group.members) {
+    const c = member(id);
+    if (c) sel.append(new Option(c.name, c.id));
+  }
+  sel.value = [...sel.options].some((o) => o.value === keep) ? keep : "";
 }
 
 function directorText() {
@@ -1226,17 +1321,147 @@ function renderCharacters() {
 function renderHeader() {
   const c = app.character;
   setAvatar($("header-avatar"), c && c.avatar, c ? c.avatar_initials : "LA");
-  $("header-name").textContent = c ? c.name : "Lantern";
-  $("header-role").textContent = c ? (KIND_LABEL[c.kind] || c.kind) : "Assistant";
+  $("header-name").textContent = c ? chatTitle() : "Lantern";
+  const group = inGroup();
+  $("header-role").textContent = group ? (app.group.mode === "story" ? "Story mode" : "Group chat")
+    : c ? (KIND_LABEL[c.kind] || c.kind) : "Assistant";
   $("edit-active-char").hidden = !c;
   const s = app.settings;
   const speaking = s.voice_output && (!c || c.voice_output);
-  $("header-voice").textContent = speaking ? `Voice: ${voiceName(s.voice)}` : "Text replies";
-  document.title = c ? `${c.name} · Local Lantern Talk` : "Local Lantern Talk";
+  $("header-voice").textContent = group ? (s.voice_output ? "Everyone with their own voice" : "Text replies")
+    : speaking ? `Voice: ${voiceName(s.voice)}` : "Text replies";
+  document.title = c ? `${chatTitle()} · Local Lantern Talk` : "Local Lantern Talk";
+}
+
+// ---------------------------------------------------------------- group chats and story mode
+
+function inGroup() {
+  return (app.group && app.group.members || []).length > 1;
+}
+
+function member(id) {
+  return app.characters.find((c) => c.id === id) || null;
+}
+
+function castTitle(names) {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+function chatTitle() {
+  if (inGroup()) return castTitle(app.group.members.map((id) => (member(id) || { name: id }).name));
+  return app.character ? app.character.name : "the assistant";
+}
+
+function renderGroup() {
+  const g = app.group;
+  const group = inGroup();
+  document.body.classList.toggle("group-chat", group);
+  const cast = $("cast");
+  cast.innerHTML = "";
+  const members = (g.members.length ? g.members : app.character ? [app.character.id] : []).map(member).filter(Boolean);
+  for (const c of members) {
+    const lead = app.character && c.id === app.character.id;
+    const next = group && g.next === c.id;
+    const chip = el("span", { class: "cast-chip" + (next ? " next" : ""), role: "listitem", "data-id": c.id });
+    const talk = el("button", { type: "button", class: "cast-talk",
+                                title: group ? `Let ${c.name} speak now (or pick them as the next speaker while the story plays)`
+                                  : `${c.name} — click their picture above the chat for the profile` },
+      setAvatar(el("span", { class: "avatar tiny", "aria-hidden": "true" }), c.avatar, c.avatar_initials), c.name);
+    talk.onclick = () => {
+      if (!group) { openProfileCard(c.id); return; }
+      if (app.group.playing || ["thinking", "speaking"].includes(app.state)) send({ type: "next_speaker", id: c.id });
+      else send({ type: "continue", speaker: c.id });
+    };
+    chip.append(talk);
+    if (group && !lead) {
+      chip.append(el("button", { type: "button", class: "cast-remove", "aria-label": `Remove ${c.name} from the chat`,
+                                 title: `Remove ${c.name} from this chat`,
+                                 onclick: () => send({ type: "set_group", ids: g.members.filter((id) => id !== c.id && id !== app.character.id) }) }, "✕"));
+    }
+    cast.append(chip);
+  }
+  $("cast-add").hidden = members.length >= 4;
+  $("cast-add").textContent = group ? "+ Add" : "+ Add character";
+  $("group-mode").hidden = !group;
+  document.querySelectorAll(".group-mode-btn").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.mode === g.mode)));
+  $("story-controls").hidden = !group || g.mode !== "story";
+  if (!group || g.mode !== "story") { $("story-setup").hidden = true; $("story-setup-btn").setAttribute("aria-expanded", "false"); }
+  if (document.activeElement !== $("premise-input")) $("premise-input").value = g.premise || "";
+  renderStoryControls();
+  renderRecentGroups();
+  renderDirectorTarget();
+  renderHeader();
+  applyLook();
+}
+
+function renderStoryControls() {
+  const btn = $("story-play");
+  if (!btn) return;
+  const playing = !!(app.group && app.group.playing);
+  btn.querySelector("span").textContent = playing ? "Pause" : "Play";
+  btn.querySelector("use").setAttribute("href", playing ? "#i-pause" : "#i-play");
+  btn.title = playing ? "Pause: the story stops after the line that is being spoken. Then direct or join in."
+    : "Play: the characters go on by themselves, line by line. Pause stops after the current line.";
+  btn.setAttribute("aria-pressed", String(playing));
+  $("story-step").disabled = playing || ["thinking", "speaking", "loading"].includes(app.state);
+}
+
+function renderRecentGroups() {
+  const list = $("group-list");
+  list.innerHTML = "";
+  const recent = (app.group.recent || []).filter((ids) => ids.every((id) => {
+    const c = member(id);
+    return c && (!familyMode() || !c.adult);
+  }));
+  $("groups-section").hidden = !recent.length;
+  const current = [...app.group.members].sort().join("+");
+  for (const ids of recent) {
+    const names = ids.map((id) => member(id).name);
+    const active = ids.length > 1 && [...ids].sort().join("+") === current;
+    const btn = el("button", { type: "button", class: "group-item" + (active ? " active" : ""),
+                               title: `Open the group chat with ${castTitle(names)} again`,
+                               onclick: () => { send({ type: "open_group", ids }); $("app").classList.remove("show-left"); } },
+      el("span", { class: "group-avatars", "aria-hidden": "true" },
+        ...ids.map((id) => { const c = member(id); return setAvatar(el("span", { class: "avatar tiny" }), c.avatar, c.avatar_initials); })),
+      el("span", { class: "group-name" }, castTitle(names)));
+    list.append(el("li", {}, btn));
+  }
+}
+
+function toggleCastMenu() {
+  const menu = $("cast-menu");
+  if (!menu.hidden) { menu.hidden = true; return; }
+  menu.innerHTML = "";
+  const inChat = new Set(app.group.members.length ? app.group.members : [app.character && app.character.id]);
+  const others = app.characters.filter((c) => !inChat.has(c.id) && (!familyMode() || !c.adult));
+  if (!others.length) menu.append(el("div", { class: "muted small cast-empty" }, "Everyone is already here."));
+  for (const c of others) {
+    menu.append(el("button", { type: "button", role: "menuitem", class: "cast-option",
+                               title: c.persona || c.name,
+                               onclick: () => {
+                                 menu.hidden = true;
+                                 const ids = [...inChat].filter((id) => id && id !== app.character.id);
+                                 send({ type: "set_group", ids: [...ids, c.id] });
+                               } },
+      setAvatar(el("span", { class: "avatar tiny", "aria-hidden": "true" }), c.avatar, c.avatar_initials), c.name));
+  }
+  menu.hidden = false;
+}
+
+function setSpeaking(id) {
+  app.speakingId = id;
+  document.querySelectorAll("#portrait-group img").forEach((img) => img.classList.toggle("speaking", img.dataset.id === id));
+  document.querySelectorAll("#cast .cast-chip").forEach((chip) => chip.classList.toggle("speaking", chip.dataset.id === id));
+}
+
+function toggleStory() {
+  if (app.group.playing) send({ type: "story_pause" });
+  else send({ type: "story_play" });
 }
 
 function selectCharacter(id) {
-  if (app.character && app.character.id === id) return;
+  if (app.character && app.character.id === id && !inGroup()) return;
   send({ type: "select_character", id });
   $("app").classList.remove("show-left");
 }
@@ -1274,7 +1499,7 @@ function openEditor(id) {
   const d = c || { name: "", avatar_initials: "", kind: "roleplay", persona: "", system_prompt: "", greeting: "",
                    voice: app.settings.voice, model: "", voice_output: true, show_actions_as_text: true,
                    memory_enabled: true, recording_enabled: true, avatar: "", background: "", background_fade: 80,
-                   text_color: "", director_notes: [], adult: false };
+                   text_color: "", director_notes: [], adult: false, speaking_style: "", group_style: "" };
   app.editLook = { avatar: d.avatar || "", background: d.background || "", text_color: d.text_color || "",
                    director_notes: d.director_notes || [] };
   $("ce-bg-fade").value = d.background_fade ?? 80;
@@ -1290,7 +1515,11 @@ function openEditor(id) {
       "A recommendation only; nothing is loaded automatically."
     : "";
   $("ce-prompt").value = d.system_prompt;
+  $("ce-speaking").value = d.speaking_style || "";
+  $("ce-group").value = d.group_style || "";
   $("ce-greeting").value = d.greeting;
+  app.editTemplate = null;
+  if (!c) fillTemplate(true);  // a new character starts from the template of its type
   fillVoiceOptions($("ce-voice"), d.voice);
   fillModelOptions($("ce-model"), d.model);
   $("ce-voice-output").checked = d.voice_output;
@@ -1312,10 +1541,75 @@ function closeEditor() {
   $("char-editor").hidden = true;
 }
 
+const TEMPLATE_FIELDS = [
+  { key: "system_prompt", input: "ce-prompt", label: "Personality and instructions" },
+  { key: "speaking_style", input: "ce-speaking", label: "How they speak" },
+  { key: "group_style", input: "ce-group", label: "In a group" },
+  { key: "greeting", input: "ce-greeting", label: "Greeting" },
+];
+
+// The template of the chosen type, with the name filled in. ``quiet``: only into empty fields, or
+// fields that still hold the template (switching the type of a new character).
+function fillTemplate(quiet = false) {
+  const t = app.templates[$("ce-kind").value];
+  if (!t) return;
+  const name = $("ce-name").value.trim();
+  const previous = app.editTemplate || {};
+  const filled = TEMPLATE_FIELDS.filter((f) => {
+    const v = $(f.input).value.trim();
+    return v && v !== (previous[f.key] || "").trim();
+  });
+  if (!quiet && filled.length && !confirm(`Replace ${filled.map((f) => f.label).join(", ")} with the template?`)) return;
+  const applied = {};
+  for (const f of TEMPLATE_FIELDS) {
+    const text = (t[f.key] || "").replaceAll("[name]", name || "[name]");
+    if (quiet && filled.includes(f)) continue;
+    $(f.input).value = text;
+    applied[f.key] = text;
+  }
+  app.editTemplate = applied;
+}
+
+function draftFromProfile() {
+  const name = $("ce-name").value.trim();
+  const profile = $("ce-profile").value.trim();
+  if (!name || !profile) {
+    toast("Write the name and the profile first (in your own words, any language); the instructions are written from them.", "info");
+    (name ? $("ce-profile") : $("ce-name")).focus();
+    return;
+  }
+  send({ type: "draft_character", character: { name, profile, kind: $("ce-kind").value } });
+  $("ce-draft").disabled = true;
+  $("ce-draft").textContent = "Writing…";
+  toast(`The language model is writing the instructions for ${name}…`, "info");
+}
+
+function resetDraftButton() {
+  $("ce-draft").disabled = false;
+  $("ce-draft").textContent = "Write from profile ✨";
+}
+
+function applyDraft(draft) {
+  resetDraftButton();
+  if ($("char-editor").hidden) return;
+  const fields = { system_prompt: "ce-prompt", speaking_style: "ce-speaking", group_style: "ce-group",
+                   greeting: "ce-greeting", persona: "ce-persona" };
+  const template = app.editTemplate || {};
+  const own = Object.entries(fields).filter(([key, id]) => draft[key] && $(id).value.trim()
+                                                            && $(id).value.trim() !== (template[key] || "").trim());
+  if (own.length && !confirm("Replace what you wrote with the draft? (Personality, speaking style, group, greeting, description)")) return;
+  for (const [key, id] of Object.entries(fields)) if (draft[key]) $(id).value = draft[key];
+  app.editTemplate = null;
+  toast("Here is the draft. Read it, change what you like, then Save.", "info");
+}
+
 function saveEditor(ev) {
   ev.preventDefault();
   const name = $("ce-name").value.trim();
   if (!name) { $("ce-name").focus(); return; }
+  const leftovers = TEMPLATE_FIELDS.filter((f) => /\[[^\]]{3,}\]/.test($(f.input).value));
+  if (leftovers.length && !confirm("Some parts in [brackets] from the template are still there " +
+      `(${leftovers.map((f) => f.label).join(", ")}). The model would read them as they are.\n\nSave anyway?`)) return;
   const character = {
     name,
     avatar_initials: $("ce-initials").value.trim().toUpperCase(),
@@ -1324,6 +1618,8 @@ function saveEditor(ev) {
     profile: $("ce-profile").value.trim(),
     recommended_models: (app.characters.find((x) => x.id === app.editingId) || {}).recommended_models || [],
     system_prompt: $("ce-prompt").value.trim(),
+    speaking_style: $("ce-speaking").value.trim(),
+    group_style: $("ce-group").value.trim(),
     greeting: $("ce-greeting").value.trim(),
     voice: $("ce-voice").value,
     model: $("ce-model").value,
@@ -1411,6 +1707,8 @@ function renderMemory() {
                      onclick: () => send({ type: "delete_fact", id: f.id }) }, "✕")));
   }
   $("memory-summary").textContent = m.summary || "Nothing summarized yet. Long chats and ended chats (End chat) end up here.";
+  $("memory-title").textContent = m.group ? `Memory of ${m.title}` : "Memory";
+  $("reset-memory").textContent = m.group ? "Reset this group's memory…" : "Reset this character's memory…";
 }
 
 function editFact(f) {
@@ -1429,6 +1727,7 @@ function applyCharacterState(msg) {
   renderMemory();
   renderResume();
   renderRecording();
+  renderGroup();
   applyDecorations();
   applyLook();
 }
@@ -1436,20 +1735,22 @@ function applyCharacterState(msg) {
 // ---------------------------------------------------------------- end chat / continue last chat
 
 function chatHasUserMessages() {
-  return !!document.querySelector("#messages .msg.user");
+  return inGroup() ? !!document.querySelector("#messages .msg") : !!document.querySelector("#messages .msg.user");
 }
 
 function endChat() {
-  const name = app.character ? app.character.name : "the assistant";
+  const name = chatTitle();
   if (!chatHasUserMessages()) {
     toast(`This is already a new chat with ${name}. Pick another character on the left to talk to someone else.`, "info");
     return;
   }
-  const keeps = app.character && app.character.memory_enabled
-    ? `${name} keeps it in memory (summary and facts).`
+  const remembers = app.memory && app.memory.enabled;
+  const keeps = remembers ? `${name} ${inGroup() ? "keep" : "keeps"} it in memory (summary and facts).`
     : `Memory is off for ${name}, so this chat is forgotten.`;
-  if (!confirm(`End this chat with ${name} and start a new one?\n\n${keeps}`)) return;
+  const rec = app.recording ? "\n\nThe recording is put together into one MP3; that may take a moment." : "";
+  if (!confirm(`End this chat with ${name} and start a new one?\n\n${keeps}${rec}`)) return;
   app.endingChat = true;
+  renderTranscript([]);  // the window is cleared at once; the summary is written meanwhile
   send({ type: "new_conversation" });
 }
 
@@ -1458,7 +1759,7 @@ function renderResume() {
   const banner = $("resume-banner");
   banner.hidden = !r;
   if (!r) return;
-  const name = app.character ? app.character.name : "the assistant";
+  const name = chatTitle();
   const when = new Date(r.last * 1000);
   const sameDay = when.toDateString() === new Date().toDateString();
   const time = when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -1480,8 +1781,18 @@ function fmtOffset(seconds) {
 }
 
 function addReplayButton(meta, item) {
-  if (!meta || !item || !item.session || item.offset == null) return;
+  if (!meta || !item || !item.session) return;
   meta.querySelectorAll(".replay, .replay-time").forEach((n) => n.remove());
+  if (item.part) {  // the chat is open: every message has its own MP3
+    if (item.duration == null) return;
+    const label = fmtOffset(item.duration);
+    const btn = el("button", { type: "button", class: "replay", title: `Play the recording of this message (${label})`,
+                               "aria-label": `Replay this message (${label})` }, `▶ ${label}`);
+    btn.onclick = () => replay(btn, item.session, 0, item.duration, label, item.part);
+    meta.append(btn);
+    return;
+  }
+  if (item.offset == null) return;
   const label = fmtOffset(item.offset);
   if (item.duration == null) {
     meta.append(el("span", { class: "replay-time", title: "Position in the session recording (no audio)" }, label));
@@ -1498,12 +1809,12 @@ function markRecorded(msg) {
   if (node) addReplayButton(node.querySelector(".meta"), msg);
   const s = app.sessions.find((x) => x.name === msg.session);
   if (s && msg.duration != null) {  // keep the length shown in the session list current
-    s.duration = Math.max(s.duration, msg.offset + msg.duration);
+    s.duration += msg.duration;
     renderSessions();
   }
 }
 
-function replay(btn, session, offset, duration, label) {
+function replay(btn, session, offset, duration, label, part = null) {
   const playingThis = app.replay && app.replay.btn === btn;
   stopReplay();
   if (playingThis) return;
@@ -1520,7 +1831,8 @@ function replay(btn, session, offset, duration, label) {
     audio.currentTime = offset;
     audio.play().catch(() => { toast("The recording could not be played."); stopReplay(); });
   }, { once: true });
-  audio.src = `/api/sessions/${encodeURIComponent(session)}.mp3?t=${Date.now()}`;
+  audio.src = part ? `/api/sessions/${encodeURIComponent(session)}/parts/${encodeURIComponent(part)}?t=${Date.now()}`
+    : `/api/sessions/${encodeURIComponent(session)}.mp3?t=${Date.now()}`;
   audio.load();
 }
 
@@ -1566,9 +1878,10 @@ function renderRecording() {
   const c = app.character;
   const on = !!app.settings.record_sessions;
   $("rec-indicator").hidden = !r;
-  if (r) $("rec-indicator").title = `Recording to user_data\\sessions\\${r.mp3}`;
+  if (r) $("rec-indicator").title = `Recording to user_data\\sessions\\${r.parts}`;
   let text;
-  if (r) text = `Recording to ${r.mp3} and ${r.md} in user_data\\sessions.`;
+  if (r) text = `Recording: one MP3 per message in user_data\\sessions\\${r.parts} and the transcript ${r.md}. ` +
+    `The whole dialogue becomes ${r.mp3} when the chat ends.`;
   else if (!on) text = "Recording is off.";
   else if (c && !c.recording_enabled) text = `${c.name} is not recorded (see the character settings).`;
   else text = "Recording starts with your next message.";
@@ -1591,7 +1904,7 @@ async function openSession(name) {
   $("session-title").textContent = data.title || name;
   const box = $("session-messages");
   box.innerHTML = "";
-  for (const e of data.entries) box.append(sessionMessage(e, data.audio ? name : null));
+  for (const e of data.entries) box.append(sessionMessage(data.parts ? e : { ...e, part: null }, data.audio || data.parts ? name : null));
   if (!data.entries.length) box.append(el("div", { class: "empty" }, "This session has no messages."));
   document.body.classList.add("viewing-session");
   $("session-view").hidden = false;
@@ -1602,6 +1915,7 @@ async function openSession(name) {
 
 function sessionMessage(e, session) {
   const node = el("div", { class: `msg ${e.role === "user" ? "user" : "ai"}` });
+  if (e.role !== "user" && e.speaker) node.append(el("div", { class: "speaker" }, e.speaker));
   const bubble = el("div", { class: "bubble" });
   const meta = el("div", { class: "meta" });
   if (e.role === "user") {
@@ -1660,6 +1974,7 @@ function renderSettings() {
   $("vad-threshold-out").textContent = Number(s.vad_threshold).toFixed(2);
   renderContext();
   renderProfileTable();
+  renderStoryRules();
   $("set-record-sessions").checked = !!s.record_sessions;
   $("set-family").checked = !!s.family_mode;
   setSelect($("session-bitrate"), String(s.session_bitrate_kbps), `${s.session_bitrate_kbps} kbit/s`);
@@ -1883,7 +2198,17 @@ function applyLook() {
   if (s.user_name) you.title = `${s.user_name} — change your name, picture and text colour in Settings → Your profile`;
   // Portraits at the top corners of the chat (Settings → Appearance → Avatar size).
   const size = avatarSize();
-  const showChar = size !== "small" && !!(c && c.avatar);
+  const groupPictures = inGroup() ? app.group.members.map(member).filter((m) => m && m.avatar) : [];
+  const group = $("portrait-group");
+  group.innerHTML = "";
+  for (const m of groupPictures) {
+    const img = el("img", { class: "portrait group", src: imageUrl(m.avatar), alt: "", title: `${m.name}: show the profile`,
+                            "data-id": m.id, onclick: () => openProfileCard(m.id) });
+    if (m.id === app.speakingId) img.classList.add("speaking");
+    group.append(img);
+  }
+  group.hidden = size === "small" || !groupPictures.length;
+  const showChar = size !== "small" && !!(c && c.avatar) && !inGroup();
   const showYou = size !== "small" && !!s.user_avatar;
   if (showChar) $("portrait-char").src = imageUrl(c.avatar);
   if (showYou) $("portrait-you").src = imageUrl(s.user_avatar);
@@ -1891,7 +2216,7 @@ function applyLook() {
   $("portrait-you").hidden = !showYou;
   if (c) $("portrait-char").title = c.name;
   for (const key of ["small", "medium", "large"]) document.body.classList.toggle(`avatar-${key}`, size === key);
-  document.body.classList.toggle("portrait-left", showChar);
+  document.body.classList.toggle("portrait-left", showChar || !group.hidden);
   document.body.classList.toggle("portrait-right", showYou);
   const bg = $("chat-bg");
   if (c && c.background) {
@@ -1924,6 +2249,12 @@ function renderEditorLook() {
   $("ce-bg-fade-out").textContent = `${$("ce-bg-fade").value} %`;
   $("ce-colors-label").textContent = `Text colour of ${name || "the character"}'s messages`;
   renderSwatches($("ce-colors"), look.text_color, (key) => { look.text_color = key; renderEditorLook(); });
+}
+
+function renderStoryRules() {
+  const box = $("story-rules");
+  box.placeholder = app.storyRulesDefault;
+  if (document.activeElement !== box) box.value = app.settings.story_rules || app.storyRulesDefault;
 }
 
 function renderProfile() {
@@ -2045,9 +2376,10 @@ function modelName(id) {
   return m ? m.name : "";
 }
 
-function openProfileCard() {
-  const c = app.character;
+function openProfileCard(id = null) {
+  const c = (typeof id === "string" && member(id)) || app.character;
   if (!c) return;
+  app.profileId = c.id;
   setAvatar($("pc-avatar"), c.avatar, c.avatar_initials);
   $("pc-name").textContent = c.name;
   $("pc-persona").textContent = [KIND_LABEL[c.kind] || c.kind, c.persona, c.adult ? "for adults only" : ""]
@@ -2170,21 +2502,53 @@ function init() {
   $("status-btn").onclick = togglePause;
   $("pause-btn").onclick = togglePause;
   $("stop-btn").onclick = stopReply;
+  const target = () => (inGroup() ? $("director-target").value : "");
   $("director-form").onsubmit = (ev) => {
     ev.preventDefault();
     const text = directorText();
-    if (text) send({ type: "director_note", text });
+    if (text) send({ type: "director_note", text, target: target() });
   };
   $("director-pin").onclick = () => {
     const text = directorText();
-    if (text) send({ type: "pin_note", text });
+    if (text) send({ type: "pin_note", text, target: target() });
     else toast("Type the note first, then click Pin.", "info");
   };
   $("director-continue").onclick = () => {
     const text = directorText();
-    if (text) send({ type: "director_note", text });
-    send({ type: "continue" });
+    if (text) send({ type: "director_note", text, target: target() });
+    send({ type: "continue", speaker: target() });
   };
+  $("cast-add").onclick = (e) => { e.stopPropagation(); toggleCastMenu(); };
+  document.addEventListener("click", (e) => { if (!e.target.closest(".cast-add-wrap")) $("cast-menu").hidden = true; });
+  document.querySelectorAll(".group-mode-btn").forEach((b) => { b.onclick = () => send({ type: "group_mode", mode: b.dataset.mode }); });
+  $("story-play").onclick = toggleStory;
+  $("story-step").onclick = () => send({ type: "continue", speaker: "" });
+  $("story-setup-btn").onclick = () => {
+    const open = $("story-setup").hidden;
+    $("story-setup").hidden = !open;
+    $("story-setup-btn").setAttribute("aria-expanded", String(open));
+    if (open) $("premise-input").focus();
+  };
+  $("premise-save").onclick = () => {
+    send({ type: "premise", text: $("premise-input").value.trim() });
+    toast("The story setup is saved for this group.", "info");
+  };
+  $("edit-form").onsubmit = (ev) => { ev.preventDefault(); saveEditMessage(false); };
+  $("edit-resend").onclick = () => saveEditMessage(true);
+  $("edit-cancel").onclick = closeEditMessage;
+  $("edit-close").onclick = closeEditMessage;
+  $("edit-dialog").onclick = (e) => { if (e.target === $("edit-dialog")) closeEditMessage(); };
+  $("edit-text").addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); saveEditMessage(false); }
+  });
+  $("ce-template").onclick = () => fillTemplate(false);
+  $("ce-draft").onclick = draftFromProfile;
+  $("ce-kind").onchange = () => { if (!app.editingId) fillTemplate(true); };
+  $("story-rules").onchange = (e) => {
+    const text = e.target.value.trim();
+    changeSetting("story_rules", text === app.storyRulesDefault.trim() ? "" : text);
+  };
+  $("story-rules-reset").onclick = () => { $("story-rules").value = app.storyRulesDefault; changeSetting("story_rules", ""); };
   document.querySelectorAll(".talk-mode").forEach((b) => { b.onclick = () => setTalkMode(b.dataset.mode); });
   const talk = $("talk-btn");
   talk.onpointerdown = (e) => { if (e.button === 0) { talk.setPointerCapture(e.pointerId); talkDown(); } };
@@ -2192,7 +2556,8 @@ function init() {
   talk.onkeydown = (e) => { if ((e.key === "Enter" || e.key === " ") && !e.repeat) { e.preventDefault(); talkDown(); } };
   talk.onkeyup = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); talkUp(); } };
   // Space bar = Talk button in push-to-talk, as long as you are not typing.
-  const dialogOpen = () => !$("char-editor").hidden || !$("settings").hidden || !$("catalog").hidden || !$("crop-dialog").hidden;
+  const dialogOpen = () => !$("char-editor").hidden || !$("settings").hidden || !$("catalog").hidden || !$("crop-dialog").hidden
+    || !$("edit-dialog").hidden;
   document.addEventListener("keydown", (e) => {
     if (e.code !== "Space" || e.repeat || typingTarget(document.activeElement) || dialogOpen() || !app.started) return;
     if ((app.settings.talk_mode || "auto") !== "ptt" && !app.collecting) return;
@@ -2203,20 +2568,12 @@ function init() {
     if (e.code !== "Space" || typingTarget(document.activeElement) || dialogOpen()) return;
     if (app.talkPress != null) { e.preventDefault(); talkUp(); }
   });
-  $("edit-cancel").onclick = cancelEditLast;
-
   const input = $("text-input");
   $("text-form").onsubmit = (ev) => {
     ev.preventDefault();
     const text = input.value.trim();
     if (!text) return;
-    if (app.editingLast) {
-      send({ type: "edit_last", text });
-      app.editingLast = false;
-      $("edit-bar").hidden = true;
-    } else {
-      send({ type: "text", text });
-    }
+    send({ type: "text", text });
     input.value = "";
     autoGrow(input);
   };
@@ -2300,14 +2657,17 @@ function init() {
   };
   $("ce-bg-remove").onclick = () => { app.editLook.background = ""; renderEditorLook(); };
   $("ce-bg-fade").oninput = renderEditorLook;
-  $("ce-name").addEventListener("input", () => { if (app.editLook) renderEditorLook(); });
+  $("ce-name").addEventListener("input", () => {
+    if (app.editLook) renderEditorLook();
+    if (!app.editingId && app.editTemplate) fillTemplate(true);  // the template follows the new name
+  });
   $("ce-initials").addEventListener("input", () => { if (app.editLook) renderEditorLook(); });
   $("user-avatar").onclick = openProfileSettings;
-  $("header-avatar").onclick = openProfileCard;
-  $("portrait-char").onclick = openProfileCard;
+  $("header-avatar").onclick = () => openProfileCard();
+  $("portrait-char").onclick = () => openProfileCard();
   $("pc-close").onclick = closeProfileCard;
   $("pc-ok").onclick = closeProfileCard;
-  $("pc-edit").onclick = () => { closeProfileCard(); if (app.character) openEditor(app.character.id); };
+  $("pc-edit").onclick = () => { closeProfileCard(); if (app.profileId) openEditor(app.profileId); };
   $("profile-card").onclick = (e) => { if (e.target === $("profile-card")) closeProfileCard(); };
   $("you-avatar-pick").onclick = async () => {
     const name = await chooseImage("user-avatar");
@@ -2365,7 +2725,7 @@ function init() {
     $("fact-input").value = "";
   };
   $("reset-memory").onclick = () => {
-    const name = app.character ? app.character.name : "this character";
+    const name = app.character ? chatTitle() : "this character";
     if (confirm(`Reset the memory of ${name}? The conversation history, the summary and all facts are deleted.`)) {
       send({ type: "reset_memory" });
     }
@@ -2377,7 +2737,8 @@ function init() {
       if (["thinking", "speaking"].includes(app.state) && $("char-editor").hidden && $("settings").hidden) stopReply();
       else if (app.collecting) cancelTalk();
       else if (!$("profile-card").hidden) closeProfileCard();
-      else if (app.editingLast) cancelEditLast();
+      else if (!$("edit-dialog").hidden) closeEditMessage();
+      else if (!$("cast-menu").hidden) $("cast-menu").hidden = true;
       else if (!$("char-editor").hidden) closeEditor();
       else if (!$("settings").hidden) closeSettings();
       else if (app.replay) stopReplay();

@@ -21,12 +21,40 @@ MAX_TEXT = 8000
 MAX_NOTE = 300     # characters per director's note
 MAX_NOTES = 8      # pinned notes per character
 MAX_PROFILE = 2000
+MAX_STYLE = 1500   # "How they speak" and "In a group"
 # The examples shipped before new ones were added; installations that copied them have the old marker file.
 FIRST_DEFAULTS = ("lena", "max", "elara", "captain-vargas")
 DEFAULTS_STATE = ".defaults.json"
 # Chat text colours (web UI): 16 clearly different colours that are all readable on the dark chat.
 TEXT_COLORS = ("white", "silver", "yellow", "gold", "orange", "coral", "red", "pink", "magenta", "lavender",
                "violet", "sky", "blue", "turquoise", "mint", "lime")
+
+
+# Starting points for a new character (+ New character); the parts in [brackets] are for you to fill in.
+TEMPLATES: dict[str, dict[str, str]] = {
+    "assistant": {
+        "system_prompt": (
+            "You are [name], [age], a [role, e.g. patient language teacher / friendly cooking coach]. "
+            "You help the user with [topics]. You know a lot about [expertise]; when you are not sure, "
+            "you say so honestly. Your manner is [three or four traits, e.g. warm, calm, witty]. "
+            "[Anything else: what you never do, a habit, a catchphrase.] You run fully locally on the user's "
+            "computer and cannot look things up online or know today's news."),
+        "speaking_style": "[e.g. short, clear sentences; everyday words; a light joke now and then]",
+        "group_style": "[e.g. listens first, then sums up and suggests what to do next]",
+        "greeting": "Hello! I'm [name]. What can I do for you?",
+    },
+    "roleplay": {
+        "system_prompt": (
+            "You are [name], [age], [role / job]. Background: [where you come from, two or three experiences "
+            "that shaped you]. Personality: [three or four traits]. What you know: [your expertise], and what "
+            "you don't. The setting: [where and when the conversation takes place]. The user is [who the user "
+            "is in this story]. Stay in character at all times, react to what the user says and does, and "
+            "drive the story forward with [hooks, secrets, small surprises]."),
+        "speaking_style": "[e.g. slow and dry; old-fashioned words; calls the user \"stranger\"; never swears]",
+        "group_style": "[e.g. takes the lead / teases whoever spoke last / trusts nobody at first]",
+        "greeting": "[What you say when the user arrives, with a little action in *asterisks*.]",
+    },
+}
 
 
 class CharacterError(ValueError):
@@ -57,6 +85,8 @@ class Character:
     adult: bool = False               # for adults only: hidden in family mode
     profile: str = ""                 # profile card for you (who the character is); not sent to the model
     recommended_models: list[str] = field(default_factory=list)  # catalog ids: big GPUs first, then small ones
+    speaking_style: str = ""          # how the character speaks (added to the instructions)
+    group_style: str = ""             # how the character behaves in a group chat or a story
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -126,6 +156,11 @@ def validate(data: dict[str, Any], char_id: str) -> Character:
     if not isinstance(notes, list):
         notes = []
     values["director_notes"] = [" ".join(str(n).split())[:MAX_NOTE] for n in notes if str(n).strip()][:MAX_NOTES]
+    for key, label in (("speaking_style", "How they speak"), ("group_style", "In a group")):
+        text = str(values.get(key, "") or "").strip()
+        if len(text) > MAX_STYLE:
+            raise CharacterError(f"{label} is too long ({MAX_STYLE} characters at most).")
+        values[key] = text
     profile = str(values.get("profile", "") or "").strip()
     if len(profile) > MAX_PROFILE:
         raise CharacterError(f"The profile is too long ({MAX_PROFILE} characters at most).")
@@ -173,7 +208,7 @@ class CharacterStore:
                 shipped = json.loads(shipped_path.read_text(encoding="utf-8")) if shipped_path.exists() else None
                 if shipped is not None:
                     # Copied from an older version: take over what the example has gained since.
-                    for key in ("scene", "profile", "recommended_models"):
+                    for key in ("scene", "profile", "recommended_models", "speaking_style", "group_style"):
                         if key not in data and key in shipped:
                             data[key] = shipped[key]
                 char = validate(data, f.stem)

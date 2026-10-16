@@ -63,6 +63,9 @@ class Message:
     replay_offset: float | None = None
     replay_duration: float | None = None
     note: str | None = None             # director's note given with this message
+    speaker: str | None = None          # group chats: id of the character who said it
+    replay_seq: int | None = None       # number of the utterance in the session recording
+    replay_part: str | None = None      # its own MP3 in the session folder (while the chat is open)
 
 
 @dataclass(frozen=True)
@@ -82,7 +85,8 @@ class MemoryStore:
         self._db.executescript(_SCHEMA)
         columns = {row[1] for row in self._db.execute("PRAGMA table_info(messages)")}
         for name, kind in (("replay_session", "TEXT"), ("replay_offset", "REAL"), ("replay_duration", "REAL"),
-                           ("note", "TEXT")):
+                           ("note", "TEXT"), ("speaker", "TEXT"), ("replay_seq", "INTEGER"),
+                           ("replay_part", "TEXT")):
             if name not in columns:  # databases from before session recording
                 self._db.execute(f"ALTER TABLE messages ADD COLUMN {name} {kind}")
         self._db.commit()
@@ -103,22 +107,35 @@ class MemoryStore:
 
     # -- history ----------------------------------------------------------------------
     def add_message(self, character: str, role: str, content: str, language: str | None = None,
-                    source: str | None = None, voice: str | None = None, note: str | None = None) -> int:
+                    source: str | None = None, voice: str | None = None, note: str | None = None,
+                    speaker: str | None = None) -> int:
+        """``character`` is a character id, or a group key (group.group_key) for a group chat."""
         cur = self._execute(
-            "INSERT INTO messages (character, role, content, language, source, voice, created, note) "
-            "VALUES (?,?,?,?,?,?,?,?)", (character, role, content, language, source, voice, time.time(), note or None))
+            "INSERT INTO messages (character, role, content, language, source, voice, created, note, speaker) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (character, role, content, language, source, voice, time.time(), note or None, speaker))
         return int(cur.lastrowid)
 
     def active_messages(self, character: str) -> list[Message]:
         """Messages not yet folded into the summary, oldest first."""
         rows = self._query(
             "SELECT id, role, content, language, source, voice, created, replay_session, replay_offset, "
-            "replay_duration, note FROM messages WHERE character = ? AND summarized = 0 ORDER BY id", (character,))
+            "replay_duration, note, speaker, replay_seq, replay_part FROM messages "
+            "WHERE character = ? AND summarized = 0 ORDER BY id",
+            (character,))
         return [Message(*r) for r in rows]
 
-    def set_replay(self, message_id: int, session: str, offset: float, duration: float | None) -> None:
-        self._execute("UPDATE messages SET replay_session = ?, replay_offset = ?, replay_duration = ? WHERE id = ?",
-                      (session, offset, duration, message_id))
+    def set_replay(self, message_id: int, session: str, seq: int, part: str | None, duration: float | None) -> None:
+        self._execute("UPDATE messages SET replay_session = ?, replay_seq = ?, replay_part = ?, replay_duration = ?, "
+                      "replay_offset = NULL WHERE id = ?", (session, seq, part, duration, message_id))
+
+    def update_message(self, message_id: int, content: str) -> None:
+        """An edited message (the text the model sees from now on)."""
+        self._execute("UPDATE messages SET content = ? WHERE id = ?", (content, message_id))
+
+    def meta_values(self, key: str) -> set[str]:
+        """``key`` of every character and group, e.g. the session recordings of open chats."""
+        return {r[0] for r in self._query("SELECT value FROM meta WHERE key = ?", (key,)) if r[0]}
 
     def delete_from(self, character: str, first_id: int) -> None:
         """Forget the unsummarized messages from ``first_id`` on (deleting the end of a chat)."""
@@ -189,6 +206,14 @@ class MemoryStore:
         for table in ("messages", "summaries", "facts", "meta"):
             self._execute(f"DELETE FROM {table} WHERE character = ?", (character,))  # noqa: S608 - fixed names
 
+    def groups_with(self, character: str) -> list[str]:
+        """Group keys ("group:a+b") whose memory includes ``character``."""
+        keys = set()
+        for table in ("messages", "summaries", "facts", "meta"):
+            rows = self._query(f"SELECT DISTINCT character FROM {table} WHERE character LIKE 'group:%'")  # noqa: S608
+            keys.update(r[0] for r in rows)
+        return sorted(k for k in keys if character in k.removeprefix("group:").split("+"))
+
 
 # ---------------------------------------------------------------------------- policy
 
@@ -224,9 +249,17 @@ def messages_to_summarize(messages: list[Message], context: int) -> list[Message
     return out
 
 
-def transcript_text(messages: list[Message], character_name: str, user_name: str = "User") -> str:
+def transcript_text(messages: list[Message], character_name: str, user_name: str = "User",
+                    names: dict[str, str] | None = None) -> str:
+    """``names``: group chats, the name of each speaker id."""
     who = {"user": user_name or "User", "assistant": character_name}
-    return "\n".join(f"{who.get(m.role, m.role)}: {m.content}" for m in messages)
+
+    def label(m: Message) -> str:
+        if m.role == "assistant" and names and m.speaker in names:
+            return names[m.speaker]
+        return who.get(m.role, m.role)
+
+    return "\n".join(f"{label(m)}: {m.content}" for m in messages)
 
 
 SUMMARY_SYSTEM = ("You keep the long-term memory of an ongoing conversation between a user and "
@@ -277,11 +310,13 @@ def parse_fact_update(text: str) -> tuple[list[str], list[str]]:
     return strings("add")[:5], strings("remove")
 
 
-def memory_context(summary: str, facts: list[Fact]) -> str:
+def memory_context(summary: str, facts: list[Fact], group: bool = False) -> str:
     """What the system prompt tells the model about earlier conversations."""
     parts = []
     if facts:
         parts.append("Things you know and remember:\n" + "\n".join(f"- {f.text}" for f in facts))
     if summary:
-        parts.append("Summary of your earlier conversations with the user:\n" + summary)
+        heading = ("Summary of what happened so far in this group:" if group
+                   else "Summary of your earlier conversations with the user:")
+        parts.append(heading + "\n" + summary)
     return "\n\n".join(parts)

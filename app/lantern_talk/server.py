@@ -54,13 +54,14 @@ from .gpu import query_gpu
 from .images import MAX_IMAGE_BYTES, ImageStore
 from .logging_setup import setup_logging
 from .paths import Paths, apply_portable_env, get_paths, path_warnings
-from .recorder import SessionRecorder, list_sessions, load_session
+from .recorder import SessionRecorder, list_sessions, load_session, valid_part
 from .settings import SettingsStore
 
 log = logging.getLogger(__name__)
 
 # WebSocket messages with personal content (chat text, characters, facts) never go to the log.
-PRIVATE_MESSAGES = {"text", "save_character", "add_fact", "update_fact", "edit_last", "director_note", "pin_note"}
+PRIVATE_MESSAGES = {"text", "save_character", "add_fact", "update_fact", "edit_last", "director_note", "pin_note",
+                    "premise", "draft_character", "edit_message", "settings"}
 
 HOST = "127.0.0.1"
 DEFAULT_PORT = 7865
@@ -240,6 +241,18 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
             return JSONResponse({"error": "Not found"}, status_code=404)
         return FileResponse(path, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
 
+    @app.get("/api/sessions/{name}/parts/{part}")
+    async def session_part(name: str, part: str, request: Request) -> Any:
+        """One utterance of a chat that is still open (its own MP3 in the session's folder)."""
+        if not same_site(request):
+            return JSONResponse({"error": "Forbidden"}, status_code=403)
+        if not SessionRecorder.valid_name(name) or not valid_part(part):
+            return JSONResponse({"error": "Not found"}, status_code=404)
+        path = paths.sessions / name / part
+        if not path.is_file():
+            return JSONResponse({"error": "Not found"}, status_code=404)
+        return FileResponse(path, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
+
     @app.get("/api/sessions/{name}")
     async def session_transcript(name: str, request: Request) -> JSONResponse:
         path = session_file(name, ".md")
@@ -301,16 +314,36 @@ def create_app(paths: Paths, port: int, engine_factory=None) -> FastAPI:  # noqa
                     engine.regenerate()
                 elif kind == "edit_last":
                     engine.edit_last(str(data.get("text", ""))[:4000])
+                elif kind == "edit_message":
+                    engine.edit_message(int(data.get("id", 0)), str(data.get("text", ""))[:4000])
                 elif kind == "stop_reply":
                     engine.stop_reply()
                 elif kind == "director_note":
-                    engine.set_pending_note(str(data.get("text", "")))
+                    engine.set_pending_note(str(data.get("text", "")), str(data.get("target", "")))
                 elif kind == "pin_note":
-                    engine.pin_note(str(data.get("text", ""))[:300])
+                    engine.pin_note(str(data.get("text", ""))[:300], str(data.get("target", "")))
                 elif kind == "unpin_note":
                     engine.unpin_note(int(data.get("index", -1)))
                 elif kind == "continue":
-                    engine.continue_story()
+                    engine.continue_story(str(data.get("speaker", "")))
+                elif kind == "set_group":
+                    engine.set_group([str(i) for i in data.get("ids") or []])
+                elif kind == "open_group":
+                    engine.open_group([str(i) for i in data.get("ids") or []])
+                elif kind == "group_mode":
+                    engine.set_group_mode(str(data.get("mode", "")))
+                elif kind == "story_play":
+                    engine.story_play()
+                elif kind == "story_pause":
+                    engine.story_pause()
+                elif kind == "next_speaker":
+                    engine.set_next_speaker(str(data.get("id", "")))
+                elif kind == "premise":
+                    engine.set_premise(str(data.get("text", ""))[:3000])
+                elif kind == "draft_character":
+                    values = data.get("character")
+                    if isinstance(values, dict):
+                        engine.draft_character(values)
                 elif kind == "talk_start":
                     engine.talk_start()
                 elif kind == "talk_end":

@@ -57,6 +57,10 @@
                   title="Add a character from a file exported with Export… (its look and pictures; no memory, no cloned voice)">Import…</button>
         </div>
       </section>
+      <section id="groups-section" hidden>
+        <h2>Groups</h2>
+        <ul class="group-list" id="group-list"></ul>
+      </section>
       <section>
         <h2>Recent sessions</h2>
         <ul class="session-list" id="session-list"></ul>
@@ -102,6 +106,41 @@
       </header>
       <div class="garland" id="garland" aria-hidden="true"></div>
 
+      <div class="cast-bar" id="cast-bar">
+        <div class="cast" id="cast" role="list" aria-label="Characters in this chat"></div>
+        <div class="cast-add-wrap">
+          <button type="button" id="cast-add" class="secondary cast-add"
+                  title="Bring up to three more characters into this chat. They all use the loaded language model and speak with their own voices.">+ Add character</button>
+          <div class="cast-menu" id="cast-menu" role="menu" hidden></div>
+        </div>
+        <div class="group-mode" id="group-mode" role="radiogroup" aria-label="Group mode" hidden>
+          <button type="button" class="group-mode-btn" data-mode="chat" role="radio" aria-checked="true"
+                  title="Group chat: you lead the conversation. The character you address answers (or whoever is next), and anyone they address may answer too.">Chat</button>
+          <button type="button" class="group-mode-btn" data-mode="story" role="radio" aria-checked="false"
+                  title="Story mode: the characters talk with each other by themselves. Pause at any time to give director's notes, or join in by speaking or typing.">Story</button>
+        </div>
+        <div class="story-controls" id="story-controls" hidden>
+          <button type="button" id="story-play" class="primary story-play"
+                  title="Play: the characters go on by themselves, line by line. Pause stops after the current line.">
+            <svg aria-hidden="true"><use href="#i-play"/></svg><span>Play</span>
+          </button>
+          <button type="button" id="story-step" class="secondary"
+                  title="One more line, then wait (the next speaker is picked automatically; click a portrait to choose)">Next line</button>
+          <button type="button" id="story-setup-btn" class="secondary" aria-expanded="false" aria-controls="story-setup"
+                  title="Where and when the story takes place and what is at stake: every character knows it">Story setup</button>
+        </div>
+      </div>
+      <div class="story-setup" id="story-setup" hidden>
+        <label class="field-label" for="premise-input">Story setup <span class="muted">(where, when, what is at stake; secrets or goals of the characters)</span></label>
+        <textarea id="premise-input" rows="3" maxlength="3000"
+                  placeholder="A storm traps everyone in the Gilded Lantern overnight. Captain Vargas is secretly looking for a stolen star chart; Elara knows who has it."
+                  title="Every character in the story knows this setup. Saved for this group."></textarea>
+        <div class="story-setup-actions">
+          <span class="hint">Saved for this group. The story rules for all characters are in Settings → Story mode.</span>
+          <button type="button" id="premise-save" class="secondary" title="Save the setup for this group">Save setup</button>
+        </div>
+      </div>
+
       <div id="resume-banner" class="resume-banner" role="status" hidden>
         <span id="resume-text"></span>
         <span class="resume-actions">
@@ -124,6 +163,7 @@
       <div id="messages" class="messages" role="log" aria-live="polite" aria-label="Messages">
         <div class="portraits" aria-hidden="true">
           <img class="portrait char" id="portrait-char" alt="" hidden title="Show the profile">
+          <div class="portrait-group" id="portrait-group" hidden></div>
           <img class="portrait you" id="portrait-you" alt="" hidden>
         </div>
         <div class="empty" id="empty-hint">Say hello, or type a message below.</div>
@@ -160,10 +200,6 @@
         </button>
       </div>
 
-      <div id="edit-bar" class="edit-bar" hidden>
-        <span>Editing your last message — send it to get a new answer.</span>
-        <button type="button" id="edit-cancel" class="link-btn" title="Keep your last message as it is (Esc)">Cancel (Esc)</button>
-      </div>
       <form id="text-form" class="composer">
         <label for="text-input" class="sr-only">Message</label>
         <textarea id="text-input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for a new line)" maxlength="4000" title="Type a message instead of speaking. Enter sends, Shift+Enter starts a new line."></textarea>
@@ -175,6 +211,9 @@
         <div class="director-chips" id="director-chips" aria-live="polite"></div>
         <form id="director-form" class="director-form">
           <span class="director-icon" aria-hidden="true">🎬</span>
+          <label for="director-target" class="sr-only">Director's note for</label>
+          <select id="director-target" hidden
+                  title="Who the note is for: everyone (whoever speaks next) or one character (their next line)"></select>
           <label for="director-input" class="sr-only">Director's note</label>
           <input id="director-input" type="text" maxlength="300" autocomplete="off"
                  placeholder="Director's note: steer the scene, e.g. A stranger walks into the tavern"
@@ -217,7 +256,7 @@
         </div>
         <ul id="voice-warnings" class="voice-warnings" hidden></ul>
         <div class="row">
-          <button type="button" id="add-voice" class="secondary" title="Add a voice clip (3–10 s of clean speech) to clone a voice. Only with the speaker&#x27;s consent.">Add voice…</button>
+          <button type="button" id="add-voice" class="secondary" title="Add a voice clip (10–13 s of clean speech) to clone a voice. Only with the speaker&#x27;s consent.">Add voice…</button>
           <input type="file" id="voice-file" accept=".mp3,.wav,.flac,.ogg,.opus,.m4a,.aac,.webm,audio/*" hidden>
         </div>
         <div id="reftext-box" class="reftext" hidden>
@@ -245,7 +284,7 @@
           <p class="hint">The language spoken in the clip. It helps Whisper transcribe the clip and tells the app which language the voice speaks best.</p>
         </div>
         <label class="switch" title="A built-in voice switches to the language you speak (German, English, Spanish, French)"><input type="checkbox" id="match-language"><span>Match built-in voice to spoken language</span></label>
-        <p class="hint">Add a clip with 3–10 s of clean speech to clone a voice (MP3, WAV, FLAC, OGG, OPUS, M4A…). It is trimmed and its volume evened out automatically. Files are kept in <code>user_data\voices</code>; you can also copy them there and reload the page. Only clone voices with the speaker's consent.</p>
+        <p class="hint">Add a clip with 10–13 s of clean speech to clone a voice (MP3, WAV, FLAC, OGG, OPUS, M4A…). It is trimmed and its volume evened out automatically. Files are kept in <code>user_data\voices</code>; you can also copy them there and reload the page. Only clone voices with the speaker's consent.</p>
       </section>
 
       <section aria-labelledby="quick-pause-title">
@@ -377,6 +416,26 @@
     </div>
   </div>
 
+  <div id="edit-dialog" class="catalog" role="dialog" aria-modal="true" aria-labelledby="edit-dialog-title" hidden>
+    <form id="edit-form" class="catalog-panel edit-panel">
+      <header class="catalog-head">
+        <h1 id="edit-dialog-title">Edit message</h1>
+        <button type="button" id="edit-close" class="icon-btn" aria-label="Close without saving" title="Close without saving (Esc)">✕</button>
+      </header>
+      <label for="edit-text" class="sr-only">Message text</label>
+      <textarea id="edit-text" rows="6" maxlength="4000"
+                title="The new text. Actions in *asterisks* are shown but never spoken."></textarea>
+      <p class="hint" id="edit-hint"></p>
+      <div class="editor-actions">
+        <span class="spacer"></span>
+        <button type="button" id="edit-cancel" class="secondary" title="Keep the message as it is (Esc)">Cancel</button>
+        <button type="button" id="edit-resend" class="secondary" hidden
+                title="Save your message and let the character answer it again (the old answer is deleted)">Save and answer again</button>
+        <button type="submit" class="primary" title="Save the new text; the messages after it stay">Save</button>
+      </div>
+    </form>
+  </div>
+
   <div id="char-editor" class="catalog" role="dialog" aria-modal="true" aria-labelledby="char-editor-title" hidden>
     <form id="char-form" class="catalog-panel editor-panel">
       <header class="catalog-head">
@@ -406,9 +465,30 @@
       <textarea id="ce-profile" rows="3" maxlength="2000"
                 title="Shown when you click the character's picture. The model does not see it; describe the character for the model under Personality and instructions."></textarea>
       <p class="hint" id="ce-recommended"></p>
-      <label class="field-label" for="ce-prompt">Personality and instructions</label>
+      <div class="prompt-tools">
+        <label class="field-label" for="ce-prompt">Personality and instructions</label>
+        <span class="spacer"></span>
+        <button type="button" id="ce-template" class="secondary small-btn"
+                title="Fill in a template for this type of character (Assistant or Roleplay). Replace the parts in [brackets] with your own words.">Use template</button>
+        <button type="button" id="ce-draft" class="secondary small-btn"
+                title="Let the loaded language model write the instructions, how they speak, how they behave in a group and a greeting from the name and the profile. You see the draft here before anything is saved.">Write from profile ✨</button>
+      </div>
       <textarea id="ce-prompt" rows="9" maxlength="8000" placeholder="You are Hilde, a 70-year-old baker from a village in the Black Forest. You are warm, a little stubborn and love telling stories…" title="Who the character is, how they talk, what they know and where the conversation takes place. Sent with every message (up to 8000 characters; 1500–3000 work best)."></textarea>
       <p class="hint">Describe who the character is, how they talk, what they know and where the conversation takes place. The model follows this in every conversation with this character. English works best with most models, but German is fine too. Rules for speech (no markdown, no stage directions read aloud) are added automatically.</p>
+      <div class="editor-grid two">
+        <div>
+          <label class="field-label" for="ce-speaking">How they speak</label>
+          <textarea id="ce-speaking" rows="3" maxlength="1500"
+                    placeholder="e.g. short, dry sentences; old-fashioned words; calls everyone &quot;stranger&quot;"
+                    title="Tone, word choice, sentence length, habits. Added to the instructions, alone and in groups."></textarea>
+        </div>
+        <div>
+          <label class="field-label" for="ce-group">In a group <span class="muted">(with other characters)</span></label>
+          <textarea id="ce-group" rows="3" maxlength="1500"
+                    placeholder="e.g. takes the lead, teases whoever spoke last, trusts nobody at first"
+                    title="How the character behaves in a group chat or a story with other characters. Only used there."></textarea>
+        </div>
+      </div>
       <label class="field-label" for="ce-greeting">Greeting <span class="muted">(first message of a new conversation)</span></label>
       <textarea id="ce-greeting" rows="2" maxlength="2000" title="The first message of every new chat with this character"></textarea>
       <label class="field-label" for="ce-scene">Scene <span class="muted">(the look of the chat: background, colours and decorations)</span></label>
@@ -625,6 +705,18 @@
             <option value="large">Large — big portraits</option>
           </select>
           <p class="hint">Stored in this browser. Animations stop when Windows is set to reduce motion.</p>
+        </section>
+
+        <section aria-labelledby="set-story-title" class="wide">
+          <h2 id="set-story-title">Story mode</h2>
+          <label class="field-label" for="story-rules">Story rules <span class="muted">(every character in story mode follows them)</span></label>
+          <textarea id="story-rules" rows="7" maxlength="3000"
+                    title="What every character is told in story mode: how to keep the story moving and avoid repeating each other. Empty = the built-in rules."></textarea>
+          <div class="story-setup-actions">
+            <span class="hint">Each character also keeps its own personality, way of speaking and behaviour in a group (character editor).
+              The setup of a single story is in the chat (Story setup).</span>
+            <button type="button" id="story-rules-reset" class="secondary" title="Use the built-in story rules again">Built-in rules</button>
+          </div>
         </section>
 
         <section aria-labelledby="set-family-title">

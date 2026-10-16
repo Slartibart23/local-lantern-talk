@@ -52,9 +52,10 @@ is too short or too long, has **noticeable background noise or reverb**, or is
 
 | Speech in the clip | Result |
 |---|---|
-| **under 3 s** | Works, but too little of the voice to copy: the clone sounds generic. The app shows a warning. |
-| **3 – 10 s** | **Recommended.** Best balance of similarity and speed. |
-| 10 – 20 s | Works; rarely sounds better and makes every reply slightly slower. The app shows a hint. |
+| **under 3 s** | Too little of the voice to copy: the clone sounds generic. The app shows a warning. |
+| 3 – 10 s | Works, but the clone catches less of the voice. The app shows a hint. |
+| **10 – 13 s** | **Recommended.** Best similarity; the clip still fits completely into the 15 s that are used without your own transcript. |
+| 13 – 20 s | Works; rarely sounds better and makes every reply slightly slower. The app shows a hint. |
 | **over 20 s** | Without your own transcript, only the **first 15 s** are used. With your own transcript the whole clip is used, but OmniVoice becomes slower, needs more memory and usually clones *worse*. Cut the clip instead. |
 
 Only speech counts: pauses longer than about 0.2 s and silence at the start and end
@@ -107,7 +108,7 @@ If this file exists, Whisper is not used for that clip at all. Tips for the text
 - Normal punctuation helps; one line or several lines both work.
 - Save it as UTF-8 (the default in Windows Notepad).
 - With your own transcript the clip is **never shortened**, so the text must cover the
-  whole recording — keep such clips within 3–10 s.
+  whole recording — keep such clips around 10–13 s.
 
 ## Built-in voices
 
