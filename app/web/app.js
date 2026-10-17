@@ -141,6 +141,10 @@ function handleEvent(msg) {
       app.director = { group: msg.group, pending: msg.pending, pinned: msg.pinned };
       renderDirector();
       break;
+    case "director_draft_used":  // the note in the field went with what you said
+      $("director-input").value = "";
+      renderDirectorButton();
+      break;
     case "group":
       app.group = msg;
       renderGroup();
@@ -665,7 +669,7 @@ function renderDirector() {
                        onclick: () => send({ type: "unpin_note", index: i }) }, "✕")));
     });
     for (const p of d.pending) {
-      box.append(el("span", { class: "director-chip pending", title: p.name ? `For the next line of ${p.name}` : "For the next line, whoever speaks" },
+      box.append(el("span", { class: "director-chip pending", title: p.name ? `For the next line of ${p.name}` : "Goes with your next message, or into the next line" },
         el("strong", {}, p.name ? `${p.name}, next line: ` : "Next line: "), p.text,
         el("button", { type: "button", "aria-label": "Remove this note", title: "Remove",
                        onclick: () => send({ type: "director_note", text: "", target: p.target }) }, "✕")));
@@ -681,8 +685,8 @@ function renderDirector() {
                      onclick: () => send({ type: "unpin_note", index: i }) }, "✕")));
   });
   if (d.pending) {
-    box.append(el("span", { class: "director-chip pending", title: "Goes with your next message or Continue" },
-      el("strong", {}, "Next reply: "), d.pending,
+    box.append(el("span", { class: "director-chip pending", title: "Goes with your next spoken or typed message, or with Continue" },
+      el("strong", {}, "With your next message: "), d.pending,
       el("button", { type: "button", "aria-label": "Remove the note for the next reply", title: "Remove",
                      onclick: () => send({ type: "director_note", text: "" }) }, "✕")));
   }
@@ -708,7 +712,18 @@ function directorText() {
   const input = $("director-input");
   const text = input.value.trim();
   input.value = "";
+  send({ type: "director_draft", text: "" });  // it is sent now; it no longer waits for your next message
+  renderDirectorButton();
   return text;
+}
+
+// One button: "Continue ▶" while the field is empty (the character goes on), "Send note ▶" with a note.
+function renderDirectorButton() {
+  const btn = $("director-continue");
+  const note = $("director-input").value.trim();
+  btn.textContent = note ? "Send note ▶" : "Continue ▶";
+  btn.classList.toggle("primary", !!note);
+  btn.classList.toggle("secondary", !note);
 }
 
 function stopReply() {
@@ -2503,20 +2518,31 @@ function init() {
   $("pause-btn").onclick = togglePause;
   $("stop-btn").onclick = stopReply;
   const target = () => (inGroup() ? $("director-target").value : "");
+  // Enter / Continue ▶: the note alone, and the character reacts at once.
   $("director-form").onsubmit = (ev) => {
     ev.preventDefault();
     const text = directorText();
     if (text) send({ type: "director_note", text, target: target() });
+    if (app.group.playing && inGroup()) {
+      // The story goes on by itself: the note goes into its next line, without an extra line.
+      if (target()) send({ type: "next_speaker", id: target() });
+      if (text) toast("The note goes into the next line of the story.", "info");
+      return;
+    }
+    send({ type: "continue", speaker: target() });
   };
+  // A note in the field goes with what you say next, spoken or typed (the app keeps a copy of the field).
+  let draftTimer = null;
+  const syncDraft = () => {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(() => send({ type: "director_draft", text: $("director-input").value.trim(), target: target() }), 300);
+  };
+  $("director-input").addEventListener("input", () => { renderDirectorButton(); syncDraft(); });
+  $("director-target").addEventListener("change", syncDraft);
   $("director-pin").onclick = () => {
     const text = directorText();
     if (text) send({ type: "pin_note", text, target: target() });
     else toast("Type the note first, then click Pin.", "info");
-  };
-  $("director-continue").onclick = () => {
-    const text = directorText();
-    if (text) send({ type: "director_note", text, target: target() });
-    send({ type: "continue", speaker: target() });
   };
   $("cast-add").onclick = (e) => { e.stopPropagation(); toggleCastMenu(); };
   document.addEventListener("click", (e) => { if (!e.target.closest(".cast-add-wrap")) $("cast-menu").hidden = true; });
@@ -2579,6 +2605,8 @@ function init() {
     ev.preventDefault();
     const text = input.value.trim();
     if (!text) return;
+    const note = $("director-input").value.trim();  // a note in the director's field goes with the message
+    if (note) send({ type: "director_note", text: directorText(), target: inGroup() ? $("director-target").value : "" });
     send({ type: "text", text });
     input.value = "";
     autoGrow(input);

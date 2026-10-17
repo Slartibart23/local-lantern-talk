@@ -43,8 +43,9 @@ for her and for you, and a washed-out background picture. The pictures are drawn
   yourself, or press *Play* and let them tell a story with each other while you direct,
   pause or join in. Records as a ready-made audio drama.
 - **Director's notes** — steer the story without saying it: "A stranger walks in",
-  "It is a stormy night". For the next reply, pinned for good, or *Continue* to let the
-  character go on by itself; in a group for everyone or one character. Never spoken.
+  "Elara hands him a glass". Send it on its own and the character reacts at once, let it go
+  with what you say next, or pin it for good; in a group for everyone or one character.
+  Never spoken.
 - **Edit the conversation** — delete messages from the end (also from memory and the
   recording), let the AI write its last answer again, or edit any message: a changed
   reply is spoken again for the recording.

@@ -249,6 +249,34 @@ def test_a_fresh_story_forgets_the_old_one(group) -> None:  # noqa: ANN001
     assert engine.snapshot()["director"]["pinned"][0]["text"] == "Keep it light."
 
 
+def test_a_note_in_the_field_goes_with_your_message(group) -> None:  # noqa: ANN001
+    engine, comps, rec = group()
+    # Alone: the note still in the director's field goes with what you say.
+    engine.set_director_draft("Lena smiles warmly.")
+    events = _say(engine, rec, "How are you?")
+    assert any(e["type"] == "director_draft_used" for e in events)
+    chat = next(r for r in comps.llm.requests if r[-1].content == "How are you?")
+    assert "For your next reply: Lena smiles warmly." in chat[0].content
+    assert engine.transcript[-2]["note"] == "Lena smiles warmly." and engine.director_draft == ("", "")
+    # In a group, for one character: it waits for that character's line.
+    _join(engine, rec, ["max"])
+    engine.set_director_draft("Max admits he is jealous.", "max")
+    _say(engine, rec, "Hello Max!")
+    max_line = next(t for t in engine.transcript if t.get("speaker") == "max")
+    assert max_line["note"] == "Max admits he is jealous."
+
+
+def test_continue_while_the_story_plays_adds_no_extra_line(group) -> None:  # noqa: ANN001
+    engine, comps, rec = group()
+    _join(engine, rec, ["max"])
+    engine.store.settings.group_mode = "story"
+    engine.story_playing = True
+    count = len(comps.llm.requests)
+    engine._handle_continue("max")  # what the worker does with "continue" while the story plays
+    assert engine.next_speaker == "max" and len(comps.llm.requests) == count
+    engine.story_playing = False
+
+
 def test_switching_to_story_mode_starts_the_story(group) -> None:  # noqa: ANN001
     engine, comps, rec = group()
     _join(engine, rec, ["elara"])

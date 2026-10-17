@@ -202,6 +202,7 @@ class Engine:
         self.resume: dict[str, Any] | None = None  # an unfinished chat that was loaded from memory
         self.pending_note = ""                     # director's note for the next reply
         self.group_notes: dict[str, str] = {}      # group chats: one-time notes per character id ("" = anyone)
+        self.director_draft: tuple[str, str] = ("", "")  # (text, target) still in the director's field
         self.story_playing = False                 # story mode: the characters go on by themselves
         self._story_gen = 0                        # Play / Pause bump this; stale "story_next" commands are dropped
         self._story_scheduled = False              # a "story_next" command is already waiting
@@ -263,6 +264,18 @@ class Engine:
         In a group chat ``target`` is the character it is meant for ("" = whoever speaks next).
         """
         self._commands.put(("pending_note", (" ".join(text.split())[:300], target)))
+
+    def set_director_draft(self, text: str, target: str = "") -> None:
+        """What is in the director's field right now: it goes with your next spoken or typed message."""
+        self.director_draft = (" ".join(str(text).split())[:300], str(target))
+
+    def _take_draft(self) -> tuple[str, str]:
+        """The note in the director's field, for the message that is being answered now (the field empties)."""
+        text, target = self.director_draft
+        self.director_draft = ("", "")
+        if text:
+            self._emit({"type": "director_draft_used"})
+        return text, target
 
     def pin_note(self, text: str, target: str = "") -> None:
         self._commands.put(("pin_note", (text, target)))
@@ -1241,6 +1254,9 @@ class Engine:
         recording = self._ensure_session()
         if user is None:
             note, self.pending_note = self.pending_note, ""
+            if source in ("voice", "text"):
+                draft = self._take_draft()[0]
+                note = " ".join(n for n in (note, draft) if n)
             user = {"id": self._new_id(), "role": "user", "text": text, "language": language, "source": source}
             if note:
                 user["note"] = note
@@ -1411,6 +1427,10 @@ class Engine:
         recording = self._ensure_session()
         members = self.members
         if source != "director" and text:
+            draft, target = self._take_draft()
+            if draft:
+                target = target if target in {m.id for m in members} else ""
+                self.group_notes[target] = " ".join(n for n in (self.group_notes.get(target, ""), draft) if n)
             user: dict[str, Any] = {"id": self._new_id(), "role": "user", "text": text, "language": language,
                                     "source": source, "in_history": True}
             self.transcript.append(user)
@@ -1541,6 +1561,11 @@ class Engine:
 
     def _handle_continue(self, speaker: str = "") -> None:
         language = self._fixed_language() or self.last_language or FALLBACK_LANGUAGE
+        if self._story() and self.story_playing:  # the story goes on by itself; the note goes into its next line
+            if speaker:
+                self.next_speaker = self._member(speaker).id
+                self._emit_group()
+            return
         if self.in_group:
             if speaker:
                 self._member(speaker)

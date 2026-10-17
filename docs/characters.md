@@ -126,11 +126,11 @@ Under the message box is the **Director's note** field (🎬). What you write th
 not said to the character: it is a stage direction that the character follows without
 mentioning or answering it.
 
-| Button | Effect |
+| How | Effect |
 | --- | --- |
-| **Next reply** (Enter) | The note goes with whatever you say or type next, for that one reply. Example: "Elara grows suspicious of the stranger." |
+| **Send note ▶** (Enter) | The note alone: the character reacts at once, without you saying anything. Example: "A stranger in a grey cloak walks in", or an action like "Elara hands him a glass of rum". With an empty field the button says **Continue ▶** and the character simply goes on. |
+| **Just speak or type** | A note that is still in the field goes with your next spoken or typed message, for that one reply. Example: write "Elara grows suspicious of the stranger", then say "I'm only passing through." |
 | **Pin** | The note applies to every reply until you remove it (✕ on its card above the field). Pinned notes belong to the character and stay after *End chat* and restarts. Example: "It is a stormy night." Up to 8 per character. |
-| **Continue ▶** | The character goes on by itself, without you saying anything — with the note, if you typed one. Example: "A stranger in a grey cloak walks in." |
 
 In a [group chat](group-chat.md#directors-notes-in-a-group) a list next to the field
 chooses who the note is for: everyone, or one character.
