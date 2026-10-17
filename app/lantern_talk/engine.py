@@ -108,6 +108,7 @@ Answer with one JSON object with these keys:
 DRAFT_KEYS = ("system_prompt", "speaking_style", "group_style", "persona", "greeting")
 
 EmitFn = Callable[[dict[str, Any], bytes | None], None]
+_PREFETCH_END = object()
 
 
 class State(str, Enum):
@@ -210,6 +211,9 @@ class Engine:
         self._lines_since_note = 0                 # story mode: lines since the last director's note or nudge
         self.next_speaker: str | None = None       # group chats: who you picked to speak next
         self._finishing: str | None = None         # End chat: the recording being put together
+        self._pending_playback: tuple[int, float, bool, float] = (0, 0.0, False, 0.0)  # chunks, seconds, stopped, since
+        self._prefetch: dict[str, Any] | None = None  # story mode: the next line, written while this one plays
+        self._context_version = 0                  # bumped by anything that changes what the next line should be
         self.replaying = False                     # a recorded message is playing in the browser
         self._msg_seq = 0                          # ids of transcript items (for replay buttons)
         self._replay_lock = threading.Lock()
@@ -310,6 +314,8 @@ class Engine:
         if self.story_playing:
             self.story_playing = False
             self._story_gen += 1
+            if self._prefetch is not None:  # the current line is fully written: only the prepared one stops
+                self.conversation.cancel.set()
             self._emit_group()
 
     def set_next_speaker(self, char_id: str) -> None:
@@ -1291,8 +1297,9 @@ class Engine:
             self._maintain_memory()  # between turns; a new utterance waits in the queue
         self._emit_editable()
 
-    def _play(self, reply: dict[str, Any], events: Any) -> tuple[str, list[np.ndarray], int]:
-        """Show and send one reply as it is written and spoken; wait until the browser has played it.
+    def _play(self, reply: dict[str, Any], events: Any, wait: bool = True) -> tuple[str, list[np.ndarray], int]:
+        """Show and send one reply as it is written and spoken; then wait until the browser has played it
+        (``wait`` False: :meth:`_wait_playback` does that later, e.g. after starting the next story line).
 
         Returns the reply text and the spoken audio (for the session recording).
         """
@@ -1327,12 +1334,20 @@ class Engine:
                     reply["stopped"] = True
                 self._emit({"type": "turn_done", "audio_chunks": chunks, "metrics": m.summary(), "stopped": stopped,
                             "first_audio_ms": None if m.first_audio is None else round(m.first_audio * 1000)})
-        if chunks and not self.conversation.cancel.is_set():
-            # Mic stays muted until the browser has played everything (spec §9 step 5).
-            if not self._playback_done.wait(timeout=audio_seconds + PLAYBACK_WAIT_MARGIN_S):
+        self._pending_playback = (chunks, audio_seconds, self.conversation.cancel.is_set(), time.monotonic())
+        if wait:
+            self._wait_playback()
+        return reply_text, spoken, spoken_sr
+
+    def _wait_playback(self) -> None:
+        """The microphone stays muted until the browser has played everything (spec §9 step 5)."""
+        chunks, audio_seconds, stopped, since = self._pending_playback
+        self._pending_playback = (0, 0.0, False, 0.0)
+        if chunks and not stopped:
+            left = audio_seconds + PLAYBACK_WAIT_MARGIN_S - (time.monotonic() - since)
+            if not self._playback_done.wait(timeout=max(1.0, left)):
                 log.warning("Browser did not report the end of playback; continuing.")
             time.sleep(POST_PLAYBACK_MUTE_S)
-        return reply_text, spoken, spoken_sr
 
     # -- group chats and story mode ------------------------------------------------------------
     @property
@@ -1465,31 +1480,50 @@ class Engine:
         self._emit_editable()
         self._schedule_story()
 
-    def _group_line(self, member: Character, language: str | None, recording: bool) -> str:
-        """One line of ``member``, written and spoken; returns its text."""
+    def _next_nudge(self, story: bool, note: str) -> str:
+        """Story mode: every few lines without a director's note, a speaker gets a nudge."""
+        if not story:
+            return ""
+        if note:
+            self._lines_since_note = 0
+            return ""
+        self._lines_since_note += 1
+        if self._lines_since_note < IMPULSE_EVERY:
+            return ""
+        import random
+
+        self._lines_since_note = 0
+        return random.choice(IMPULSES)
+
+    def _line_request(self, member: Character, language: str | None, direction: str) -> tuple[Any, Any, str | None]:
+        """Messages, sampling and voice for ``member``'s next line (``direction``: a note or a nudge)."""
         s = self.store.settings
         story = self._story()
-        note = " ".join(n for n in (self.group_notes.pop("", ""), self.group_notes.pop(member.id, "")) if n)
-        nudge = ""
-        if story and not note:
-            self._lines_since_note += 1
-            if self._lines_since_note >= IMPULSE_EVERY:
-                import random
-
-                nudge, self._lines_since_note = random.choice(IMPULSES), 0
-        elif note:
-            self._lines_since_note = 0
         names = self._names()
         system = build_group_prompt(
             member, [m for m in self.members if m.id != member.id], default_persona=DEFAULT_ASSISTANT_PERSONA,
             story=story, story_rules=s.story_rules, premise=self._group_meta("premise"),
             user=self.conversation.config.user, user_name=s.user_name, memory=self.conversation.config.memory,
-            director=director_context(director_lines(self._group_pins(), member.id), note or nudge),
+            director=director_context(director_lines(self._group_pins(), member.id), direction),
             reply_language=language)
         messages = group_messages(member.id, system, self.conversation.history[-200:], names, s.user_name)
         sampling = SamplingConfig(temperature=0.9 if story else 0.8, max_tokens=400, dry_multiplier=0.8,
                                   stop=stop_sequences(member.id, names, s.user_name))
-        voice = self._member_voice(member, language)
+        return messages, sampling, self._member_voice(member, language)
+
+    def _group_line(self, member: Character, language: str | None, recording: bool) -> str:
+        """One line of ``member``, written and spoken; returns its text.
+
+        While a story plays, the next line is written and spoken while this one is still playing.
+        """
+        story = self._story()
+        prefetched = self._take_prefetch(member.id, language)
+        if prefetched is not None:
+            note, voice, events = "", prefetched["voice"], prefetched["events"]
+        else:
+            note = " ".join(n for n in (self.group_notes.pop("", ""), self.group_notes.pop(member.id, "")) if n)
+            messages, sampling, voice = self._line_request(member, language, note or self._next_nudge(story, note))
+            events = self.conversation.stream(messages, voice, language, sampling, NamePrefixFilter(member.name))
         reply: dict[str, Any] = {"id": self._new_id(), "role": "assistant", "speaker": member.id, "segments": [],
                                  "voice": self._display_voice(voice)}
         if note:
@@ -1499,20 +1533,86 @@ class Engine:
                     "note": note or None})
         self._emit_director()
         self._set_state(State.THINKING, f"{member.name} is thinking…")
-        reply_text, spoken, spoken_sr = self._play(
-            reply, self.conversation.stream(messages, voice, language, sampling, NamePrefixFilter(member.name)))
-        if not reply_text:
-            return ""
-        if recording:
-            tags = [self._voice_name(reply["voice"])] if spoken and reply["voice"] else ["text only"]
-            self.recorder.add(SessionItem(
-                reply["id"], "assistant", member.name, spoken_text(reply["segments"]), tags,
-                np.concatenate(spoken) if spoken else None, spoken_sr, segments=reply["segments"]))
-        self.conversation.history.append(ChatMessage("assistant", reply_text, name=member.id))
-        reply["in_history"] = True
-        self._store_line(reply, "assistant", reply_text, language, None, note=note, speaker=member.id)
-        self._story_lines += 1
+        reply_text, spoken, spoken_sr = self._play(reply, events, wait=False)
+        if reply_text:
+            if recording:
+                tags = [self._voice_name(reply["voice"])] if spoken and reply["voice"] else ["text only"]
+                self.recorder.add(SessionItem(
+                    reply["id"], "assistant", member.name, spoken_text(reply["segments"]), tags,
+                    np.concatenate(spoken) if spoken else None, spoken_sr, segments=reply["segments"]))
+            self.conversation.history.append(ChatMessage("assistant", reply_text, name=member.id))
+            reply["in_history"] = True
+            self._store_line(reply, "assistant", reply_text, language, None, note=note, speaker=member.id)
+            self._story_lines += 1
+            if story:
+                self._start_prefetch(language)  # the next line is written while this one plays
+        self._wait_playback()
         return reply_text
+
+    # -- story mode: the next line is prepared while the current one plays -----------------------------
+    def _start_prefetch(self, language: str | None) -> None:
+        """Write and speak the next story line in the background (only when nothing else is waiting)."""
+        if (not (self.story_playing and self._story()) or self.group_notes or not self._commands.empty()
+                or self._story_lines >= STORY_AUTO_PAUSE_LINES or not self.c.server.running
+                or not self.conversation.history):
+            return
+        members = self.members
+        member = self._member(self.next_speaker or next_speaker(members, self.conversation.history))
+        messages, sampling, voice = self._line_request(member, language, self._next_nudge(True, ""))
+        events: queue.Queue[object] = queue.Queue()
+
+        def run() -> None:
+            try:
+                for event in self.conversation.stream(messages, voice, language, sampling,
+                                                      NamePrefixFilter(member.name)):
+                    events.put(event)
+            except Exception:  # noqa: BLE001 - the line is then written again live
+                log.exception("Preparing the next story line failed")
+            finally:
+                events.put(_PREFETCH_END)
+
+        def stream() -> Any:
+            while True:
+                event = events.get()
+                if event is _PREFETCH_END:
+                    return
+                yield event
+
+        thread = threading.Thread(target=run, name="story-prefetch", daemon=True)
+        self._prefetch = {"speaker": member.id, "language": language, "voice": voice, "events": stream(),
+                          "thread": thread, "gen": self._story_gen, "version": self._context_version,
+                          "last": self.conversation.history[-1]}
+        thread.start()
+        log.debug("Preparing the next story line (%s)", member.id)
+
+    def _take_prefetch(self, speaker: str, language: str | None) -> dict[str, Any] | None:
+        """The prepared line, if it still fits: same speaker, story still playing and nothing changed since
+        (no director's note, no message of yours, no edit, no pause). Otherwise it is thrown away."""
+        prefetched, self._prefetch = self._prefetch, None
+        if prefetched is None:
+            return None
+        history = self.conversation.history
+        if (prefetched["speaker"] == speaker and prefetched["language"] == language and self.story_playing
+                and self._story() and prefetched["gen"] == self._story_gen
+                and prefetched["version"] == self._context_version and not self.group_notes
+                and history and history[-1] is prefetched["last"]):
+            return prefetched
+        self._drop_prefetch(prefetched)
+        return None
+
+    def _drop_prefetch(self, prefetched: dict[str, Any] | None = None) -> None:
+        prefetched = prefetched or self._prefetch
+        if prefetched is None:
+            return
+        if prefetched is self._prefetch:
+            self._prefetch = None
+        self.conversation.cancel.set()  # stops writing and speaking; the next reply clears it again
+        prefetched["thread"].join(timeout=30)
+        log.debug("Dropped the prepared story line of %s", prefetched["speaker"])
+
+    def _changed(self) -> None:
+        """Something that shapes the next line changed (a note, an edit, a setting): a prepared line is outdated."""
+        self._context_version += 1
 
     def _store_line(self, item: dict[str, Any], role: str, text: str, language: str | None, source: str | None,
                     note: str = "", speaker: str | None = None) -> None:
@@ -1564,6 +1664,7 @@ class Engine:
         if self._story() and self.story_playing:  # the story goes on by itself; the note goes into its next line
             if speaker:
                 self.next_speaker = self._member(speaker).id
+                self._changed()
                 self._emit_group()
             return
         if self.in_group:
@@ -1580,10 +1681,12 @@ class Engine:
         self._group_turn("", language, "director", speaker=speaker)
 
     def _handle_next_speaker(self, char_id: str) -> None:
+        self._changed()
         self.next_speaker = self._member(char_id).id if char_id else None
         self._emit_group()
 
     def _handle_premise(self, text: str) -> None:
+        self._changed()
         if not self.in_group:
             raise UserError("A story setup belongs to a group chat.")
         self.memory.set_meta(self._mem_key(), "premise", str(text).strip()[:MAX_RULES])
@@ -1741,6 +1844,7 @@ class Engine:
         self._emit({"type": "director", **self.director_view()})
 
     def _handle_pending_note(self, arg: tuple[str, str]) -> None:
+        self._changed()
         text, target = arg
         if self.in_group:
             target = self._member(target).id if target else ""
@@ -1753,6 +1857,7 @@ class Engine:
         self._emit_director()
 
     def _handle_pin_note(self, arg: tuple[str, str]) -> None:
+        self._changed()
         import json
 
         from .characters import MAX_NOTES
@@ -1775,6 +1880,7 @@ class Engine:
         self._save_director_notes([*c.director_notes, text])
 
     def _handle_unpin_note(self, index: int) -> None:
+        self._changed()
         import json
 
         c = self._memory_character()
@@ -1884,6 +1990,7 @@ class Engine:
         The session recording follows: a character's reply is spoken again with its voice and replaces
         the old audio; your own message keeps your recorded voice, only its text changes.
         """
+        self._changed()
         index = next((i for i, t in enumerate(self.transcript) if t.get("id") == msg_id), None)
         if index is None:
             raise UserError("This message is no longer in the chat.")
@@ -2117,6 +2224,7 @@ class Engine:
         self._enter_idle()
 
     def _handle_save_character(self, data: dict[str, Any], char_id: str | None) -> None:
+        self._changed()
         voice = str(data.get("voice") or "")
         if voice:
             self._voice_ref(voice)  # raises a clear error for unknown voices
@@ -2483,6 +2591,7 @@ class Engine:
             self._enter_idle()
 
     def _apply_settings(self, values: dict[str, Any]) -> None:
+        self._changed()
         s = self.store.settings
         values = {k: v for k, v in values.items() if k not in ENGINE_OWNED_SETTINGS}
         before = asdict(s)

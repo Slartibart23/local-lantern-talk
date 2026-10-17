@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import pytest
@@ -228,8 +229,6 @@ def test_story_mode_plays_until_paused(group) -> None:  # noqa: ANN001
     assert "Never repeat or paraphrase" in story_request[0].content
     assert engine.store.settings.group_mode == "story"
     count = len(engine.transcript)
-    import time
-
     time.sleep(0.3)
     assert len(engine.transcript) == count  # paused: nobody goes on
 
@@ -275,6 +274,68 @@ def test_continue_while_the_story_plays_adds_no_extra_line(group) -> None:  # no
     engine._handle_continue("max")  # what the worker does with "continue" while the story plays
     assert engine.next_speaker == "max" and len(comps.llm.requests) == count
     engine.story_playing = False
+
+
+def _story_playing_by_hand(engine: Engine, rec: AutoPlay) -> int:
+    """Story mode with Play; the 'browser' does not report the end of playback by itself."""
+    _join(engine, rec, ["max"])
+    rec.engine = None
+    start = len(rec.events)
+    engine.story_play()
+    rec.wait_for(lambda ev: any(e["type"] == "turn_done" for e in ev[start:]))
+    return start
+
+
+def _requests_for(comps: Components, name: str) -> int:
+    return sum(1 for r in comps.llm.requests if r[0].content.startswith(f"You are {name}"))
+
+
+def test_the_next_story_line_is_written_while_this_one_plays(group) -> None:  # noqa: ANN001
+    engine, comps, rec = group()
+    start = _story_playing_by_hand(engine, rec)
+    first = [e for e in rec.events[start:] if e["type"] == "assistant_start"][0]["speaker"]
+    other = "Max" if first == "lena" else "Lena"
+    # Line 1 is still playing in the browser, and line 2 is already being written.
+    rec.wait_for(lambda ev: _requests_for(comps, other) >= 1)
+    assert sum(e["type"] == "assistant_start" for e in rec.events[start:]) == 1
+    rec.wait_for(lambda ev: engine._prefetch is not None and not engine._prefetch["thread"].is_alive())
+    requests = len(comps.llm.requests)
+    engine.playback_ended()
+    rec.wait_for(lambda ev: sum(e["type"] == "turn_done" for e in ev[start:]) >= 2)
+    second = [e for e in rec.events[start:] if e["type"] == "assistant_start"][1]
+    assert second["speaker"] != first
+    assert _requests_for(comps, other) == 1  # the prepared line was used, not written again
+    assert len(comps.llm.requests) >= requests  # (line 3 may already be in preparation)
+    engine.story_pause()
+    engine.playback_ended()
+
+
+def test_a_note_during_playback_replaces_the_prepared_line(group) -> None:  # noqa: ANN001
+    engine, comps, rec = group()
+    start = _story_playing_by_hand(engine, rec)
+    rec.wait_for(lambda ev: engine._prefetch is not None and not engine._prefetch["thread"].is_alive())
+    speaker = engine._prefetch["speaker"]
+    engine.set_pending_note("Everyone falls silent.")
+    time.sleep(0.2)
+    engine.playback_ended()
+    rec.wait_for(lambda ev: sum(e["type"] == "turn_done" for e in ev[start:]) >= 2)
+    second = [e for e in rec.events[start:] if e["type"] == "assistant_start"][1]
+    assert second["speaker"] == speaker and second["note"] == "Everyone falls silent."
+    assert any("For your next reply: Everyone falls silent." in r[0].content for r in comps.llm.requests)
+    engine.story_pause()
+    engine.playback_ended()
+
+
+def test_pause_never_shows_the_prepared_line(group) -> None:  # noqa: ANN001
+    engine, comps, rec = group()
+    start = _story_playing_by_hand(engine, rec)
+    rec.wait_for(lambda ev: engine._prefetch is not None)
+    engine.story_pause()
+    engine.playback_ended()
+    rec.wait_state("listening", start)
+    time.sleep(0.3)
+    assert sum(e["type"] == "assistant_start" for e in rec.events[start:]) == 1
+    assert len([t for t in engine.transcript if t["role"] == "assistant"]) == 1
 
 
 def test_switching_to_story_mode_starts_the_story(group) -> None:  # noqa: ANN001

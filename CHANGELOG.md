@@ -155,6 +155,9 @@ project uses [Semantic Versioning](https://semver.org/).
   next speaker), with a story setup per group, editable story rules (Settings → Story
   mode), a DRY sampler and occasional nudges against repetition; you can direct or join in
   at any time.
+- Story mode writes and speaks the next line while the current one is playing, so the
+  characters answer each other without a pause; anything you change meanwhile (a note, a
+  message, Pause, an edit) makes it write that line anew.
 - Director's notes for everyone or for one character in a group; pinned notes of a group.
 - New character fields *How they speak* and *In a group*, filled in for the six examples
   and taken over by installed examples once.

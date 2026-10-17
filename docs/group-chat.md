@@ -101,6 +101,13 @@ characters sound more alike.
 
 ## Timing
 
-Each line takes as long as a normal reply: the model writes, the first sentence is spoken
-while the rest is still being written. Measured on an RTX 5090 with Qwen 3.6 27B (Q4): about
-1.5 s until the text starts and 6 s until the first audio of a long first sentence.
+While a story plays, the **next line is written and spoken while the current one is still
+playing**, so the characters answer each other without a pause. The prepared line is thrown
+away and written anew as soon as anything changes before it is due: a director's note, a
+message of yours, *Pause*, another next speaker, an edit or a changed setting. Your direction
+always counts.
+
+The first line of a story, and every line after you said something, takes as long as a normal
+reply: the model writes, and the first sentence is spoken while the rest is still being
+written. Measured on an RTX 5090 with Qwen 3.6 27B (Q4): about 1.5 s until the text starts and
+6 s until the first audio of a long first sentence.
