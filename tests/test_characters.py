@@ -37,6 +37,12 @@ def test_shipped_examples(store: CharacterStore) -> None:
     assert len({c.scene for c in chars.values()}) == 5  # every scene is used
 
 
+def test_the_state_file_is_not_a_character(store: CharacterStore, caplog: pytest.LogCaptureFixture) -> None:
+    store.load()  # the second load reads .defaults.json next to the characters
+    assert (store.folder / ".defaults.json").exists()
+    assert "Skipping character file" not in caplog.text
+
+
 def test_deleted_examples_are_not_copied_again(store: CharacterStore) -> None:
     store.delete("elara")
     store.load()

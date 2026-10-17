@@ -202,6 +202,8 @@ class CharacterStore:
                 state["characters"].append(f.stem)
         self.characters = {}
         for f in sorted(self.folder.glob("*.json")):
+            if f.name.startswith("."):
+                continue  # the app's own state (.defaults.json), not a character
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
                 shipped_path = self.defaults / f.name
