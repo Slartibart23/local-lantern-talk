@@ -215,12 +215,12 @@
       <div class="director" id="director">
         <div class="director-chips" id="director-chips" aria-live="polite"></div>
         <form id="director-form" class="director-form">
-          <span class="director-icon" aria-hidden="true">🎬</span>
+          <label for="director-input" class="director-label"
+                 title="Director: steer the scene without saying it out loud. Write a stage direction or an action; the characters follow it but never answer it, and it is never spoken."><span aria-hidden="true">🎬</span> <span class="director-word">Director</span></label>
           <label for="director-target" class="director-for" id="director-for" hidden
                  title="Who the note is for: everyone, or only one character">For</label>
           <select id="director-target" hidden
                   title="Who the note is for. Everyone: whoever speaks next follows it. One character: only they follow it, in their next line."></select>
-          <label for="director-input" class="sr-only">Director's note</label>
           <input id="director-input" type="text" maxlength="300" autocomplete="off"
                  placeholder="Director's note or action, e.g. A stranger walks in · Enter: they react · or just speak: it goes with you"
                  title="A stage direction or an action, e.g. &quot;Elara hands him a glass&quot;. Never said out loud; the character follows it without answering it. Enter (Send note ▶): the character reacts at once. Or simply speak or type your message: the note goes with it.">

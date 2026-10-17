@@ -581,7 +581,9 @@ body.busy .msg-actions { display: none; }
 /* ---- director's notes ------------------------------------------------------------------- */
 .director { padding: 0 24px 16px; margin-top: -10px; }
 .director-form { display: flex; align-items: center; gap: 6px; }
-.director-icon { font-size: 15px; opacity: .8; }
+.director-label { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600;
+  letter-spacing: .03em; color: var(--text-dim); white-space: nowrap; cursor: help; }
+@media (max-width: 560px) { .director-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } }
 .director-form input { flex: 1; min-width: 0; padding: 6px 10px; border-radius: 8px; border: 1px dashed var(--line);
   background: transparent; font-size: 13px; color: var(--text-dim); }
 .director-form input:focus { border-style: solid; border-color: var(--amber); outline: none; color: var(--text); }
