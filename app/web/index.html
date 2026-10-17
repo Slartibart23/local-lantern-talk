@@ -216,15 +216,16 @@
         <div class="director-chips" id="director-chips" aria-live="polite"></div>
         <form id="director-form" class="director-form">
           <span class="director-icon" aria-hidden="true">🎬</span>
-          <label for="director-target" class="sr-only">Director's note for</label>
+          <label for="director-target" class="director-for" id="director-for" hidden
+                 title="Who the note is for: everyone, or only one character">For</label>
           <select id="director-target" hidden
-                  title="Who the note is for: everyone (whoever speaks next) or one character (their next line)"></select>
+                  title="Who the note is for. Everyone: whoever speaks next follows it. One character: only they follow it, in their next line."></select>
           <label for="director-input" class="sr-only">Director's note</label>
           <input id="director-input" type="text" maxlength="300" autocomplete="off"
                  placeholder="Director's note or action, e.g. A stranger walks in · Enter: they react · or just speak: it goes with you"
                  title="A stage direction or an action, e.g. &quot;Elara hands him a glass&quot;. Never said out loud; the character follows it without answering it. Enter (Send note ▶): the character reacts at once. Or simply speak or type your message: the note goes with it.">
           <button type="button" id="director-pin" class="secondary"
-                  title="Pin this note: the character follows it in every reply, also after End chat and a restart, until you remove it.">Pin</button>
+                  title="Always: keep this note for every reply, not just the next one, until you remove it with ✕ (also after End chat and a restart). For lasting conditions, e.g. &quot;It is a stormy night&quot; or &quot;Vivienne is in a bad mood&quot;.">📌 Always</button>
           <button type="submit" id="director-continue" class="secondary director-go"
                   title="Without a note: the character simply goes on. With a note: the character reacts to it at once (Enter). While a story plays, the note goes into its next line.">Continue ▶</button>
         </form>

@@ -57,9 +57,9 @@ The director's field works as with one character (see
 [characters.md](characters.md#directors-notes)), with one addition: the list next to it
 chooses **who** the note is for.
 
-- **Everyone**: the note goes to whoever speaks next; *Pin* applies to all characters.
-- **One character**: the note waits for that character's next line ("Max confesses a
-  secret"); *Pin* applies to them only. *Continue ▶* (Enter) lets exactly this character
+- **For: Everyone**: the note goes to whoever speaks next; *Always* applies to all characters.
+- **For: Max only**: the note waits for that character's next line ("Max confesses a
+  secret"); *Always* applies to them only. *Continue ▶* (Enter) lets exactly this character
   react at once.
 - While a story **plays**, *Continue ▶* sends the note into the next line (to the chosen
   character, who then speaks next) without adding an extra line. While it is paused, the

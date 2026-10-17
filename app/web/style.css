@@ -599,6 +599,8 @@ body.busy .msg-actions { display: none; }
 .msg.director-only .director-line { margin-bottom: 0; }
 .viewing-session .director { display: none; }
 .director-form select { padding: 5px 6px; border-radius: 8px; font-size: 12px; max-width: 150px; }
+.director-for { font-size: 12px; color: var(--text-dim); }
+.director-for[hidden] { display: none; }
 .director-form select[hidden] { display: none; }
 @media (max-width: 820px) { .director { padding: 0 14px 14px; } .director-form .secondary { padding: 5px 7px; }
   .director-form select { max-width: 96px; } }

@@ -663,8 +663,8 @@ function renderDirector() {
   renderDirectorTarget();
   if (d.group) {  // group chats: notes for everyone or for one character
     d.pinned.forEach((p, i) => {
-      box.append(el("span", { class: "director-chip pinned", title: p.name ? `Pinned: ${p.name} follows this in every line` : "Pinned: everyone follows this" },
-        el("span", { "aria-hidden": "true" }, "📌 "), el("strong", {}, `${p.name || "Everyone"}: `), p.text,
+      box.append(el("span", { class: "director-chip pinned", title: p.name ? `Always: ${p.name} follows this in every line until you remove it (✕)` : "Always: everyone follows this in every line until you remove it (✕)" },
+        el("span", { "aria-hidden": "true" }, "📌 "), el("strong", {}, `${p.name || "Everyone"}, always: `), p.text,
         el("button", { type: "button", "aria-label": `Remove the pinned note: ${p.text}`, title: "Remove",
                        onclick: () => send({ type: "unpin_note", index: i }) }, "✕")));
     });
@@ -679,8 +679,8 @@ function renderDirector() {
   }
   const name = app.character ? app.character.name : "the character";
   d.pinned.forEach((note, i) => {
-    box.append(el("span", { class: "director-chip pinned", title: `Pinned: ${name} follows this in every reply` },
-      el("span", { "aria-hidden": "true" }, "📌 "), note,
+    box.append(el("span", { class: "director-chip pinned", title: `Always: ${name} follows this in every reply until you remove it (✕)` },
+      el("span", { "aria-hidden": "true" }, "📌 "), el("strong", {}, "Always: "), note,
       el("button", { type: "button", "aria-label": `Remove the pinned note: ${note}`, title: "Remove",
                      onclick: () => send({ type: "unpin_note", index: i }) }, "✕")));
   });
@@ -697,15 +697,25 @@ function renderDirectorTarget() {
   const sel = $("director-target");
   const group = inGroup();
   sel.hidden = !group;
-  if (!group) return;
-  const keep = sel.value;
-  sel.innerHTML = "";
-  sel.append(new Option("Everyone", ""));
-  for (const id of app.group.members) {
-    const c = member(id);
-    if (c) sel.append(new Option(c.name, c.id));
+  $("director-for").hidden = !group;
+  if (group) {
+    const keep = sel.value;
+    sel.innerHTML = "";
+    sel.append(new Option("Everyone", ""));
+    for (const id of app.group.members) {
+      const c = member(id);
+      if (c) sel.append(new Option(`${c.name} only`, c.id));
+    }
+    sel.value = [...sel.options].some((o) => o.value === keep) ? keep : "";
   }
-  sel.value = [...sel.options].some((o) => o.value === keep) ? keep : "";
+  renderDirectorButton();
+}
+
+// Who a note goes to, in words: "Max", "everyone" or the character you talk to.
+function directorAudience() {
+  if (!inGroup()) return app.character ? app.character.name : "the character";
+  const id = $("director-target").value;
+  return id ? (member(id) || { name: id }).name : "everyone";
 }
 
 function directorText() {
@@ -721,9 +731,28 @@ function directorText() {
 function renderDirectorButton() {
   const btn = $("director-continue");
   const note = $("director-input").value.trim();
+  const who = directorAudience();
+  const group = inGroup();
+  const story = group && app.group.playing;
   btn.textContent = note ? "Send note ▶" : "Continue ▶";
   btn.classList.toggle("primary", !!note);
   btn.classList.toggle("secondary", !note);
+  if (note) {
+    btn.title = story
+      ? `Send note (Enter): the story is playing, so the note goes into the next line${who === "everyone" ? "" : ` of ${who}`}.`
+      : `Send note (Enter): ${who === "everyone" ? "whoever speaks next" : who} reacts to it at once, without you saying anything. ` +
+        "Tip: you can also just speak or type your message; the note then goes with it.";
+  } else {
+    btn.title = story
+      ? "Continue: the story is playing and goes on by itself; Pause stops it."
+      : `Continue (Enter): ${who === "everyone" ? "whoever is next" : who} simply goes on talking, without you saying anything.`;
+  }
+  $("director-pin").title = `Always: ${who} follows this note in every reply, not just the next one, ` +
+    "until you remove it with ✕ (also after End chat and a restart). For lasting conditions, e.g. " +
+    "\"It is a stormy night\" or \"Vivienne is in a bad mood\".";
+  $("director-input").placeholder = group && who !== "everyone"
+    ? `Note for ${who} only, e.g. ${who} drops a glass · Enter: they react · or just speak: it goes with you`
+    : "Director's note or action, e.g. A stranger walks in · Enter: they react · or just speak: it goes with you";
 }
 
 function stopReply() {
@@ -1413,6 +1442,7 @@ function renderGroup() {
 function renderStoryControls() {
   const btn = $("story-play");
   if (!btn) return;
+  renderDirectorButton();  // its tooltip depends on whether the story plays
   const playing = !!(app.group && app.group.playing);
   btn.querySelector("span").textContent = playing ? "Pause" : "Play";
   btn.querySelector("use").setAttribute("href", playing ? "#i-pause" : "#i-play");
@@ -2538,11 +2568,11 @@ function init() {
     draftTimer = setTimeout(() => send({ type: "director_draft", text: $("director-input").value.trim(), target: target() }), 300);
   };
   $("director-input").addEventListener("input", () => { renderDirectorButton(); syncDraft(); });
-  $("director-target").addEventListener("change", syncDraft);
+  $("director-target").addEventListener("change", () => { renderDirectorButton(); syncDraft(); });
   $("director-pin").onclick = () => {
     const text = directorText();
     if (text) send({ type: "pin_note", text, target: target() });
-    else toast("Type the note first, then click Pin.", "info");
+    else toast("Type the note first, then click Always.", "info");
   };
   $("cast-add").onclick = (e) => { e.stopPropagation(); toggleCastMenu(); };
   document.addEventListener("click", (e) => { if (!e.target.closest(".cast-add-wrap")) $("cast-menu").hidden = true; });
