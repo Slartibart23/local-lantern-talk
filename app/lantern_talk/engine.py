@@ -1710,13 +1710,12 @@ class Engine:
     def _handle_group_mode(self, mode: str) -> None:
         if mode not in GROUP_MODES:
             raise UserError(f"Unknown mode {mode}.")
-        changed = mode != self.store.settings.group_mode
         self.store.settings.group_mode = mode
         self.store.save()
         if mode != "story":
             self.story_pause()
-        elif changed and self.in_group and self.c.server.running:
-            self._handle_story_play()  # switching to Story starts it; Pause stops it
+        elif self.in_group and self.c.server.running and not self.story_playing:
+            self._handle_story_play()  # clicking Story starts the story; Pause stops it
             return
         self._emit_group()
 

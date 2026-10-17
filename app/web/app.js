@@ -1440,8 +1440,13 @@ function renderGroup() {
   }
   $("cast-add").hidden = members.length >= 4;
   $("cast-add").textContent = group ? "+ Add" : "+ Add character";
-  $("group-mode").hidden = !group;
-  document.querySelectorAll(".group-mode-btn").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.mode === g.mode)));
+  $("group-mode").hidden = !app.character;  // always there: Story in a chat alone asks who joins
+  if (group && app.wantStory) {
+    app.wantStory = false;
+    send({ type: "group_mode", mode: "story" });
+  }
+  document.querySelectorAll(".group-mode-btn").forEach((b) => b.setAttribute("aria-checked",
+    String(b.dataset.mode === (group ? g.mode : "chat"))));
   $("story-controls").hidden = !group || g.mode !== "story";
   if (!group || g.mode !== "story") { $("story-setup").hidden = true; $("story-setup-btn").setAttribute("aria-expanded", "false"); }
   if (document.activeElement !== $("premise-input")) $("premise-input").value = g.premise || "";
@@ -2588,8 +2593,24 @@ function init() {
     else toast("Type the note first, then click Always.", "info");
   };
   $("cast-add").onclick = (e) => { e.stopPropagation(); toggleCastMenu(); };
-  document.addEventListener("click", (e) => { if (!e.target.closest(".cast-add-wrap")) $("cast-menu").hidden = true; });
-  document.querySelectorAll(".group-mode-btn").forEach((b) => { b.onclick = () => send({ type: "group_mode", mode: b.dataset.mode }); });
+  document.addEventListener("click", (e) => {
+    if (e.target.closest(".cast-add-wrap")) return;
+    $("cast-menu").hidden = true;
+    app.wantStory = false;  // closed without picking anyone
+  });
+  document.querySelectorAll(".group-mode-btn").forEach((b) => {
+    b.onclick = (e) => {
+      if (b.dataset.mode === "story" && !inGroup()) {  // a story needs at least two characters
+        e.stopPropagation();
+        if ($("cast-menu").hidden) toggleCastMenu();
+        app.wantStory = true;  // the story starts as soon as someone joins
+        toast("Story mode needs a second character: pick who joins, and the story starts " +
+              "(or open one of your groups on the left).", "info");
+        return;
+      }
+      send({ type: "group_mode", mode: b.dataset.mode });
+    };
+  });
   $("story-play").onclick = toggleStory;
   $("story-step").onclick = () => send({ type: "continue", speaker: "" });
   $("story-setup-btn").onclick = () => {
