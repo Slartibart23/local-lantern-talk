@@ -663,7 +663,8 @@ function renderDirector() {
   renderDirectorTarget();
   if (d.group) {  // group chats: notes for everyone or for one character
     d.pinned.forEach((p, i) => {
-      box.append(el("span", { class: "director-chip pinned", title: p.name ? `Always: ${p.name} follows this in every line until you remove it (✕)` : "Always: everyone follows this in every line until you remove it (✕)" },
+      box.append(el("span", { class: "director-chip pinned", title: p.name ? `Always, for ${p.name} only: used in every line of ${p.name} in this group, also after End chat and a restart, until you remove it with ✕.`
+                    : "Always, for everyone: every character of this group uses it in every line, also after End chat and a restart, until you remove it with ✕." },
         el("span", { "aria-hidden": "true" }, "📌 "), el("strong", {}, `${p.name || "Everyone"}, always: `), p.text,
         el("button", { type: "button", "aria-label": `Remove the pinned note: ${p.text}`, title: "Remove",
                        onclick: () => send({ type: "unpin_note", index: i }) }, "✕")));
@@ -679,7 +680,7 @@ function renderDirector() {
   }
   const name = app.character ? app.character.name : "the character";
   d.pinned.forEach((note, i) => {
-    box.append(el("span", { class: "director-chip pinned", title: `Always: ${name} follows this in every reply until you remove it (✕)` },
+    box.append(el("span", { class: "director-chip pinned", title: `Always: ${name} uses it in every reply of your chats with ${name} alone, also after End chat and a restart, until you remove it with ✕.` },
       el("span", { "aria-hidden": "true" }, "📌 "), el("strong", {}, "Always: "), note,
       el("button", { type: "button", "aria-label": `Remove the pinned note: ${note}`, title: "Remove",
                      onclick: () => send({ type: "unpin_note", index: i }) }, "✕")));
@@ -747,12 +748,24 @@ function renderDirectorButton() {
       ? "Continue: the story is playing and goes on by itself; Pause stops it."
       : `Continue (Enter): ${who === "everyone" ? "whoever is next" : who} simply goes on talking, without you saying anything.`;
   }
-  $("director-pin").title = `Always: ${who} follows this note in every reply, not just the next one, ` +
-    "until you remove it with ✕ (also after End chat and a restart). For lasting conditions, e.g. " +
-    "\"It is a stormy night\" or \"Vivienne is in a bad mood\".";
+  $("director-pin").title = alwaysTitle(who, group);
   $("director-input").placeholder = group && who !== "everyone"
     ? `Note for ${who} only, e.g. ${who} drops a glass · Enter: they react · or just speak: it goes with you`
     : "Director's note or action, e.g. A stranger walks in · Enter: they react · or just speak: it goes with you";
+}
+
+// What "Always" does, for whom, and how long.
+function alwaysTitle(who, group) {
+  const by = !group ? `by ${who}` : who === "everyone" ? "by every character in this group"
+    : `only by ${who}, not by the others`;
+  const kept = !group ? `It is saved with ${who} and used in your chats with ${who} alone (not in group chats).`
+    : "It belongs to this group and is not used when you talk to a character alone.";
+  return "📌 Always — a lasting note instead of a one-time one.\n\n" +
+    "Send note ▶ is used once: for the next reply only.\n" +
+    `Always is used in every reply from now on, ${by}, until you remove it with ✕ above the field. ` +
+    `It stays after End chat and after a restart. ${kept}\n\n` +
+    "Good for conditions that last: \"It is a stormy night\", \"Vivienne is in a bad mood\", " +
+    "\"They whisper, the others must not hear them\".\n\nType the note first, then click Always.";
 }
 
 function stopReply() {

@@ -130,7 +130,7 @@ mentioning or answering it.
 | --- | --- |
 | **Send note ▶** (Enter) | The note alone: the character reacts at once, without you saying anything. Example: "A stranger in a grey cloak walks in", or an action like "Elara hands him a glass of rum". With an empty field the button says **Continue ▶** and the character simply goes on. |
 | **Just speak or type** | A note that is still in the field goes with your next spoken or typed message, for that one reply. Example: write "Elara grows suspicious of the stranger", then say "I'm only passing through." |
-| **📌 Always** | The note applies to every reply, not just the next one, until you remove it (✕ on its card above the field). Pinned notes belong to the character and stay after *End chat* and restarts. Example: "It is a stormy night." Up to 8 per character. |
+| **📌 Always** | The note applies to every reply, not just the next one, until you remove it (✕ on its card above the field). These notes belong to the character, are used in your chats with them alone (a group has its own, for everyone or one character) and stay after *End chat* and restarts. Example: "It is a stormy night." Up to 8 per character. |
 
 In a [group chat](group-chat.md#directors-notes-in-a-group) a list next to the field
 chooses who the note is for: everyone, or one character.
